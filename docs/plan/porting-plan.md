@@ -5,18 +5,18 @@
 
 ## 里程碑
 
-### M0 — 工作区 + Linux 环境（进行中）
+### M0 — 工作区 + 构建环境 ✅ 2026-10-23 完成
 - [x] git 工作区 + 两个 submodule（origin=私有仓库，upstream=oosexgang，工作分支 `k90-port`）
-- [ ] Docker（OrbStack, linux/arm64）装齐 qemu-system-aarch64 / 7zip / edk2-aarch64 / dtc
-- [ ] 双仓合一棵树（`common/setup.sh` 在容器内执行）
-- 验收：容器内 `qemu-system-aarch64 --version`、`dtc --version`、脚本 `--help` 可跑
+- [x] 环境：macOS 原生跑通（qemu/7z/dtc/coreutils via brew + tools/mac-env.sh）；
+      Docker（OrbStack linux/arm64，hackios-dev 镜像）作对照环境备用
+- [x] 双仓合一棵树（`common/setup.sh`，经 `common/ugit` 管理 userland 侧）
 
-### M1 — QEMU 链路 iOS 开机 ← **“先到 iOS 开机”的主体**
-- `ios165/fetch.sh` 拉 7.4GB IPSW 并解包
-- `common/build.sh qemu-virt` 出 root.apfs / system.apfs（无需交叉工具链，走 prebuilt）
-- headless 跑 QEMU（ramfb + 4444 监控 + 4445 QMP，`screendump.sh` 出图）
-- 验收：截图见 iOS 16.5 锁屏
-- 风险：Mac 内存（QEMU 实例 ~3GB，OrbStack VM 内存上限要够）；VirtioFS 大文件性能
+### M1 — QEMU 链路 iOS 开机 ✅ 2026-10-23 达成（进桌面）
+- [x] `ios165/fetch.sh` 素材：2.9G rootfs + 26M/13M cryptex + 2.6G DSC
+- [x] `common/build.sh qemu-virt` → root.apfs(4M) + system.apfs(2.3G) + loader.efi
+- [x] `qemu/run-ios.sh <secs> -display cocoa` 带窗口启动 → **SpringBoard 桌面**
+- 存证：docs/progress/evidence/2026-10-23-qemu-ios-homescreen.png
+  过程：docs/progress/2026-10-23-ios-booted-qemu.md（含 5 个 macOS 适配点）
 
 ### M2 — annibale 真机准备（可与 M1 并行）
 - `common/new-device.sh annibale docs/analysis/data/annibale.fdt` 生成 profile + platform 骨架（已完成，见 k90-port）
