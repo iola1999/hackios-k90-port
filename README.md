@@ -33,15 +33,24 @@ hackios-k90-port/
   （在 `k90-port` 分支上），然后父仓库提交新的 pointer。
 - 我们的改动只落在 `k90-port` 分支；父仓库记录 submodule 的具体 commit。
 
-## 快速开始（Docker）
+## 快速开始
+
+**主路线：macOS 原生**（QEMU 上游本就硬编码 `-accel tcg`，Mac 上行为与 Linux 完全一致；
+APFS 镜像由纯 Python 生成，交叉编译走仓库自带的 xnu-clang，均不依赖宿主发行版）：
 
 ```sh
-docker/build.sh                      # 构建构建/QEMU 镜像
-docker/dev.sh                        # 进入 /work 容器
-# 容器内（首次）:
-cd hackios-xnu-kernel && common/setup.sh   # 合成官方要求的双仓一棵树
-ios165/fetch.sh                      # 7.4GB，从 Apple CDN 拉 iOS 16.5
-common/build.sh qemu-virt && common/run.sh qemu-virt   # headless: 去掉 -display gtk
+brew install sevenzip coreutils qemu          # 7zz→tools/hostbin/7z 已做软链
+source tools/mac-env.sh                        # GNU timeout/stat + AAVMF 固件路径
+cd hackios-xnu-kernel
+common/setup.sh                                # 双仓合一棵树（已完成）
+ios165/fetch.sh                                # 拉 iOS 16.5（进行中）
+common/build.sh qemu-virt && common/run.sh qemu-virt
+```
+
+**备用路线：Docker**（环境复现/疑难对照；apt 已换 USTC 源）：
+
+```sh
+docker/build.sh && docker/dev.sh               # 容器内 /work 即本工作区
 ```
 
 关键结论/实测速查：`docs/analysis/k90-pro-max-feasibility.md`（体检 + fastboot boot 可用 +

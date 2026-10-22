@@ -2,6 +2,8 @@
 annibale-backup/
 .DS_Store
 *.log
+logs-fetch.log
+tools/qemu-efi/*.fd
 
 # 子模块工作树里的构建产物（父仓库本不跟踪子模块内容，列在这里只为直观）
 hackios-xnu-kernel/out/
