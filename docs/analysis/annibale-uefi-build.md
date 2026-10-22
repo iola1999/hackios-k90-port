@@ -99,3 +99,24 @@ stuart_build -c Platforms/Xiaomi/annibalePkg/DeviceBuild.py \
 - 浅历史镜像与上游合并时若遇到 rename 冲突，以 upstream 为基底重新落我们的 `k90-port` diff
   （骨架是纯新增目录，冲突面小）。
 - dodge 的 APRIORI/DXE/RAW include 列表是 OnePlus 固件布局，annibale 转储后驱动 GUID 列表要对表。
+
+## 真机首boot:全链路 EDK2 → BDS → XnuLoader 走通(2026-10-23 凌晨)
+
+fastboot boot 实测(xnu-annibale.img,带合并 DTB 的 FD):
+1. **LK 状态玄学**:`fastboot boot` 偶发 `Load Error`(与镜像无关,reboot 重进 LK fastboot 即好)。
+   注意 `fastboot reboot fastboot` 在 K90 进的是 **fastbootd**(Android userspace),
+   fastbootd 拒绝未签名 boot(也是 Load Error);回 LK 用 `fastboot reboot bootloader` 或 `adb reboot bootloader`。
+2. **DTB 修复确认必要**:dtbo 里是 overlay(fragment 结构),Mu 的 IortDtDxe 等需要完整 DT。
+   正确做法:vendor_boot 里的 8 个 base DT 之一(qcom,sun,`/tmp/vb/v3.dtb`)+ 自家 dtbo overlay
+   `fdtoverlay` 合并(956KB)→ `annibalePkg/FdtBlob/sm8750-xiaomi-annibale.dtb`。
+3. **行为轨迹**:OKAY 后设备黑屏运行 ~40s(全量 DXE 驱动),loader 打印 no payload/或 USB 协议失败 →
+   BootManager UnableToBoot → XnuLoaderMain 返回 → 原流程 Stall 10s → **Shutdown**(USB 完全消失)。
+   = BootShim/FD/DTB/EDK2 核心/QcomPkg 大部分驱动全部健康,一直跑到 BDS 之后!
+4. **USB 驻留没成**:loader 的 usb_start 依赖 QCOM_USB_DEVICE 协议(UsbDeviceDxe 在 apriori,
+   但 locate 失败/start_ex 失败,无串口无法分辨)。K90 无 redwood 的 `logdump` 分区,loader 日志无处落盘。
+5. 屏幕黑:DisplayDxe 用 dodge 面板 XML 与 K90 面板(1200x2608)不符,初始化失败,属预期;M3 主攻。
+
+### 下一步(M2 收尾)
+- **RAM 留痕日志桥**:loader 在固定物理地址留 magic+log_buf,无 payload 时改走 EfiResetWarm
+  (Qcom warm reset 保 DDR),第二次 boot 由 XnuLoaderMain 读出 → 经 GOP 屏显或下轮 USB 拉走。
+- USB 协议没找到的两种成因(驱动没起 vs start_ex 失败)用日志区分,再对症。
