@@ -34,6 +34,19 @@
   3. 想看原厂 GOP/显示初始化：这个 ELF 已用 idalib 打开过（imagebase 0xa7000000，
      符号未 stripped 的字符串 1535 条），后续 IDA 会话可直接从 `DecompressFv` 顺藤。
 
+## ✅ 2026-10-23 首次 FD 编译成功（冒烟）
+
+`Build/annibalePkg/RELEASE_CLANGPDB/FV/SILICIUM_UEFI.fd`（3MiB）产出，30 核容器约 4 分钟。
+冒烟路线用 **dodge（同 SM8750）固件转储软链** `Binaries/annibale -> dodge` 顶包。要点：
+
+- 真入口是 **`python3 build_uefi.py -d annibale`**（stuart_build 直调时须手传
+  `FD_BASE/FD_SIZE/FD_BLOCKS/ENABLE_SECUREBOOT/DEVICE_MODEL`，来自 `Resources/Configs/annibale.toml`）
+- 工具链 = **CLANGPDB**（Mu tools_def 无 GCC5 定义；容器 clang18+lld 原生可用）
+- nasm：删 Mu_Basecore 的 nuget extdep 描述、用容器 apt nasm（`tools/fixup-mu-nasm.sh`，幂等）
+- FD 地址定档 `0xA7100000/0x300000`（SM8750 家族布局；与 IDA 实测原厂 ELF@0xa7000000 同族），
+  已回填 `annibale.conf`（kernel k90-port `b1ca05e`）
+- 冒烟 .fd 归档 `hackios-xnu-kernel/prebuilt/uefi/annibale-smoke-dodgefv.fd`
+
 ## 构建前置（还欠的）
 
 1. **子模块拉取**（`DeviceBuild.py GetRequiredSubmodules`）：`Binaries`(Project-Silicium/Device-Binaries)、
