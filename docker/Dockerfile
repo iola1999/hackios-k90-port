@@ -15,5 +15,10 @@ RUN sed -i 's|http://ports.ubuntu.com/ubuntu-ports|http://mirrors.ustc.edu.cn/ub
  && rm -rf /var/lib/apt/lists/*
 
 # 7z: scripts call `7z`; p7zip-full provides 7z. Fine.
+# stuart (edk2-pytool) for Mu-Silicium builds -- tuna mirror (CN)
+RUN pip3 install --break-system-packages -q \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    edk2-pytool-extensions edk2-pytool-library pillow
+
 WORKDIR /work
 CMD ["bash"]
