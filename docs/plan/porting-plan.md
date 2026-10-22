@@ -18,20 +18,24 @@
 - 存证：docs/progress/evidence/2026-10-23-qemu-ios-homescreen.png
   过程：docs/progress/2026-10-23-ios-booted-qemu.md（含 5 个 macOS 适配点）
 
-### M2 — annibale 真机准备（可与 M1 并行）
+### M2 — annibale 真机准备（进行中）
 - `common/new-device.sh annibale docs/analysis/data/annibale.fdt` 生成 profile + platform 骨架（已完成，见 k90-port）
 - UEFI 调研：✅ 已出结论（docs/analysis/uefi-sm8750.md）——**Mu-Silicium 主线已支持
-  SM8750**（PakalaPkg，OnePlus 13 系已验证），姊妹机型 myron（K90 Pro Max）入口已被
-  gbl-chainload 打通（本机 annibale 待同款确认）；
-  首选与上游同栈出 annibale pkg，次选原厂 UEFI 内存 patch
-- 决策点：M2 开 annibale-pkg 分支（Mu-Silicium fork），先用 gbl-chainload 模式快验 loader+GOP
-- 验收：annibale UEFI 起壳截图（GOP 出图）+ `annibale.conf` 补全 FB_BASE/FD_BASE
+  SM8750**（dodgePkg/paganiPkg 实测在跑），姊妹机型 myron（K90 Pro Max）入口已被
+  gbl-chainload 打通（本机 annibale 待同款确认）
+- **构建线已开**（docs/analysis/annibale-uefi-build.md）：
+  镜像仓 `iola1999/hackios-mu-silicium`（main=上游快照，k90-port=工作分支）；
+  `annibalePkg` 骨架已提交（dodgePkg 改名 + **我们 dtbo_a 备份里提取的正主 DTB**）
+- 待办：子模块浅拉（Binaries/Mu/Basecore/ACPI/openssl）→ 设备 UEFIReader 转储
+  → MemoryMap/面板核对 → `uefi/mu-silicium.patch` 双补丁 → docker 内 stuart 构建
+- 验收：`fastboot boot`（未实测过能力上限，先试）或 gbl-chainload 起 annibale UEFI，
+  GOP 出图 + `annibale.conf` 补全 FB_BASE/FD_BASE
 
 ### M3 — 真机 bring-up（M2 通过后展开）
 - loader 平台（数字已在体检文档：GIC 0x16000000/0x16080000、8 核、shift 8、前 6 核 small）
 - 内核平台层：UFS 时钟、pinctrl/SPMI、cpufreq、Goodix SPI 触摸改造
 - 第一里程碑 = loader USB 日志 + verbose 启动文本；第二 = 锁屏（软渲染，无 GPU/Wi-Fi/音频）
-- `fastboot boot` 已实测可用（docs/fastboot/），实验优先走暂存镜像、用 `_a` 槽，不刷 `_b`
+- `fastboot boot` 未在真机实测过（文档 docs/fastboot/ 只验证过 getvar）；实验优先走暂存镜像、用 `_a` 槽，不刷 `_b`
 
 ## 明确不做（本期）
 
