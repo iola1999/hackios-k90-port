@@ -120,3 +120,31 @@ fastboot boot 实测(xnu-annibale.img,带合并 DTB 的 FD):
 - **RAM 留痕日志桥**:loader 在固定物理地址留 magic+log_buf,无 payload 时改走 EfiResetWarm
   (Qcom warm reset 保 DDR),第二次 boot 由 XnuLoaderMain 读出 → 经 GOP 屏显或下轮 USB 拉走。
 - USB 协议没找到的两种成因(驱动没起 vs start_ex 失败)用日志区分,再对症。
+
+## 设备离线备货轮(2026-10-23 清晨,设备关机等人开机)
+
+结论与产物(验证流程/决策树见 docs/plan/device-test-playbook.md):
+
+1. **loader 平台进仓**:kernel 子模块 feb3c55 —— `platform_annibale`
+   (GIC 0x16000000/0x16080000、8 核 shift 8、small 0x3f,全部来自合并 DT 实证)、
+   `-DDIRECT_PHONE_PLAT`(GOP fb_base 未知时直接选中 annibale)、日志分区
+   `logdump`→`boot_a` 回退。手机版:`EXTRA_CFLAGS=-DDIRECT_PHONE_PLAT bash build.sh`。
+2. **面板 XML 生成器** `tools/dts2panelxml.py`:自家 DTS `dsi_p11_42_0d_0a_p10_dsc_cmd`
+   → DisplayDxe XML:1156x2510 时序(注意:K90 标称 1200x2608 为 DSC 后显示区,
+   DSI 时序以 DTS 为准)、DSC1.2 slice 578x10、clk 1205000000、4 lane、cmd mode、
+   339 条 DCS 初始化命令(6 字节头流→XML 行式转换)。已挂 RAW.inc(新 GUID
+   1A395579-…,FFS 14KB 进 FVMAIN 已验证)。**悬念**:DisplayDxe 按 DDIC ID 匹配
+   PanelName,首boot 若仍黑屏,从 loader/DisplayDxe 日志找自报 ID 改 `<PanelName>` 再试
+   (备选:换 dsc_ver/slice/ProfileID 参数组)。
+3. **DTB 回退陷阱**:02:00 对比实验把 `FdtBlob/sm8750-xiaomi-annibale.dtb` 落回了 505KB
+   纯 overlay,02:56 那次 FD 其实带的是 overlay。已用 `/tmp/vb/merged.dtb`(956243B)恢复
+   并重建;Mu-Silicium k90-port 87416d2 固化 merged DTB + Source.txt,不再依赖 /tmp。
+4. **变体镜像**(均在 hackios-xnu-kernel/,同一最新 FD):
+   - `xnu-annibale-log.img`(1.26MB,变体 A):payload=loader(--usb)+cmdline,驻留等 USB;
+     打包 `DTB=empty.dtb`(DT 槽占位,LK 收到的 DTB 无人消费,真 DT 在 FD FREEFORM 内),稳低于 LK ~2MB 上限;
+     `fastboot boot` 直测(LK 容量内)。
+   - `xnu-annibale-auto.img`(~7.5MB,变体 B):payload=loader+kernel(mach.development.bcm2837
+     同款),无 --usb 自动 run_kernel 盲跑;走 `flash boot_a + --set-active=a`。
+   - 变体 C(面板)已并入 A/B 的 FD。
+5. **一键回归** `tools/device-test.sh`:LK 重试 → 变体 A → getvar xnuloader 探测 →
+   boot_a 日志 fetch → 摘要。人肉流程+决策树在 playbook。

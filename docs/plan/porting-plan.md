@@ -18,24 +18,35 @@
 - 存证：docs/progress/evidence/2026-10-23-qemu-ios-homescreen.png
   过程：docs/progress/2026-10-23-ios-booted-qemu.md（含 5 个 macOS 适配点）
 
-### M2 — annibale 真机准备（进行中）
+### M2 — annibale 真机准备（✅ 2026-10-23 核心达成，USB 通道收尾中）
 - `common/new-device.sh annibale docs/analysis/data/annibale.fdt` 生成 profile + platform 骨架（已完成，见 k90-port）
 - UEFI 调研：✅ 已出结论（docs/analysis/uefi-sm8750.md）——**Mu-Silicium 主线已支持
   SM8750**（dodgePkg/paganiPkg 实测在跑），姊妹机型 myron（K90 Pro Max）入口已被
   gbl-chainload 打通（本机 annibale 待同款确认）
 - **构建线已开**（docs/analysis/annibale-uefi-build.md）：
   镜像仓 `iola1999/hackios-mu-silicium`（main=上游快照，k90-port=工作分支）；
-  `annibalePkg` 骨架已提交（dodgePkg 改名 + **我们 dtbo_a 备份里提取的正主 DTB**）
-- 待办：子模块浅拉（Binaries/Mu/Basecore/ACPI/openssl）→ 设备 UEFIReader 转储
-  → MemoryMap/面板核对 → `uefi/mu-silicium.patch` 双补丁 → docker 内 stuart 构建
-- 验收：`fastboot boot`（未实测过能力上限，先试）或 gbl-chainload 起 annibale UEFI，
-  GOP 出图 + `annibale.conf` 补全 FB_BASE/FD_BASE
+  `annibalePkg` 骨架已提交（dodgePkg 改名 + **合并 DTB**：vendor_boot base DT ⊕ 自家 dtbo
+  overlay，`fdtoverlay` 合成 956KB）
+- **真机实测结论（2026-10-23）**：`fastboot boot` 我方 FD → BootShim/EDK2/大部分 QcomPkg
+  驱动/XNU loader **全链路跑通**，最后走"无 OS → shutdown"（设备从 USB 消失 = 成功指纹）。
+  黑屏 = dodge 面板 XML 与 K90 面板不符（预期内）。LK 的 fastboot boot 有容量上限
+  （~2MB，7.5MB 镜像被拒 Load Error）且状态偶发脏（重进 LK 即愈；`reboot fastboot`
+  进的是 fastbootd=假故障，回 LK 用 `reboot bootloader`）。
+- 待办：boot_a 日志分区通道首次取证（xnu-annibale-log.img 已备好）→ USB 协议
+  (QCOM_USB_DEVICE) 卡点定位 → 面板点屏（XML 已按自家 DTS 生成，见 M3）
 
 ### M3 — 真机 bring-up（M2 通过后展开）
-- loader 平台（数字已在体检文档：GIC 0x16000000/0x16080000、8 核、shift 8、前 6 核 small）
+- loader 平台：✅ **platform_annibale 已进 loader.c**，参数经合并 DT 实证：
+  GIC 0x16000000/0x16080000(stride 0x40000)、PSCI=SMC、8 核 MPIDR 0..500+10000/10100、
+  small_cores=0x3f、io 窗 0x00400000+0x3FC00000；`-DDIRECT_PHONE_PLAT` 免 fb 匹配直接选中
+- **面板 XML 已生成**：`tools/dts2panelxml.py` 从自家 DTS 转 DisplayDxe XML
+  （1156×2510 DSI 时序、DSC1.2 slice 578×10、339 条初始化命令、cmd mode 4 lane），
+  已挂进 annibalePkg RAW。**唯一悬念**：DisplayDxe 按 DDIC ID 匹配 `<PanelName>`，
+  K90 的 DDIC 自报 ID 未知——USB 日志到手后看 DisplayDxe 打印再定名
 - 内核平台层：UFS 时钟、pinctrl/SPMI、cpufreq、Goodix SPI 触摸改造
 - 第一里程碑 = loader USB 日志 + verbose 启动文本；第二 = 锁屏（软渲染，无 GPU/Wi-Fi/音频）
-- `fastboot boot` 未在真机实测过（文档 docs/fastboot/ 只验证过 getvar）；实验优先走暂存镜像、用 `_a` 槽，不刷 `_b`
+- `fastboot boot` 已实测：≤2MB 镜像可用（LK 侧容量上限），大镜像走 `_a` 槽 `fastboot flash boot_a`
+  （unlocked 橙牌放行；回退 = `--set-active=b`）
 
 ## 明确不做（本期）
 
