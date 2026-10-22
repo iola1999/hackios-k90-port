@@ -18,7 +18,7 @@ RUN sed -i 's|http://ports.ubuntu.com/ubuntu-ports|http://mirrors.ustc.edu.cn/ub
 # stuart (edk2-pytool) for Mu-Silicium builds -- tuna mirror (CN)
 RUN pip3 install --break-system-packages -q \
     -i https://pypi.tuna.tsinghua.edu.cn/simple \
-    edk2-pytool-extensions edk2-pytool-library pillow
+    edk2-pytool-extensions edk2-pytool-library pillow regex
 
 WORKDIR /work
 CMD ["bash"]
