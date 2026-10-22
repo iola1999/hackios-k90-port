@@ -1,41 +1,71 @@
 # SM8750 UEFI 现状调研（M2 风险项）
 
-2026-10-23，web + gh 调研。结论：**UEFI 路径风险从"高"降到"中"**——SM8750（sun）
-已有活跃的开源 EDK2 固件项目，且就在小米生态里。
+2026-10-23，gh + web 调研（子代理全量扫描 + 复核）。结论：**风险从"高"降为"中低"**
+——hackios 上游所用的 Mu-Silicium 主线已支持 SM8750，且本机的"自制 EFI 入口"已被社区打通。
 
-## 关键发现
+## 0. 名称与前提校准
 
-1. **Project-SunUEFI**（https://github.com/slwyts/Project-SunUEFI）
-   小米平板 8 Pro（piano，骁龙 8 至尊版 = SM8750，与 annibale 同 SoC）的开源
-   EDK2/UEFI，支持主线 Linux（WoA 规划中）。**活跃：最后推送 2026-10-22**，
-   近期 commit 涉及 Goodix 触摸绑定、KDE/电源修复——已有真实日常使用痕迹。
-   → 对我们最直接的候选基座：同 SoC、小米系（原厂 xbl/ABL 交互逻辑相似）、含触摸驱动。
-2. **edk2-gunyah**（https://github.com/ChopinKernels/edk2-gunyah）："Run UEFI
-   firmware in Qualcomm Gunyah"。K90 Pro Max 安卓侧就跑 Gunyah（EL2），该路线
-   回答了"UEFI 在 Hypervisor 下怎么起"的问题，可参考其启动方式。
-3. **edk2-msm 及 fork 网**（如 https://github.com/yuweiyuan8/edk2-msm，自述
-   "Broken edk2 port …xD"）：8 Elite 世代支持仍在早期，但 fork 网活跃可借部件。
-4. **Mu-Silicium 官方组织**（https://github.com/Project-Silicium/Mu-Silicium）：
-   hackios 上游所用；目前 pkg 止步 ~SM8550，无 SM8750。
-5. SM8750 **bootloader 解锁 exploit** 记录：
-   https://wasddestroy.site/misc/qualcomm_unlock_exploit.html ——若小米限制解锁，
-   `fastboot boot` 暂存路线（已实测可用）仍是不依赖解锁的兜底。
-6. postmarketOS wiki 的 OnePlus 13/13s（dodge/pagani，同为 SM8750）条目已有
-   UEFI/主线启动章节，可作次级参考。
+- 本机 `getprop`：`ro.soc.model=SM8750`（✅ 非 SM8850）、`ro.product.device=annibale`。
+  社区/bootloader 圈称本机（K90 Pro Max / 全球版 Poco F8 Ultra）为 **myron**——同一台机器，
+  `annibale` 作仓库内代号，`myron` 作 boot-chain 语境别名。
+- SM8750 Linux 代号 **sun**，高通参考平台 **Pakala**；SM8850 是 kaanapali（本代不涉及）。
+- 真仓库地址：[edk2-porting/edk2-msm](https://github.com/edk2-porting/edk2-msm)、
+  [Project-Silicium/Mu-Silicium](https://github.com/Project-Silicium/Mu-Silicium)
+  （旧的 MangoTheCat/Mu-Silicium 已 404）。"kane" 是 Motorola 代号，与本机无关。
 
-## 对 hackios UEFI 路线的排序（更新版）
+## 1. Mu-Silicium：8 Elite 已进 main（对我们最重要）
 
-| 方案 | 工作量 | 最大不确定点 |
-|---|---|---|
-| a) 以 **Project-SunUEFI 为基座**，加 hackios 需要的 GOP 出图 + 我们的 loader 作 BOOTAA64.EFI | 中：piano→annibale 的 DTS/pinctrl 差异；显示面板不同（需点亮 1156x2510 DSI 或先用简单模式） | fastboot boot 起的 UEFI 能否拿到完整硬件（piano 方案可能假设解锁/abl 链路） |
-| b) edk2-msm sun 分支从零 + Silicium 驱动移植 | 高 | 部件老化，8 Elite 时钟/显示拓扑差异大 |
-| c) 纯 QEMU 演示，真机 UEFI 跟随社区进度 | 低 | 不达成"真机 iOS"只达成"iOS 开机" |
+- [PakalaPkg](https://github.com/Project-Silicium/Mu-Silicium/tree/main/Silicon/Qualcomm/PakalaPkg)
+  = SM8750 支持：OnePlus 13 (dodge) 显示/存储/USB/Linux boot ✅，13s (pagani) Active
+  （[Status.md](https://github.com/Project-Silicium/Mu-Silicium/blob/main/Status.md)）。
+- KaanapaliPkg（SM8850，OnePlus 15）也已 Active——8 Elite 世代架构经验已沉淀。
+- **但小米 pkg 全是老机型**（polaris=SDM845 … onyx=8s Gen4），org 内无 "redwood"、
+  无任何小米 8 Elite 设备 → annibale/myron 需自己出 pkg。
+- 移植方法学现成：[Silicium Porting 指南](https://github.com/Project-Silicium/Guides/tree/main/Silicium/Porting/Snapdragon)；
+  原厂 DXE 提取复用体系：[Project-Silicium/Device-Binaries](https://github.com/Project-Silicium/Device-Binaries)
+  （含 dodge=SM8750 的 xbl DXE + 面板 XML；解包用 [xbltools](https://github.com/linux-msm/xbltools)）。
+- ⚠️ 已知维护风险：XBL 协议地址随 HyperOS 固件版本漂移需逐版重扫
+  （[PR #1937](https://github.com/Project-Silicium/Mu-Silicium/pull/1937) 先例）。
 
-**当前决策：M1 用 QEMU 先达成开机；M2 立即开一个 SunUEFI 试验分支评估 a)。**
+## 2. 本机入口已被打通过：gbl-chainload-myron
 
-## 待办（M2 入口）
+[NullCode1337/gbl-chainload-myron](https://github.com/NullCode1337/gbl-chainload-myron)
+（[XDA 帖](https://xdaforums.com/t/mod-efisp-myron-gbl-chainloader-for-redmi-k90-pro-max-poco-f8-ultra-aosp-roms.4799356/)）：
+在 **K90 Pro Max 本机**把自制 EFI payload 放 EFISP 分区，由 ABL 链入并在内存中
+reload+patch 原厂 ABL（gbl_root_canoe 重实现），不动系统分区。
+→ 证明"这台机器能跑自制 UEFI/EFI"；hackios 的 `fastboot boot` 暂存路线（已实测 OK）
+是另一条免分区入口，两者可互为兜底。SM8850 侧同类：
+[oneplus15-boot-manager](https://github.com/travismills82/oneplus15-boot-manager)。
 
-- [ ] clone Project-SunUEFI，读 piano 板级 diff，评估到 annibale 的面板/触摸差异
-- [ ] 确认其镜像能否 `fastboot boot`（免刷写）直接起
-- [ ] 研究 K90 原厂 `uefi_a`（备份里有）的分区加载链，看 SunUEFI 的装载前提
-- [ ] Gunyah 环境下 GOP 显存地址获取（loader 的 fb_base 依赖它）
+## 3. 社区 EDK2 阵营（同 SoC 旁证）
+
+- [Project-SunUEFI](https://github.com/slwyts/Project-SunUEFI)：中文社区为小米平板 8 Pro
+  （piano，SM8750）自研 EDK2，Debian 桌面/GPU/显示/相机可用（WoA 未开始），活跃
+  （2026-10-22 有 commit）。其"UEFI 挂原厂 kernel 后由 ABL 按 header 加载"的合体 BOOT
+  与 HyperOS 交互经验可直接借鉴。
+- [edk2-gunyah](https://github.com/ChopinKernels/edk2-gunyah)："Run UEFI firmware in
+  Qualcomm Gunyah"——对 K90 的 Gunyah/EL2 环境直接相关。
+- [edk2-porting/edk2-msm](https://github.com/edk2-porting/edk2-msm/tree/master/Silicon/Qualcomm)
+  对 SM8750 = **零支持**（止于 sm8550，org 内 sm8750 全 0 命中）→ 从零写，不推荐。
+- 主线内核配套（驱动参考）：[sm8750-mainline](https://github.com/index986/sm8750-mainline)、
+  pmOS [OnePlus 13/13s](https://wiki.postmarketos.org/wiki/Qualcomm_Snapdragon_8_Elite_Gen_5_(SM8850)) 页。
+
+## 4. hackios UEFI 路线排序（定稿）
+
+| 序 | 方案 | 工作量 | 最大不确定点 |
+|---|---|---|---|
+| ① | **Mu-Silicium 基座出 annibale/myron pkg**（Pakala 部件复用 + 本机 DXE 提取） | 1–3 月 | HyperOS XBL/ABL 协议地址漂移逐版重扫；面板 DSI 点亮 |
+| ② | 原厂 uefi.elf 内存 patch + EFISP（gbl-chainload-myron 模式） | 数周 | 原厂 UEFI 的 BDS/GOP 完整度不可控 |
+| ③ | 跟随/贡献 SunUEFI（EDK2，同 SoC 同 HyperOS 生态） | 不可控 | 目前只有平板；手机版未出 |
+| ④ | fork edk2-msm 从零写 sun | 最大 | 无任何现成代码 |
+
+**决策：M1 QEMU 先达成开机；M2 走 ①（与 hackios 上游 SILICIUM_UEFI 同栈），② 作快速验证
+入口（它已在本机证明 EFI 可链入——甚至可以先在 ② 的环境里试跑 xnuloader 拿 GOP）。**
+
+## 5. M2 待办
+
+- [ ] clone Mu-Silicium，读 PakalaPkg + dodgePkg 结构，对照 docs/PORTING.md 列 annibale pkg 骨架
+- [ ] 用 xbltools 拆备份里的原厂 `xbl`/`uefi_a`，提取 DXE/GOP 部件（对照 Device-Binaries 目录格式）
+- [ ] 读 gbl-chainload-myron：确认其 EFI 入口能否不改分区、直接喂 hackios 的 loader.efi
+- [ ] Gunyah/EL2 下 GOP 显存地址获取（loader 的 fb_base 依赖）
+- [ ] 复核 HyperOS 当前版本（BP2A.250605.031.A3）对应的 XBL 协议地址表

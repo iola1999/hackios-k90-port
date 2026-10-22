@@ -25,10 +25,14 @@
 - 唯一代码补丁（k90-port）：qemu/run-ios.sh 的 os.copy_file_range 加 macOS 回退路径。
 - `common/setup.sh` 已在 Mac 完成双仓合一棵树；`ios165/fetch.sh` 后台下载中。
 
-### UEFI 调研（M2 提前启动）
-- SM8750 有活跃开源固件 **Project-SunUEFI**（小米平板 8 Pro 同 SoC，昨日有 commit）+
-  edk2-gunyah（Gunyah 里跑 UEFI，对 K90 的 EL2 环境直接相关）。风险高→中。
-- 详见 docs/analysis/uefi-sm8750.md（含方案排序与 M2 待办）。
+### UEFI 调研（M2 提前启动，子代理全量报告已入库）
+- 复核：`getprop ro.soc.model` = **SM8750** 确认（排除 SM8850 疑云）；本机社区别名 **myron**
+  （repo 内代号 annibale）。
+- 核心发现：**Mu-Silicium 主线已支持 SM8750**（PakalaPkg，OnePlus 13 显示/存储/Linux boot ✅）
+  = 与 hackios 上游同栈；本机自制 EFI 入口已被 gbl-chainload-myron（EFISP+ABL 链入）打通。
+- 路线定稿：① Mu-Silicium 基座出 annibale pkg（主）；② 原厂 UEFI 内存 patch（快验入口）；
+  ③ 跟 SunUEFI 社区（piano 同 SoC 旁证）；④ edk2-msm 从零（放弃，其 SM8750=零）。
+- 详见 docs/analysis/uefi-sm8750.md（全部链接与 M2 待办）。
 
 ### 上一日背景（详见 docs/analysis 与 docs/backup）
 

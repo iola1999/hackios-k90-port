@@ -20,10 +20,11 @@
 
 ### M2 — annibale 真机准备（可与 M1 并行）
 - `common/new-device.sh annibale docs/analysis/data/annibale.fdt` 生成 profile + platform 骨架（已完成，见 k90-port）
-- UEFI 调研：✅ 已出结论（docs/analysis/uefi-sm8750.md）——SM8750 有活跃开源固件
-  **Project-SunUEFI**（小米平板 8 Pro 同 SoC），首选作基座；次选 edk2-msm sun / 纯 QEMU
-- 决策点：SunUEFI 试验分支评估中（piano→annibale 面板/触摸 diff + fastboot boot 可行性）
-- 验收：`annibale.conf` 补全 FB_BASE/FD_BASE + SunUEFI 起壳截图
+- UEFI 调研：✅ 已出结论（docs/analysis/uefi-sm8750.md）——**Mu-Silicium 主线已支持
+  SM8750**（PakalaPkg，OnePlus 13 系已验证），且本机入口已被 gbl-chainload-myron 打通；
+  首选与上游同栈出 annibale pkg，次选原厂 UEFI 内存 patch
+- 决策点：M2 开 annibale-pkg 分支（Mu-Silicium fork），先用 gbl-chainload 模式快验 loader+GOP
+- 验收：annibale UEFI 起壳截图（GOP 出图）+ `annibale.conf` 补全 FB_BASE/FD_BASE
 
 ### M3 — 真机 bring-up（M2 通过后展开）
 - loader 平台（数字已在体检文档：GIC 0x16000000/0x16080000、8 核、shift 8、前 6 核 small）
@@ -40,7 +41,7 @@
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| ~~SM8750 无现成 UEFI~~ → 有 Project-SunUEFI（同 SoC，活跃） | M2/M3 风险降级为中 | 评估 piano→annibale 差异；不行则纯 QEMU 交付 |
+| ~~SM8750 无现成 UEFI~~ → Mu-Silicium main 已含 SM8750（Pakala），本机 EFI 入口已通 | M2 风险中低 | annibale pkg 移植 + XBL 协议地址随 HyperOS 漂移逐版重扫 |
 | Gunyah 占 EL2 | UEFI 运行层级未知 | UEFI 起来后实测 |
 | OrbStack VM 内存默认偏小 | QEMU 起不来（需 ≥3GB） | 调 OrbStack 配置 / `QEMU_RAM_GB` |
 | VirtioFS 慢 | fetch/解包/构建耗时 | 必要时挪进容器卷 |
