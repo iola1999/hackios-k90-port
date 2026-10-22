@@ -1,0 +1,18 @@
+# 备份/运行产物不进 git
+annibale-backup/
+.DS_Store
+*.log
+
+# 子模块工作树里的构建产物（父仓库本不跟踪子模块内容，列在这里只为直观）
+hackios-xnu-kernel/out/
+hackios-xnu-kernel/logs/
+hackios-xnu-kernel/xnu-src/
+hackios-xnu-kernel/Mu-Silicium/
+hackios-xnu-kernel/userland/*.apfs
+hackios-xnu-kernel/qemu/ram.img
+hackios-xnu-kernel/.userland.git/
+hackios-xnu-kernel/ios165/ipsw/
+hackios-xnu-kernel/ios165/extract/
+hackios-xnu-userland/ios165/ipsw/
+hackios-xnu-userland/ios165/extract/
+hackios-xnu-userland/userland/*.apfs
