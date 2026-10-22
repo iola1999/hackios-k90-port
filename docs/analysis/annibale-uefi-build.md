@@ -19,6 +19,21 @@
 | annibalePkg 骨架 | `Platforms/Xiaomi/annibalePkg`：全量改名、SMBIOS=Xiaomi/annibale、构建路径指向 Xiaomi/ |
 | **真机 DTB** | 从**我们自己备份的 `dtbo_a` 分区**提取（`/tmp/annibale-dtbo-1.dtb`，498KB，含 `annibale` 节点），已放进 `FdtBlob/sm8750-xiaomi-annibale.dtb` 并入库。注意：vendor_boot 里那 8 个是 Sun 公版 thermal 变体，**不是**设备树正主 |
 
+## 原厂 UEFI 镜像格式（2026-10-23 IDA 实测，uefi_a 备份）
+
+- `uefi_a` **不是裸 FV/FD，是 AArch64 ELF**：`e_type=ET_EXEC`，entry `0xa7000000`，
+  单 LOAD 段 RWX `0x2b3000`（file off 0x1000）；分区 5MiB。XBL 按 ELF 加载并跳 entry。
+- **明文里没有 FV 头（HIVE 全镜像 0 命中）**：FV 压缩存放，运行期解出——
+  ELF 里有 `Error: DecompressFvHobInit Failed - %r`（DXE 核早期，紧邻
+  `EnableMultiThreading`/`KernelInterfaceInit`，即这就是完整 PI/DXE 镜像，非 stub）。
+- 推论：
+  1. 我们 profile 的 `FD_BASE=0x9FD00000`（redwood 默认）与原厂布局无关——它是
+     **BootShim 把 Mu-Silicium UEFI 搬到哪**，由 annibalePkg 的 MemoryMapLib 定，构建后回填。
+  2. 走 gbl-chainload/自载路径时，若让 XBL 直接加载我们的镜像，需保持同款 ELF 外壳
+     （或改喂裸 FD 给自写的二级加载器）。
+  3. 想看原厂 GOP/显示初始化：这个 ELF 已用 idalib 打开过（imagebase 0xa7000000，
+     符号未 stripped 的字符串 1535 条），后续 IDA 会话可直接从 `DecompressFv` 顺藤。
+
 ## 构建前置（还欠的）
 
 1. **子模块拉取**（`DeviceBuild.py GetRequiredSubmodules`）：`Binaries`(Project-Silicium/Device-Binaries)、
