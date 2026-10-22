@@ -1,0 +1,6 @@
+[submodule "hackios-xnu-kernel"]
+	path = hackios-xnu-kernel
+	url = https://github.com/iola1999/hackios-xnu-kernel.git
+[submodule "hackios-xnu-userland"]
+	path = hackios-xnu-userland
+	url = https://github.com/iola1999/hackios-xnu-userland.git
