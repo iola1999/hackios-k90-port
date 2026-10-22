@@ -1,6 +1,23 @@
 # 进展日志
 
+## 2026-10-23（晚）— 机型纠偏：K90 ≠ K90 Pro Max
+
+- 用户指出 KernelSU 开着**机型伪装模块**；禁用重启后真实身份：**REDMI K90**
+  （model 2510DRK44C，代号仍 `annibale`）。**myron = K90 Pro Max 是另一款机器**。
+- 全量复查受影响结论：
+  - **保持有效**（硬件层，props 伪装无法伪造）：kernel `/sys/devices/soc0`=soc_id 618/"SUN"、
+    本机 dtb `model="Annibale based on SM8750"`+`msm-id 0x26a(618)`、GPU `/sys/class/kgsl`=
+    Adreno830v2、GIC/MPIDR/UFS/触摸 dtb 结论、分区备份（目录名本就是 annibale）、
+    fastboot boot 实测（bootloader 层）。
+  - **修正**：市场型号全链（README/规划/可行性/UEFI 调研/子模块 conf NAME）；
+    gbl-chainload-myron 归为**姊妹机型**先例（同 SoC，参考价值仍在，本机待同款确认）；
+    分辨率 1156×2510=Android 渲染值（禁用伪装后不变），物理面板 1200×2608@480dpi（社区树）。
+  - **新增情报**：MissMyTime/twrp_device_sm8850 树含 annibale 完整设备资料
+    （面板/kiwi_v2 Wi-Fi/Goodix 触摸/wrappedkey 加密）——移植参考富矿，已录入 UEFI 调研文档。
+- iOS 素材 fetch 全部完成（rootfs 2.9G + cryptex + DSC 2.6G），转入 QEMU 构建。
+
 ## 2026-10-23 — 工作区建立 + Docker 环境（M0）
+
 
 - 工作区目录重组为 docs/{analysis,backup,fastboot,plan,progress} + docker + tools；
   原 hackios-k90-notes 内容按类别并入 docs。

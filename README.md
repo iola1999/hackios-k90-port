@@ -1,7 +1,7 @@
-# hackios-k90-port — HackiOS 移植工作区（REDMI K90 Pro Max / annibale）
+# hackios-k90-port — HackiOS 移植工作区（REDMI K90 / annibale）
 
 把 [HackiOS](https://github.com/oosexgang/hackios-xnu-kernel)（XNU + 未修改 iOS 16.5 用户态跑在安卓机上）
-移植到 **REDMI K90 Pro Max**（SM8750 骁龙 8 Elite，代号 `annibale`）。
+移植到 **REDMI K90**（SM8750 骁龙 8 Elite，代号 `annibale`；曾被子系统伪装模块误报为 K90 Pro Max=myron，已纠偏，见 docs/analysis/）。
 本仓库是移植工作的**顶层工作区**：文档、脚本、配置都在这里，上游代码以 submodule 引入。
 
 ## 当前目标（见 docs/plan/）
@@ -53,7 +53,7 @@ common/build.sh qemu-virt && common/run.sh qemu-virt
 docker/build.sh && docker/dev.sh               # 容器内 /work 即本工作区
 ```
 
-关键结论/实测速查：`docs/analysis/k90-pro-max-feasibility.md`（体检 + fastboot boot 可用 +
+关键结论/实测速查：`docs/analysis/k90-annibale-feasibility.md`（体检 + fastboot boot 可用 +
 移植分解）；恢复分区看 `annibale-backup/README.md` 与 NAS `supplement-20261022/`。
 
 ## 备份（重要，勿删）

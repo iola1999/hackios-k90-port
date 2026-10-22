@@ -1,4 +1,4 @@
-# 移植规划（annibale / K90 Pro Max）
+# 移植规划（annibale / REDMI K90）
 
 制定于 2026-10-23。总目标：**先到 iOS 开机**；**不需要持久化**（全程 RAM 模式，
 `var_store`/`ufs_write` 不启用，跳过 userdata-carve 适配）。
@@ -21,7 +21,8 @@
 ### M2 — annibale 真机准备（可与 M1 并行）
 - `common/new-device.sh annibale docs/analysis/data/annibale.fdt` 生成 profile + platform 骨架（已完成，见 k90-port）
 - UEFI 调研：✅ 已出结论（docs/analysis/uefi-sm8750.md）——**Mu-Silicium 主线已支持
-  SM8750**（PakalaPkg，OnePlus 13 系已验证），且本机入口已被 gbl-chainload-myron 打通；
+  SM8750**（PakalaPkg，OnePlus 13 系已验证），姊妹机型 myron（K90 Pro Max）入口已被
+  gbl-chainload 打通（本机 annibale 待同款确认）；
   首选与上游同栈出 annibale pkg，次选原厂 UEFI 内存 patch
 - 决策点：M2 开 annibale-pkg 分支（Mu-Silicium fork），先用 gbl-chainload 模式快验 loader+GOP
 - 验收：annibale UEFI 起壳截图（GOP 出图）+ `annibale.conf` 补全 FB_BASE/FD_BASE
@@ -41,7 +42,7 @@
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| ~~SM8750 无现成 UEFI~~ → Mu-Silicium main 已含 SM8750（Pakala），本机 EFI 入口已通 | M2 风险中低 | annibale pkg 移植 + XBL 协议地址随 HyperOS 漂移逐版重扫 |
+| ~~SM8750 无现成 UEFI~~ → Mu-Silicium main 已含 SM8750（Pakala），姊妹机型 EFI 入口已通（本机待移植确认） | M2 风险中低 | annibale pkg 移植 + XBL 协议地址随 HyperOS 漂移逐版重扫 |
 | Gunyah 占 EL2 | UEFI 运行层级未知 | UEFI 起来后实测 |
 | OrbStack VM 内存默认偏小 | QEMU 起不来（需 ≥3GB） | 调 OrbStack 配置 / `QEMU_RAM_GB` |
 | VirtioFS 慢 | fetch/解包/构建耗时 | 必要时挪进容器卷 |
