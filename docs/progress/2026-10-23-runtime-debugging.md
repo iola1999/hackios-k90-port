@@ -1,10 +1,10 @@
 # 2026-10-23 真机启动、桌面和外设排查
 
-本轮继续真机调试。Android 界面恢复见[系统界面修复记录](../analysis/2026-10-23-android-systemui-recovery.md)，常用操作见[真机调试手册](../plan/device-test-playbook.md)。本页记录实测结果与尚未完成的部分。
+本页保留 2026-10-23 晚间的真机调试结果。Android 界面恢复见[系统界面修复记录](../analysis/2026-10-23-android-systemui-recovery.md)，常用操作见[真机调试手册](../plan/device-test-playbook.md)。跨日至 10-24 的触摸坐标、BQ 电量和性能调查见[桌面交互案例](../analysis/2026-10-24-interactive-runtime.md)，包含最新阅读截止位置。
 
 ## 1. 已确认的桌面状态
 
-23:17 通过驻留 loader 读取 iOS 主屏幕截图，用户随后确认手机实际桌面显示正常。面板参数为 `1156 × 2510`、stride `4624`；iOS 使用 `1125 × 2436` 的逻辑帧缓冲。壁纸与半透明效果随后恢复，用户再次确认，但首次加载会停顿数秒。触摸和电量仍在排查。
+23:17 通过驻留 loader 读取 iOS 主屏幕截图，用户随后确认手机实际桌面显示正常。面板参数为 `1156 × 2510`、stride `4624`；iOS 使用 `1125 × 2436` 的逻辑帧缓冲。壁纸与半透明效果随后恢复，用户再次确认，但首次加载会停顿数秒。10-24 增量结果已确认触摸有响应、BQ 电量已发布；明显卡顿、充电标志及实体按键仍待验收，后续也曾记录壁纸扩展超时。
 
 第一轮桌面测试设置了 `loader_return_after=300`。用户报告时间停在 11:21，主机对应读到 `result: returned 1361841 0`；内核已按测试时限退出，屏幕保留最后一帧。后续交互测试取消该时限，通过 USB `oem stop` 主动结束。已实测停止、读取合并日志、复用 RAM 系统盘并启动下一份内核，整个过程无需按键或重插 USB。
 
@@ -24,7 +24,7 @@
 
 修复把内部变量改为 `env_name`。重新生成镜像后有 382 个按需服务，PosterBoard 和壁纸扩展实际启动，截图显示 iOS 壁纸。回归测试覆盖环境变量设置与未设置两种情况，检查独立文件名、MachServices 和按需启动属性；原脚本两种情况均失败，修复后通过。
 
-原始小镜像还缺少 `libredwood-gl.dylib` 与 `libOSMesa.8.dylib`，CoreAnimation 日志报告无法初始化 Metal/OpenGL ES，上屏使用内置软件渲染。对照镜像加入已构建的 Mesa 26.2.5 库，以 `gl=1` 启用 OpenGL ES。运行日志确认 `softpipe`，用户确认半透明效果恢复。此路径由 CPU 绘制，尚未启用 K90 GPU；首次加载停顿数秒仍待优化。
+原始小镜像还缺少 `libredwood-gl.dylib` 与 `libOSMesa.8.dylib`，CoreAnimation 日志报告无法初始化 Metal/OpenGL ES，上屏使用内置软件渲染。对照镜像加入已构建的 Mesa 26.2.5 库，以 `gl=1` 启用 OpenGL ES。运行日志确认 `softpipe`，用户确认半透明效果恢复。此路径由 CPU 绘制，尚未启用 K90 GPU；首次加载停顿数秒仍待优化。后续黑色背景对应 `CollectionsPoster` 启动超时，服务生成、扩展启动与绘制分别检查。
 
 ## 4. 触摸初始化
 
@@ -32,10 +32,10 @@
 
 首次启用后，驱动扫描 SMEM 寻找 RPMh 数据库，在对应物理地址 `0x81d9e004` 发生同步外部异常（ESR `0x96000010`）。合并设备树明确声明独立的 `qcom,cmd-db` 区域 `0x81c60000 + 0x20000`。改为直接读取该区域后，真机找到 `ldob12 = 0x40a00`。
 
-随后分阶段检查 GPIO、供电和 SPI。时钟状态打印仍使用旧机型的 AHB 寄存器 `0x18004/0x18008`；SM8750 主线 GCC 驱动给出的偏移为 `0x23140/0x23144`。已按板型选择，SE2 时钟停止标志也改为 bit 31。来源为 [Linux v6.17 gcc-sm8750.c](https://github.com/torvalds/linux/blob/v6.17/drivers/clk/qcom/gcc-sm8750.c)。这些更改之后的触摸实测继续记录。
+随后分阶段检查 GPIO、供电和 SPI。时钟状态打印仍使用旧机型的 AHB 寄存器 `0x18004/0x18008`；SM8750 主线 GCC 驱动给出的偏移为 `0x23140/0x23144`。已按板型选择，SE2 时钟停止标志也改为 bit 31。来源为 [Linux v6.17 gcc-sm8750.c](https://github.com/torvalds/linux/blob/v6.17/drivers/clk/qcom/gcc-sm8750.c)。后续修正 TLMM GPIO 窗口为 `0x0f100000`，通过 GPIO 模拟 SPI 取得 9916K 身份，再切换报告模式取得触点；具体输入、日志和验收限制见[桌面交互案例](../analysis/2026-10-24-interactive-runtime.md)。
 
 ## 5. 产物与记录
 
 已安装驻留 loader 为 `hackios-xnu-kernel/out/handoff-loader-v3.img`。系统盘通过 USB 上传到 RAM，大小 `2,492,227,584` 字节，单次约 62 秒。实验只写过 `boot_a`；后续内核和用户态迭代均使用 RAM。Android 保留在 B 槽。
 
-当前桌面修复镜像为 `out/handoff-ui-root.apfs`，由独立的 `out/handoff-gl-root/` 目录生成，保留原 `userland/root.apfs` 作为对照。镜像加入 Mesa 库并重新生成按需服务。运行内核的具体版本、启动参数、日志及截图保存在本地调试目录 `/tmp/hackios-handoff/`，本轮结束时同步到忽略提交的 `docs/progress/evidence/2026-10-23-handoff/` 并更新产物清单。
+早期桌面修复镜像为 `out/handoff-ui-root.apfs`，由独立的 `out/handoff-gl-root/` 目录生成，保留原 `userland/root.apfs` 作为对照。镜像加入 Mesa 库并重新生成按需服务；后续清理启动任务的对照镜像为 `out/handoff-ui-clean.apfs`。上述路径相对于 kernel 子模块。具体内核、参数、日志与截图按各轮本地产物清单核对，长期保存目录为忽略提交的 `docs/progress/evidence/2026-10-23-handoff/`。

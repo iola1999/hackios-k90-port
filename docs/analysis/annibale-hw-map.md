@@ -253,7 +253,7 @@ iOS 侧关键：**splash_region 0xFC800000+0x2B00000（GOP framebuffer / 连续 
 | SPMI 主 arbiter | `/soc/qcom,spmi@c42d000`（`spmi_bus`） | `qcom,spmi-pmic-arb` | cnfg `0xc42d000+0x4000`，core `0xc400000+0x3000`，chnls `0xc500000+0x400000`，obsrvr `0xc440000+0x80000`，intr `0xc4c0000+0x10000` | `interrupts-extended=<&pdc 1 4>`（PDC 索引 1） | okay；下挂 17 个 PMIC：pmk8550@0、pm8550@1、pm8550ve@3/5/6/8、pm8550vs@9/j、pmih010x@7（haptics）、pmd802x@4、pmr735d@a、pm8010@c/d 等 |
 | SPMI 副 arbiter | `/soc/qcom,spmi@c432000`（`spmi1_bus`） | 同上 | c432000 系 | — | **disabled** |
 | SPMI debug | `/soc/qcom,spmi-debug@c540000` | `qcom,spmi-pmic-arb-debug` | `0xc540000` 系 | — | okay |
-| TLMM GPIO | `/soc/pinctrl@f000000`（`tlmm`，全部 GPIO 中断父） | `qcom,sun-tlmm` | `0xf000000+0x202000` | 自身 `<0 0xd0 4>`=INTID 240；`wakeup-parent=<&pdc>` | okay |
+| TLMM GPIO | `/soc/pinctrl@f000000`（`tlmm`，全部 GPIO 中断父） | `qcom,sun-tlmm` | 厂商 DT 资源 `0xf000000+0x202000`；GPIO 寄存器窗口从 `0xf100000` 开始，计算包含 `0x100000` 子窗口偏移 | 自身 `<0 0xd0 4>`=INTID 240；`wakeup-parent=<&pdc>` | okay；地址修正与读取边界见[桌面交互案例](2026-10-24-interactive-runtime.md) |
 | GCC 总时钟 | `/soc/clock-controller@100000`（`gcc`） | `qcom,sun-gcc`,`syscon` | `0x100000+0x1f4200`；电源 `vdd_cx`/`vdd_mx`（RPMh） | — | okay |
 | TCSRCC | `/soc/clock-controller@f204008`（`tcsrcc`） | `qcom,sun-tcsrcc` | `0xf204008+0x3004` | — | okay |
 | DISPCC | `/clock-controller@af00000`（`dispcc`） | `qcom,sun-dispcc` | `0xaf00000` | — | okay |
