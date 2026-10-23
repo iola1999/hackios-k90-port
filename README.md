@@ -12,7 +12,7 @@
 | [hackios-xnu-kernel](https://github.com/iola1999/hackios-xnu-kernel) | 保留原内核仓库历史，维护 K90 的 XNU、loader 和固件相关修改 | `k90-port` |
 | [hackios-xnu-userland](https://github.com/iola1999/hackios-xnu-userland) | 保留原用户态仓库历史，维护用户态适配、APFS 与图形构建工具 | `k90-port` |
 
-两个代码仓库当前以独立仓库保存上游历史，GitHub 的 fork 关联尚未建立。源码来源由本节及各仓库 README 明确说明；GitHub 的 fork 标记单独处理。原有许可证和版权声明保留，各组件许可范围见所属仓库的 `LICENSE` 及文件声明。上游的 POCO X5 Pro／QEMU 功能说明按其原有设备范围阅读，K90 的验证结果见本工作区的调试文档。
+两个代码仓库已建立与对应上游的 GitHub fork 关系，默认分支均为 `k90-port`。顶层工作区为独立仓库，默认分支为 `main`。三个仓库均已公开。原有许可证和版权声明保留，各组件许可范围见所属仓库的 `LICENSE` 及文件声明。上游的 POCO X5 Pro／QEMU 功能说明按其原有设备范围阅读，K90 的验证结果见本工作区的调试文档。
 
 ## 2. 当前目标（见 docs/plan/）
 

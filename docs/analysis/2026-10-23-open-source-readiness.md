@@ -1,4 +1,4 @@
-# 开源前检查与仓库关系
+# 仓库公开与隐私检查记录
 
 ## 1. 仓库状态与来源
 
@@ -6,9 +6,9 @@
 
 | 仓库 | 默认分支 | 当前可见性 | GitHub fork 关系 |
 |---|---|---|---|
-| `hackios-k90-port` | `main` | private | 顶层工作区 |
-| `hackios-xnu-kernel` | `k90-port` | private | 独立仓库，包含上游历史 |
-| `hackios-xnu-userland` | `k90-port` | private | 独立仓库，包含上游历史 |
+| `hackios-k90-port` | `main` | public | 独立的顶层工作区 |
+| `hackios-xnu-kernel` | `k90-port` | public | `oosexgang/hackios-xnu-kernel` 的 fork |
+| `hackios-xnu-userland` | `k90-port` | public | `oosexgang/hackios-xnu-userland` 的 fork |
 
 ## 2. 隐私检查与处理范围
 
@@ -30,20 +30,22 @@
 
 只清理当前文件无法移除旧提交中的标识。本次对含有个人标识的可达历史执行定向替换，保留提交邮箱、上游版权声明及干净的上游历史。重写会改变受影响提交及其后续提交的 ID；顶层历史中的 kernel 子模块指针同步映射到清理后的 commit。
 
-远端更新使用带预期旧值的强制推送，避免覆盖期间出现的新提交。已有其他 checkout 在继续推送前需要重新同步清理后的分支；本地原始历史备份仅用于恢复。分支改写只清理新分支可达的提交。GitHub 的旧 commit URL、隐藏引用、缓存和其他克隆仍可能保留旧内容；2026-10-23 推送后，通过已认证的 GitHub API 确认顶层仓库和 kernel 的旧提交仍可按 SHA 读取。三个仓库当前均为私有。GitHub 支持是否清理取决于其敏感数据处理条件；使用只含清理后历史的新仓库发布可以隔离原仓库的旧引用。参见 [GitHub 历史清理说明](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)。
+首次改写分支历史后，GitHub 仍能通过旧 SHA 读取顶层仓库和 kernel 的原提交。按用户要求，本轮删除三个旧线上仓库，再按原名称重建；两个代码仓库从对应上游创建正式 fork，顶层工作区创建独立仓库。三个新仓库均只推送清理后的本项目分支，本地备份和 Codex 差异快照引用继续保留在本机。
 
-## 4. fork 关系的后续选择
+已有其他 checkout 在继续推送前需要重新同步清理后的分支。旧 checkout 合并旧提交可能再次引入个人标识，推送前应检查所包含的历史。GitHub 的服务器备份及其他克隆副本无法通过仓库访问测试确认是否已清除，参见 [GitHub 历史清理说明](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)。
 
-GitHub 公开仓库的 fork 也必须公开，当前私有副本先完成隐私与分发内容检查，再处理关联。[GitHub fork 可见性规则](https://docs.github.com/en/pull-requests/reference/forks)。
+## 4. fork 关系与仓库信息
 
-GitHub 公共 REST 接口提供新建 fork，未提供把当前独立仓库直接指定父仓库的参数。相同 Git 历史本身不会生成 GitHub 的 fork 关系。[创建 fork API](https://docs.github.com/en/rest/repos/forks#create-a-fork)。
+两个代码仓库的 GitHub `parent` 分别指向 OOSEX GANG 的原仓库，默认分支均为 `k90-port`；fork 创建时取得的 `main` 分支保留上游内容。本地 `upstream` 继续用于读取上游变更，`origin` 和顶层 `.gitmodules` URL 保持原名称。
 
-需要正式 fork 关系，可在发布阶段从原仓库创建一个新名称的 fork，再推送已清理的 `k90-port`，设置默认分支并核对标签和仓库设置。旧私有仓库可先保留，确认新仓库后再决定名称和引用迁移。这个流程会创建公开仓库，应放在开源确认之后；当前保持独立仓库也可以通过 README 和上游 remote 清楚说明来源。
+公开上游的 fork 必须公开，参见 [GitHub fork 可见性规则](https://docs.github.com/en/pull-requests/reference/forks)。本轮使用 [创建 fork API](https://docs.github.com/en/rest/repos/forks#create-a-fork) 建立关联，随后推送本地分支。
 
-## 5. 发布前剩余事项
+三个仓库的描述注明 REDMI K90、annibale、SM8750 及各自职责。GitHub Topics 使用 `hackios`、`ios`、`redmi-k90`、`annibale`、`sm8750`、`qualcomm`、`arm64` 等共同关键词，并按仓库补充文档、内核、UEFI、用户态、APFS 和图形相关主题。Topics 用于项目分类，Git 版本标签按实际发布计划维护。
 
-本次保留私有可见性。顶层仓库尚未选择单独的许可证；kernel 和 userland 保留各自现有 `LICENSE`。预构建固件、设备提取资料及其他第三方文件的分发许可需要按实际发布内容核对，本次隐私扫描未代替逐项许可审阅。
+## 5. 检查边界与后续维护
 
-三个仓库已推送并核对远端 commit；两个代码仓库默认分支均为 `k90-port`。本轮扫描中，待发布分支及标签的可达历史未检出已识别的个人标识，顶层历史中的子模块指针均可在对应子模块分支或标签中找到。当前没有 Release 或 Actions 产物。
+顶层仓库尚未选择单独的许可证；kernel 和 userland 保留各自现有 `LICENSE`。预构建固件、设备提取资料及其他第三方文件的分发许可仍需按实际发布内容核对，本次隐私扫描覆盖个人标识和常见凭据格式。
 
-公开前复查最终分支、标签、Git 历史、Git LFS／Release／Actions 等托管内容，并确认发布范围。原仓库的旧提交仍可读取，建议发布到只接收清理后历史的新仓库，两个代码仓库可同时从上游建立正式 fork；原仓库继续保持私有。具体提交 ID 和远端核对结果记录在本轮完成报告中。
+本轮只修改仓库关系说明与线上设置，并更新顶层子模块版本；设备调试会话正在修改的源码继续留在本地工作树。待发布分支及标签的可达历史未检出已识别的个人标识，顶层历史中的子模块指针均可在对应子模块分支或标签中找到。重建前没有 Issue、PR、Release、Actions 产物或额外协作者需要迁移。
+
+后续推送继续检查当前文件、分支历史以及 Git LFS／Release／Actions 等托管内容。新发现的隐私格式需要补充扫描规则，原始日志和设备备份继续保存在 Git 忽略目录。
