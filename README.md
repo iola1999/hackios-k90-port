@@ -1,13 +1,10 @@
 # hackios-k90-port — HackiOS 移植工作区（REDMI K90 / annibale）
 
-把 [HackiOS](https://github.com/oosexgang/hackios-xnu-kernel)（XNU + 未修改 iOS 16.5 用户态跑在安卓机上）
-移植到 **REDMI K90**（SM8750 骁龙 8 Elite，代号 `annibale`；曾被子系统伪装模块误报为 K90 Pro Max=myron，已纠偏，见 docs/analysis/）。
-本仓库是移植工作的**顶层工作区**：文档、脚本、配置都在这里，上游代码以 submodule 引入。
+把 [HackiOS](https://github.com/oosexgang/hackios-xnu-kernel)（XNU + 未修改 iOS 16.5 用户态跑在安卓机上）移植到 **REDMI K90**（SM8750 骁龙 8 Elite，代号 `annibale`；曾被子系统伪装模块误报为 K90 Pro Max=myron，已纠偏，见 docs/analysis/）。本仓库是移植工作的**顶层工作区**：文档、脚本、配置都在这里，上游代码以 submodule 引入。
 
 ## 当前目标（见 docs/plan/）
 
-先到 **iOS 开机**（QEMU 链路先通，真机后置）；**不做存储持久化**（RAM 模式，
-不启用 `ufs_write=1`/`var_store`）。Linux 构建环境用 Docker（OrbStack，linux/arm64 + QEMU TCG）。
+先到 **iOS 开机**（QEMU 链路先通，真机后置）；**不做存储持久化**（RAM 模式，不启用 `ufs_write=1`/`var_store`）。Linux 构建环境用 Docker（OrbStack，linux/arm64 + QEMU TCG）。
 
 ## 目录布局
 
@@ -28,15 +25,12 @@ hackios-k90-port/
 
 ## 子模块与上游跟进
 
-- 两个 submodule 的 `origin` = 我们私有仓库（iola1999/*，含完整上游历史 + 我们的 `k90-port` 分支）；
-  `upstream` = oosexgang 原仓库。**跟进上游**：`git -C <mod> fetch upstream && git -C <mod> merge upstream/main`
-  （在 `k90-port` 分支上），然后父仓库提交新的 pointer。
+- 两个 submodule 的 `origin` = 我们私有仓库（iola1999/*，含完整上游历史 + 我们的 `k90-port` 分支）；`upstream` = oosexgang 原仓库。**跟进上游**：`git -C <mod> fetch upstream && git -C <mod> merge upstream/main` （在 `k90-port` 分支上），然后父仓库提交新的 pointer。
 - 我们的改动只落在 `k90-port` 分支；父仓库记录 submodule 的具体 commit。
 
 ## 快速开始
 
-**主路线：macOS 原生**（QEMU 上游本就硬编码 `-accel tcg`，Mac 上行为与 Linux 完全一致；
-APFS 镜像由纯 Python 生成，交叉编译走仓库自带的 xnu-clang，均不依赖宿主发行版）：
+**主路线：macOS 原生**（QEMU 上游本就硬编码 `-accel tcg`，Mac 上行为与 Linux 完全一致；APFS 镜像由纯 Python 生成，交叉编译走仓库自带的 xnu-clang，均不依赖宿主发行版）：
 
 ```sh
 brew install sevenzip coreutils qemu          # 7zz→tools/hostbin/7z 已做软链
@@ -53,11 +47,9 @@ common/build.sh qemu-virt && common/run.sh qemu-virt
 docker/build.sh && docker/dev.sh               # 容器内 /work 即本工作区
 ```
 
-关键结论/实测速查：`docs/analysis/k90-annibale-feasibility.md`（体检 + fastboot boot 可用 +
-移植分解）；恢复分区看 `annibale-backup/README.md` 与 NAS `supplement-20261022/`。
+关键结论/实测速查：`docs/analysis/k90-annibale-feasibility.md`（体检 + fastboot boot 可用 + 移植分解）；恢复分区看 `annibale-backup/README.md` 与 NAS `supplement-20261022/`。
 
 ## 备份（重要，勿删）
 
 - Mac：`annibale-backup/20261022-2355/`（123 分区 + 6 LUN GPT 头尾，含哈希清单）
-- NAS：`${BACKUP_DIR}/`（2026-04 raw 124 个 + 本次补充
-  `supplement-20261022/`）——两份互证互备，见 `docs/backup/`。
+- NAS：`${BACKUP_DIR}/`（2026-04 raw 124 个 + 本次补充 `supplement-20261022/`）——两份互证互备，见 `docs/backup/`。

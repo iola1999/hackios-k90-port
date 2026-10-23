@@ -1,24 +1,14 @@
 # annibale（REDMI K90 / SM8750 "sun"）真机设备树硬件资源图谱
 
-数据源：**合并设备树**（vendor_boot base DT ⊕ 我方备份 dtbo，fdtoverlay 合并，956,243 B）。
-`/tmp` 下素材：`/tmp/vb/merged.dtb`（与仓内
-`hackios-xnu-kernel/Mu-Silicium/Platforms/Xiaomi/annibalePkg/FdtBlob/sm8750-xiaomi-annibale.dtb`
-同一份，87416d2 固化）；base 为 `/tmp/vb/v3.dtb`（qcom,sun），dtbo 片段在 `/tmp/vb/ov*.dtbo`。
-重建/反编译：
+数据源：**合并设备树**（vendor_boot base DT ⊕ 我方备份 dtbo，fdtoverlay 合并，956,243 B）。`/tmp` 下素材：`/tmp/vb/merged.dtb`（与仓内 `hackios-xnu-kernel/Mu-Silicium/Platforms/Xiaomi/annibalePkg/FdtBlob/sm8750-xiaomi-annibale.dtb` 同一份，87416d2 固化）；base 为 `/tmp/vb/v3.dtb`（qcom,sun），dtbo 片段在 `/tmp/vb/ov*.dtbo`。重建/反编译：
 
 ```bash
 dtc -I dtb -O dts -o /tmp/annibale-merged.dts /tmp/vb/merged.dtb   # dtc 1.8.1，5553 节点
 ```
 
-根节点：`model = "Qualcomm Technologies, Inc. Sun SoC"`，`compatible = "qcom,sun"`，
-`qcom,msm-id = <0x26a 0x10000>`（SM8750 v1），`qcom,board-id = <0 0>`；根 `memory` 节点
-`reg = <0 0 0 0>` 是占位，实际内存由 loader 从 EDK2 memory map 注入（bootargs 带
-`disable_dma32=on`，DDR 高段在 32 位以上）。
+根节点：`model = "Qualcomm Technologies, Inc. Sun SoC"`，`compatible = "qcom,sun"`，`qcom,msm-id = <0x26a 0x10000>`（SM8750 v1），`qcom,board-id = <0 0>`；根 `memory` 节点 `reg = <0 0 0 0>` 是占位，实际内存由 loader 从 EDK2 memory map 注入（bootargs 带 `disable_dma32=on`，DDR 高段在 32 位以上）。
 
-**中断号读法**：本文 `interrupts = <A B C>` 为 DT 原始 cell。A=0 为 SPI，GIC INTID = B+32；
-A=1 为 PPI，INTID = B+16。`interrupts-extended` 指向 PDC（phandle 0x26）时为 PDC 索引，
-唤醒时再翻译成 SPI。GPIO 中断的 `interrupt-parent` 为 tlmm（phandle 0x27）。
-XNU 侧 GIC 配置表要用 INTID，换算务必保留。
+**中断号读法**：本文 `interrupts = <A B C>` 为 DT 原始 cell。A=0 为 SPI，GIC INTID = B+32；A=1 为 PPI，INTID = B+16。`interrupts-extended` 指向 PDC（phandle 0x26）时为 PDC 索引，唤醒时再翻译成 SPI。GPIO 中断的 `interrupt-parent` 为 tlmm（phandle 0x27）。XNU 侧 GIC 配置表要用 INTID，换算务必保留。
 
 ---
 
@@ -54,8 +44,7 @@ XNU 侧 GIC 配置表要用 INTID，换算务必保留。
 
 - 波特率 **115200 8n1**；Android bootargs 里没有 `console=`，全靠 stdout-path——我方 cmdline 要显式给 `console=ttyMSM0,115200n8`。
 - loader `platform_annibale.uart` 已改为 `0xa9c000`（本轮修复，见 annibale-uefi-build.md）。
-- 备用：`/aliases/hsuart0 → /soc/qcom,qupv3_2_geni_se@8c0000/qcom,qup_uart@898000`（SE14，
-  `qcom,msm-geni-serial-hs` 高速 4 线 UART，TX/RX=GPIO26/27，CTS/RTS=GPIO24/25，组 `qupv3_se14_default_*`，okay，BT/GNSS 候选，见 §6）。
+- 备用：`/aliases/hsuart0 → /soc/qcom,qupv3_2_geni_se@8c0000/qcom,qup_uart@898000`（SE14，`qcom,msm-geni-serial-hs` 高速 4 线 UART，TX/RX=GPIO26/27，CTS/RTS=GPIO24/25，组 `qupv3_se14_default_*`，okay，BT/GNSS 候选，见 §6）。
 - 桌面 wch 串口线（921600）与本设备无关（desk-01 JSON 干扰源），别再碰。
 
 ## 3. 触摸：Goodix（SPI 总线，非 I2C）
@@ -74,14 +63,11 @@ XNU 侧 GIC 配置表要用 INTID，换算务必保留。
 | 其它 | `panel = <&dsi_p11_* … &dsi_nt37801_amoled_video>` 关联面板配置；`mi_tp,*` 游戏/边缘抑制参数群 |
 | 状态 | okay |
 
-I2C 系触摸（goodix/parade/novatek/synaptics/atmel 的 i2c 节点）合并树里**没有**——本板触摸只走上面这条 SPI。
-（旧注记修正：触摸所在 SPI 是 `spi@a88000`（别名 spi0），不是 a8c000；a8c000 是 I2C SE3 挂 fsa4480。）
+I2C 系触摸（goodix/parade/novatek/synaptics/atmel 的 i2c 节点）合并树里**没有**——本板触摸只走上面这条 SPI。（旧注记修正：触摸所在 SPI 是 `spi@a88000`（别名 spi0），不是 a8c000；a8c000 是 I2C SE3 挂 fsa4480。）
 
 ## 4. 显示：DSI / NT37801 + P11 面板
 
-显示拓扑：MDP `ae00000` + DISPCC `af00000` + 双 DSI（ctrl+phy 各 2），主显示节点
-`/soc/qcom,dsi-display-primary`（`sde_dsi`，compatible `qcom,dsi-display`，label "primary"，
-`qcom,dsi-ctrl = <&mdss_dsi0 &mdss_dsi1>`，`qcom,dsi-phy = <&mdss_dsi_phy0 &mdss_dsi_phy1>`）。
+显示拓扑：MDP `ae00000` + DISPCC `af00000` + 双 DSI（ctrl+phy 各 2），主显示节点 `/soc/qcom,dsi-display-primary`（`sde_dsi`，compatible `qcom,dsi-display`，label "primary"，`qcom,dsi-ctrl = <&mdss_dsi0 &mdss_dsi1>`，`qcom,dsi-phy = <&mdss_dsi_phy0 &mdss_dsi_phy1>`）。
 
 | 项 | 节点路径 | compatible | reg/基址 | GPIO | 电源/时钟 | 状态 |
 |---|---|---|---|---|---|---|
@@ -101,20 +87,9 @@ I2C 系触摸（goodix/parade/novatek/synaptics/atmel 的 i2c 节点）合并树
 | `qcom,mdss_dsi_p11_42_0d_0a_p10_dsc_cmd`（`dsi_p11_42_0d_0a_p10_dsc_cmd`，**Mu-Silicium 面板 XML 用的是它**） | cmd mode，DSC | **1156×2510**（0x484×0x9ce）；hfp/hbp 0x40/hpw 0x20，vfp/vbp 0x40/vpw 0x20 | 120Hz | slice 578×10（0x242×0x0a） | "xiaomi p11 42 0d 0a cmd mode dsc dsi panel"；bitclk `0x47d2d740`；on-command 5802 字节；`mi,panel-id=<0x503131 0x50420d0a>`（"P11\r…\n"），esd-err GPIO87，亮度上限 0x3fff |
 | 同族变体 | cmd/video、cphy、ddicspr 等 | — | — | — | `..._p11_42_0d_0a_dsc_cmd`、`..._p11_42_02_0b_dsc_cmd`、`nt37801_fhd_plus_cmd`、`qsync_wqhd_plus_vid_cphy` 等 10 余个 |
 
-`tools/dts2panelxml.py` 已用字段：`qcom,mdss-dsi-panel-width/height`、`h-/v-front-porch`、
-`h-/v-back-porch`、`h-/v-pulse-width`、`panel-framerate`、`panel-clockrate`、`panic-lanes`、
-`mdss-dsc-slice-width/height`、`dsc-version`（默认 0x11）、`on-command`（6 字节头命令流 → UEFI XML
-`<type> data [delay]`）。这些属性分布在节点的 `qcom,mdss-dsi-display-timings/timing@N` 子块内
-（工具按 label 抓整块所以能命中）。用法：
-`python3 tools/dts2panelxml.py <merged.dts> dsi_p11_42_0d_0a_p10_dsc_cmd <out.xml> <PanelName>`。
-DisplayDxe 按 `<PanelName>`/DDIC ID 匹配，K90 DDIC 自报 ID 仍未取得（待日志）。
+`tools/dts2panelxml.py` 已用字段：`qcom,mdss-dsi-panel-width/height`、`h-/v-front-porch`、`h-/v-back-porch`、`h-/v-pulse-width`、`panel-framerate`、`panel-clockrate`、`panic-lanes`、`mdss-dsc-slice-width/height`、`dsc-version`（默认 0x11）、`on-command`（6 字节头命令流 → UEFI XML `<type> data [delay]`）。这些属性分布在节点的 `qcom,mdss-dsi-display-timings/timing@N` 子块内（工具按 label 抓整块所以能命中）。用法：`python3 tools/dts2panelxml.py <merged.dts> dsi_p11_42_0d_0a_p10_dsc_cmd <out.xml> <PanelName>`。DisplayDxe 按 `<PanelName>`/DDIC ID 匹配，K90 DDIC 自报 ID 仍未取得（待日志）。
 
-**GOP framebuffer**：`/reserved-memory/splash_region`（label `splash_memory`，别名
-`cont_splash_region`）`reg = <0 0xfc800000 0 0x2b00000>`（43MB，非 reusable）——与我方 FD
-`MemoryMapLib` 的 `Display_Reserved`（0xFC800000+0x2B00000）**同址同大小**，loader
-`platform_annibale.fb_base` 已接（kernel 仓 872da86）。
-另一显示区 `non_secure_display_region` 是 `shared-dma-pool`+reusable、size 0xfc00000（252MB）、
-无固定地址（限 4G 内、对齐 4M），Linux CMA 性质，与 EDK2 carveout 是两回事。
+**GOP framebuffer**：`/reserved-memory/splash_region`（label `splash_memory`，别名 `cont_splash_region`）`reg = <0 0xfc800000 0 0x2b00000>`（43MB，非 reusable）——与我方 FD `MemoryMapLib` 的 `Display_Reserved`（0xFC800000+0x2B00000）**同址同大小**，loader `platform_annibale.fb_base` 已接（kernel 仓 872da86）。另一显示区 `non_secure_display_region` 是 `shared-dma-pool`+reusable、size 0xfc00000（252MB）、无固定地址（限 4G 内、对齐 4M），Linux CMA 性质，与 EDK2 carveout 是两回事。
 
 ## 5. 震动：qpnp 压电/LRA 马达
 
@@ -126,9 +101,7 @@ DisplayDxe 按 `<PanelName>`/DDIC ID 匹配，K90 DDIC 自报 ID 仍未取得（
 | 关键参数 | LRA 周期 5734–5714–5684µs（默认 5714）；`qcom,vmax-mv=1300`；`qcom,imax-ma=1250`；LRA 自动阻抗检测频段 0xa0–0xb9（默认 0xaa）；go-ip 制动 dq 波形 + primitive_0..7/wf-vmax 3600mV 波形表齐 |
 | 状态 | okay |
 
-第二路：`/soc/spf_core_platform/lpass-cdc/wsa2-macro@6AA0000/wsa2_swr_master/swr_haptics@f0170220`，
-compatible `qcom,pmih010x-swr-haptics`（经 soundwire 的数字音频驱动马达通路，reg `<0x03 0xf0170220>`，
-`swr-slave-supply` okay）。`sun_snd` 声卡把 `swr-haptics` 注册为 codec。
+第二路：`/soc/spf_core_platform/lpass-cdc/wsa2-macro@6AA0000/wsa2_swr_master/swr_haptics@f0170220`，compatible `qcom,pmih010x-swr-haptics`（经 soundwire 的数字音频驱动马达通路，reg `<0x03 0xf0170220>`，`swr-slave-supply` okay）。`sun_snd` 声卡把 `swr-haptics` 注册为 codec。
 
 ## 6. Wi-Fi / BT：Qualcomm Kiwi（WCN785x 家族，Wi-Fi 7）
 
@@ -139,22 +112,13 @@ compatible `qcom,pmih010x-swr-haptics`（经 soundwire 的数字音频驱动马�
 | PCIe RC0 | `/soc/pcie@1c00000`（`pcie0`） | `qcom,pci-msm`（QCOM legacy 驱动，非 generic ecam host） | parf `0x1c00000+0x3000`，phy `0x1c06000`，elbi `0x40000000`，conf_apb `0x40100000`，pcie_sm `0x1d07000+0x1000`，atu `0x40080000`，config 窗 io `0x40200000+0x100000`/mem `0x40300000+0x3d00000`（bootargs `pcie_sm_regs=0x1D07000,…` 与之一致） | 主中断 `<0 0x8c 4>`=INTID 172，edge `<0 0x95…0x98>`=INTID 181–184；唤醒走 `pcie_pdc` | perst=GPIO102、clkreq=GPIO103、wake=GPIO104（组 `pcie0_perst_default` 等）；gdsc 电源走 gcc | okay（bootargs 带 `pcie_ports=compat`） |
 | BT | `/soc/bt_kiwi`（label `bluetooth`） | `qcom,kiwi` | 无 reg | — | `qcom,bt-reset-gpio`/enable = **pm8550ve_f PMIC GPIO3**（phandle 0x6c5 = `/qcom,pm8550ve@5/pinctrl@8800`）；`qcom,bt-sw-ctrl-gpio=<&tlmm 18>`；`qcom,wl-reset-gpio=<&tlmm 16>` 共享；`qcom,bt-fmd-clk-gpio=pm8550ve_f pin6`；bt_rf_clk1 时钟 | okay |
 
-- **芯片识别**：`supported-ids = <0x1107>`（Qualcomm PCI device id，WCN785x 系），代号 **kiwi**
-  ——FastConnect 7800 级 Wi-Fi 7 + BT combo；`qcom,wlan-rc-num = 0`（走 PCIe RC0）。
-- pinctrl 组：`cnss_wlan_en_active/sleep`（GPIO16）、`cnss_wlan_sw_ctrl(_wl_cx)`（GPIO18 function
-  `wcn_sw_ctrl`）、`bt_en`（pm8550ve_f）。
-- MSI 映射：`msi-map = <0x1400 &gic_its 0x1400 1>` → **GIC ITS**，StreamID 0x1400；
-  `iommu-map = <0x1400 &apps_smmu 0x1400 0xff>`（pcie_qtb 域 0x1400，IOVA 32bit）。
-  PCIe 视口 IOVA 窗 `0x98000000+0x80000000`（iommu-geometry），tlucc/dbic/ibar 窗见 bootargs。
-- RAM dump 预留 `qcom,wlan-ramdump-dynamic = 7.5MB`；`/reserved-memory/cnss_wlan_region`
-  （shared-dma-pool、reusable、32MB、4G 内、对齐 4M）挂给 `cnss_pci0`。
-- BT HCI：DT 未给显式 uart 属性；树中存在 SE14 高速 UART（`hsuart0`，§2）与 `qcom,qrtr-mhi`/
-  `qcom,qrtr-gunyah`（PCIe MHI 通道）两套通路，WCN785x 实际 BT HCI 走 PCIe MHI 或 SE14 UART，
-  接驱动时以真机日志定夺。声卡节点带 `qcom,wcn-bt` 标志（音频也走 WCN）。
-- 小米自加监控：`/soc/xiaomi_wifi_gpio`（compatible `xiaomi,xiaomi-wifi`，GPIO79 `wifi_ctrl_irq`
-  去抖 30ms，okay）。
-- 中期 iOS Wi-Fi 路：fork 的 Wi-Fi 栈（M1 已在 QEMU 用软驱）→ kiwi PCIe 驱动是全新工作，
-  先记资源不排期。
+- **芯片识别**：`supported-ids = <0x1107>`（Qualcomm PCI device id，WCN785x 系），代号 **kiwi** ——FastConnect 7800 级 Wi-Fi 7 + BT combo；`qcom,wlan-rc-num = 0`（走 PCIe RC0）。
+- pinctrl 组：`cnss_wlan_en_active/sleep`（GPIO16）、`cnss_wlan_sw_ctrl(_wl_cx)`（GPIO18 function `wcn_sw_ctrl`）、`bt_en`（pm8550ve_f）。
+- MSI 映射：`msi-map = <0x1400 &gic_its 0x1400 1>` → **GIC ITS**，StreamID 0x1400；`iommu-map = <0x1400 &apps_smmu 0x1400 0xff>`（pcie_qtb 域 0x1400，IOVA 32bit）。PCIe 视口 IOVA 窗 `0x98000000+0x80000000`（iommu-geometry），tlucc/dbic/ibar 窗见 bootargs。
+- RAM dump 预留 `qcom,wlan-ramdump-dynamic = 7.5MB`；`/reserved-memory/cnss_wlan_region` （shared-dma-pool、reusable、32MB、4G 内、对齐 4M）挂给 `cnss_pci0`。
+- BT HCI：DT 未给显式 uart 属性；树中存在 SE14 高速 UART（`hsuart0`，§2）与 `qcom,qrtr-mhi`/ `qcom,qrtr-gunyah`（PCIe MHI 通道）两套通路，WCN785x 实际 BT HCI 走 PCIe MHI 或 SE14 UART，接驱动时以真机日志定夺。声卡节点带 `qcom,wcn-bt` 标志（音频也走 WCN）。
+- 小米自加监控：`/soc/xiaomi_wifi_gpio`（compatible `xiaomi,xiaomi-wifi`，GPIO79 `wifi_ctrl_irq` 去抖 30ms，okay）。
+- 中期 iOS Wi-Fi 路：fork 的 Wi-Fi 栈（M1 已在 QEMU 用软驱）→ kiwi PCIe 驱动是全新工作，先记资源不排期。
 
 ## 7. 蜂窝调制解调器 / 远程处理器（PAS）
 
@@ -168,10 +132,7 @@ compatible `qcom,pmih010x-swr-haptics`（经 soundwire 的数字音频驱动马�
 | SPSS | `/soc/remoteproc-spss@1880000`（`spss_pas`） | `qcom,sun-spss-pas` | `0x188101c` 起 6 个 4B 寄存器窗（sp2soc_irq 等） | `<0 0x160 1>`=SPI 352→INTID 384 | `sp_mem` | okay |
 | SOCCP | `/soc/remoteproc-soccp@a3380000`（`soccp_pas`） | `qcom,sun-soccp-pas` | `0xa3380000+0x10000` | — | `soccp_mem 0x9ec00000+0x180000` + soccp_sdi | okay |
 
-SMMU 关系：外设（含 modem 侧 IPA/PCIe）StreamID 全部汇入 **apps_smmu**（§9）；modem 自身的
-`spu_modem_shared_mem 0x9b2c0000+0x40000` 与 TZ/SPU 共享。IPA fw 区 `ipa_fw_mem 0x9b080000`。
-全部 okay——kernel bring-up 若先不起 modem，可整体绕开 PAS 驱动；注意 DT **没有**
-`qcom,support-shutdown` 属性，即无 SSR 关机交接语义，排期最远，资源暂不展开。
+SMMU 关系：外设（含 modem 侧 IPA/PCIe）StreamID 全部汇入 **apps_smmu**（§9）；modem 自身的 `spu_modem_shared_mem 0x9b2c0000+0x40000` 与 TZ/SPU 共享。IPA fw 区 `ipa_fw_mem 0x9b080000`。全部 okay——kernel bring-up 若先不起 modem，可整体绕开 PAS 驱动；注意 DT **没有** `qcom,support-shutdown` 属性，即无 SSR 关机交接语义，排期最远，资源暂不展开。
 
 ## 8. I2C / SPI 总线总表（QUP GENI 序列引擎）
 
@@ -223,14 +184,11 @@ apps_smmu 下游 **QTB（TBU）StreamID 域**（`qcom,qsmmuv500-tbu`/`qcom,qtb50
 | cam_hf_qtb | `0x17d2000+0x1000` | `0x1c00+0x400` | 36b |
 | gpu_qtb | `0x3de8000+0x1000`（挂在 kgsl_smmu） | `0x0000+0x400` | 49b |
 
-QUP 包装器自身 `iommus=<&apps_smmu 0xa3>`（SE DMA 也过 SMMU，fastmap 32bit 窗）——iOS 侧若直接
-驱动 QUP/触摸，记得把 SID 0xa3 恒等映射或 bypass。
+QUP 包装器自身 `iommus=<&apps_smmu 0xa3>`（SE DMA 也过 SMMU，fastmap 32bit 窗）——iOS 侧若直接驱动 QUP/触摸，记得把 SID 0xa3 恒等映射或 bypass。
 
 ## 10. reserved-memory 全表（按基址排序）
 
-iOS 侧关键：**splash_region 0xFC800000+0x2B00000（GOP framebuffer / 连续 splash，bootloader
-logo 残留）**；`non_secure_display_region`（动态 CMA 252MB，4G 下）；`cnss_wlan_region`
-（动态 32MB，Wi-Fi DMA）。
+iOS 侧关键：**splash_region 0xFC800000+0x2B00000（GOP framebuffer / 连续 splash，bootloader logo 残留）**；`non_secure_display_region`（动态 CMA 252MB，4G 下）；`cnss_wlan_region` （动态 32MB，Wi-Fi DMA）。
 
 | 基址 | 大小 | 节点名（label） | 用途 |
 |---|---|---|---|
@@ -286,8 +244,7 @@ logo 残留）**；`non_secure_display_region`（动态 CMA 252MB，4G 下）；
 | 动态 | 0xfc00000 | non_secure_display_region（shared-dma-pool，reusable，<4G，对齐 4M） | 显示 CMA |
 | 动态 | — | linux,cma（system_cma）、qseecom/qseecom_ta、sp_region、vm_comm_mem、adsp_heap、va_md_mem、qmc_dma、secure_cdsp_heap 等 | 各类 dma-pool |
 
-注：`cnss_pci0_iommu_region_partition` 把 IOVA 0x98000000–0xb0000000 与 0xb0000000+0x50000000
-从可用域划走给 PCIe 视口（`qcom,iommu-geometry`/`qcom,range`），与物理区同名易混，是 **IOVA**。
+注：`cnss_pci0_iommu_region_partition` 把 IOVA 0x98000000–0xb0000000 与 0xb0000000+0x50000000 从可用域划走给 PCIe 视口（`qcom,iommu-geometry`/`qcom,range`），与物理区同名易混，是 **IOVA**。
 
 ## 11. 其它 kernel bring-up 资源
 
@@ -308,8 +265,7 @@ logo 残留）**；`non_secure_display_region`（动态 CMA 252MB，4G 下）；
 
 ## 12. 相机：CAMSS（titan 家族，主摄 OV50E 定制）
 
-完整拆解与移植路线在 `docs/plan/camera-plan.md`；本表只收编硬件事实（源
-`/tmp/hw_check.dts`，行号见 camera-plan §2.2）。
+完整拆解与移植路线在 `docs/plan/camera-plan.md`；本表只收编硬件事实（源 `/tmp/hw_check.dts`，行号见 camera-plan §2.2）。
 
 | 块 | 基址/大小 | 备注 |
 |---|---|---|
@@ -320,28 +276,17 @@ logo 残留）**；`non_secure_display_region`（动态 CMA 252MB，4G 下）；
 | CSID-lite0/1 | `0xad6d000` / `0xad72000`（0xa00） | `qcom,csid-lite980` |
 | IFE0/1/2 | `0xac86000`/`0xac96000`/`0xaca6000`（各 64K） | 时钟名 tfe_0..2；UBWC static cfg |
 | IFE-lite0/1 | `0xad6d000+0x2800` / `0xad72000+0x2800` | 与 csid-lite 同窗打包 |
-| CAM-CPAS | `0xac13000` | cam_cpas_top/camnoc_nrt/camnoc_rt/rpmh/cesta——**titan 访问前必须先起 CPAS/CAMNOC（红杉无此步）** |
+| CAM-CPAS | `0xac13000` | cam_cpas_top/camnoc_nrt/camnoc_rt/rpmh/cesta——**titan 访问前必须先起 CPAS/CAMNOC（redwood无此步）** |
 | CCI0/1/2 | `0xac7b000` / `0xac7c000` / `0xac7d000` | 主摄走 CCI0 master1 |
-| CAM SMMU | `qcom,cam_smmu` 多 context（ife/icp/jpeg/cdm/secure） | 红杉单 context 经验不通用 |
+| CAM SMMU | `qcom,cam_smmu` 多 context（ife/icp/jpeg/cdm/secure） | redwood单 context 经验不通用 |
 | TPG13–15 | `0xad8b000`+（第二窗 `0xac04000`） | cam=3 等价演示路径依托 |
 | RT-CDM | `cam-cdm-intf` + rt-cdm2_2×5（pid 0x18..0x1c） | IFE980 编程走 RT-CDM，非纯直写 |
 
-sensor 挂线：wide 主摄=CCI0 m1/CSIPHY3/MCLK1(GPIO90)/RESET GPIO6，轨 VIO1.8/VDIG1.15/
-VANA2.8(`camera_wide_avdd_ldo`，GPIO127 开关)/VAF3.1/BOB2 2.7；tele=CCI1 m0/CSIPHY1；
-ultra=QUP SE8 I2C `0x880000`（0x7a）/CSIPHY2；front=SE9 `0x884000`（0x10）/CSIPHY4。
-供电轨都是 RPMH LDO（走 SPMI，非红杉 PM8008i 手撸 I2C）。主摄=光影猎人800
-（OV50E 小米定制，50MP/1/1.55"/OIS）；chip ID/上电序列在 vendor sensormodule bin，
-待真机 `adb pull /vendor/lib64/camera`。
+sensor 挂线：wide 主摄=CCI0 m1/CSIPHY3/MCLK1(GPIO90)/RESET GPIO6，轨 VIO1.8/VDIG1.15/ VANA2.8(`camera_wide_avdd_ldo`，GPIO127 开关)/VAF3.1/BOB2 2.7；tele=CCI1 m0/CSIPHY1；ultra=QUP SE8 I2C `0x880000`（0x7a）/CSIPHY2；front=SE9 `0x884000`（0x10）/CSIPHY4。供电轨都是 RPMH LDO（走 SPMI，非redwood PM8008i 手撸 I2C）。主摄=光影猎人800 （OV50E 小米定制，50MP/1/1.55"/OIS）；chip ID/上电序列在 vendor sensormodule bin，待真机 `adb pull /vendor/lib64/camera`。
 
 ## 附：与既有文档/代码的衔接核对
 
-1. `docs/analysis/annibale-uefi-build.md`：merged DTB 生成方式（v3.dtb + 自家 dtbo，fdtoverlay，
-   956,243B）与本文数据源一致；面板 XML 节点 label `dsi_p11_42_0d_0a_p10_dsc_cmd` 的全部被消费
-   字段已在 §4 表中给出。
-2. `docs/analysis/uefi-sm8750.md` 提到的 "kiwi Wi-Fi、Goodix goodix_core 触摸" 与 §6/§3 一致
-   （DT 主 compatible 分别是 `qcom,cnss-kiwi` / `xiaomi,touch-spi`）。
-3. loader `platform_annibale`：GIC 三窗、uart 0xa9c000、fb_base 0xfc800000 均与 DT 实证吻合；
-   `io_base=0x00400000 + 0x3FC00000` 的 IO 窗覆盖 TLMM/GCC/QUP/SPMI/GIC 全部 MMIO。
-4. 本次勘误（相对旧稿）：触摸 SPI 是 `spi@a88000`（非 a8c000）；DT 里**确有**固定显示保留区
-   `splash_region@fc800000`；modem/ADSP/CDSP/SPSS/SOCCP remoteproc 节点齐全（§7）；
-   haptics 所在 PMIC 是 **PMIH010X**（非 PMI010x）。
+1. `docs/analysis/annibale-uefi-build.md`：merged DTB 生成方式（v3.dtb + 自家 dtbo，fdtoverlay，956,243B）与本文数据源一致；面板 XML 节点 label `dsi_p11_42_0d_0a_p10_dsc_cmd` 的全部被消费字段已在 §4 表中给出。
+2. `docs/analysis/uefi-sm8750.md` 提到的 "kiwi Wi-Fi、Goodix goodix_core 触摸" 与 §6/§3 一致（DT 主 compatible 分别是 `qcom,cnss-kiwi` / `xiaomi,touch-spi`）。
+3. loader `platform_annibale`：GIC 三窗、uart 0xa9c000、fb_base 0xfc800000 均与 DT 实证吻合；`io_base=0x00400000 + 0x3FC00000` 的 IO 窗覆盖 TLMM/GCC/QUP/SPMI/GIC 全部 MMIO。
+4. 本次勘误（相对旧稿）：触摸 SPI 是 `spi@a88000`（非 a8c000）；DT 里**确有**固定显示保留区 `splash_region@fc800000`；modem/ADSP/CDSP/SPSS/SOCCP remoteproc 节点齐全（§7）；haptics 所在 PMIC 是 **PMIH010X**（非 PMI010x）。

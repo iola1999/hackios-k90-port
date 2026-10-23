@@ -1,7 +1,6 @@
 # 设备回归测试手册（annibale 真机验证 playbook）
 
-写于 2026-10-23（设备关机等待人工开机时准备）。所有镜像已构建，即插即测。
-一键化：`tools/device-test.sh`（本手册的自动化版）。
+写于 2026-10-23（设备关机等待人工开机时准备）。所有镜像已构建，即插即测。一键化：`tools/device-test.sh`（本手册的自动化版）。
 
 ## 当前设备状态（预期）
 
@@ -48,52 +47,29 @@ head -c 2048 /tmp/logdump.bin
 
 ## 决策树（结果 → 下一步）
 
-- **A 有 USB（getvar=xnuloader）**：`xl log` 看 `usb:` 行；顺路 `xl ramdisk`+`xl run`
-  直接冲内核启动 → 目标 M4 锁屏。面板黑 → 用 `xl screenshot` 验证 GOP 是否实际可用。
+- **A 有 USB（getvar=xnuloader）**：`xl log` 看 `usb:` 行；顺路 `xl ramdisk`+`xl run` 直接冲内核启动 → 目标 M4 锁屏。面板黑 → 用 `xl screenshot` 验证 GOP 是否实际可用。
 - **A 无 USB，boot_a 有日志**：读 `usb: device protocol not found` vs `usb: start failed`：
-  - `not found` → apriori 的 UsbDeviceDxe 没装协议 → 查 QcomPkg USB 依赖链（UsbfnDwc3/
-    QcomSysInterface），或考虑 loader 自带 DWC3 驱动（红杉路线之外的 Plan C）。
-  - `start failed` → 控制器起来了但 gadget 起不来 → 对照 dodge 的 Fastboot 用法
-    （Mu-Silicium 手机线本家场景就是 fastboot!查 QcomPkg FastbootDxe 如何触发 USB）。
-- **A 无 USB 且 boot_a 全零**：GPT 分区名与 `boot_a` 不符 → 从 Android 侧
-  `adb shell su -c 'ls -l /dev/block/by-name/ | head'` + gpt 名字改 XnuLoader.c/loader.c 重试。
+  - `not found` → apriori 的 UsbDeviceDxe 没装协议 → 查 QcomPkg USB 依赖链（UsbfnDwc3/ QcomSysInterface），或考虑 loader 自带 DWC3 驱动（redwood路线之外的 Plan C）。
+  - `start failed` → 控制器起来了但 gadget 起不来 → 对照 dodge 的 Fastboot 用法（Mu-Silicium 手机线本家场景就是 fastboot!查 QcomPkg FastbootDxe 如何触发 USB）。
+- **A 无 USB 且 boot_a 全零**：GPT 分区名与 `boot_a` 不符 → 从 Android 侧 `adb shell su -c 'ls -l /dev/block/by-name/ | head'` + gpt 名字改 XnuLoader.c/loader.c 重试。
 - **B 起屏显（哪怕乱码）**：GOP 生效 → 回填 FB_BASE 进 annibale.conf，内核 simplefb 直写。
-- **B boot_a 出现内核 log**：内核已在 SM8750 硬件上跑起来（GIC/串口交接 OK）→ 里程碑：
-  真机 iOS 启动文本。之后按 panic 点逐个修（大概率：UFS 时钟/平台识别→用 ramdisk 就绕开 UFS）。
+- **B boot_a 出现内核 log**：内核已在 SM8750 硬件上跑起来（GIC/串口交接 OK）→ 里程碑：真机 iOS 启动文本。之后按 panic 点逐个修（大概率：UFS 时钟/平台识别→用 ramdisk 就绕开 UFS）。
 
 ## 已知陷阱（务必遵守）
 
-1. `fastboot boot` 报 Load Error：先 `fastboot reboot bootloader` 重进 LK 再试（LK 状态偶发脏，
-   与镜像无关）；`fastbootd` 一律拒未签名 boot（getvar 后 `ioreg` 见 "2510DRK44C" 即 fastbootd 假象）。
+1. `fastboot boot` 报 Load Error：先 `fastboot reboot bootloader` 重进 LK 再试（LK 状态偶发脏，与镜像无关）；`fastbootd` 一律拒未签名 boot（getvar 后 `ioreg` 见 "2510DRK44C" 即 fastbootd 假象）。
 2. `fastboot boot` 容量上限 ≈2MB（7.5MB 被拒）；大镜像走 flash `_a` 槽。
 3. 设备"无响应地从 USB 消失" ≈ shutdown = 固件跑到最后一步，是好消息。
 4. 一切以 `_b` 槽完好为前提；`_a` 槽和它的 boot_a 分区随我们折腾。
-5. 驻留期主机侧 `18d1:d00d` 可能是 LK 也可能是 loader（同款 PID）。用
-   `getvar product` 区分：秒回 `annibale`=LK；不响应=loader 命令通道未通。
-   `fastboot reboot` 回显 Finished 不作证据（工具对 reboot 不等 OK）。
-6. EDK2 BlockIo **写** UFS 当前不落地（五分区探针全灭；读正常）——"写分区再回
-   Android 取证"的手段暂不可用；可用间接指纹 = payload bytesum、镜像容量、
-   GONE 时长。rootfs 路线 D 只依赖读，不受影响。
-7. 桌面 wch 串口（921600）是桌上另一台设备（desk-01 JSON）。手机真 console =
-   GENI uart **0xa9c000 / 115200n8**（docs/analysis/annibale-hw-map.md），
-   QUP 时钟默认 gating，未飞线前别在串口上耗时间。
-8. **面板点亮取决于进入方式**：`reboot`/开机进 slot_a → LK 跑 splash →
-   0xFC800000 区域被 DMA 驱动，loader 的 SCREEN fallback 把我们文字和内核
-   BootArgs.video 都落在真屏上；`fastboot boot` 不经 LK splash → 面板全黑
-   （写 fb 无害）。想看画面必须用 `--set-active=a` + `reboot`。
-9. **loader.efi 有两种构建，谁用谁现编**：手机镜像必须
-   `EXTRA_CFLAGS=-DDIRECT_PHONE_PLAT bash xnuloader/build.sh`；QEMU 回归
-   （run-ios.sh 直接用 xnuloader/loader.efi）必须用默认构建。手机版喂给 QEMU，
-   内核 5.8s 卡在 pe_arm_init_debug 之后（GIC 基址对不上）；默认版喂给手机，
-   平台按 framebuffer 基址匹配不到 annibale。烧机前和跑 QEMU 前各编一次。
+5. 驻留期主机侧 `18d1:d00d` 可能是 LK 也可能是 loader（同款 PID）。用 `getvar product` 区分：秒回 `annibale`=LK；不响应=loader 命令通道未通。`fastboot reboot` 回显 Finished 不作证据（工具对 reboot 不等 OK）。
+6. EDK2 BlockIo **写** UFS 当前不落地（五分区探针全灭；读正常）——"写分区再回 Android 取证"的手段暂不可用；可用间接指纹 = payload bytesum、镜像容量、GONE 时长。rootfs 路线 D 只依赖读，不受影响。
+7. 桌面 wch 串口（921600）是桌上另一台设备（desk-01 JSON）。手机真 console = GENI uart **0xa9c000 / 115200n8**（docs/analysis/annibale-hw-map.md），QUP 时钟默认 gating，未飞线前别在串口上耗时间。
+8. **面板点亮取决于进入方式**：`reboot`/开机进 slot_a → LK 跑 splash → 0xFC800000 区域被 DMA 驱动，loader 的 SCREEN fallback 把我们文字和内核 BootArgs.video 都落在真屏上；`fastboot boot` 不经 LK splash → 面板全黑（写 fb 无害）。想看画面必须用 `--set-active=a` + `reboot`。
+9. **loader.efi 有两种构建，谁用谁现编**：手机镜像必须 `EXTRA_CFLAGS=-DDIRECT_PHONE_PLAT bash xnuloader/build.sh`；QEMU 回归（run-ios.sh 直接用 xnuloader/loader.efi）必须用默认构建。手机版喂给 QEMU，内核 5.8s 卡在 pe_arm_init_debug 之后（GIC 基址对不上）；默认版喂给手机，平台按 framebuffer 基址匹配不到 annibale。烧机前和跑 QEMU 前各编一次。
 
 ## 变体 C（rdfile，图形锁屏冲刺）流程
 
-> **暂停门（2026-10-23 评审 + 用户指示）**：第 0 步 `stage-system.sh` 向 userdata
-> 尾部写 ~2.4G，事先不校验这些块是否被 f2fs 占用，且现有备份不含 userdata。
-> 当前策略 = 调试只做 RAM 启动、不落持久数据 → 跑第 0 步前必须先经用户同意
-> （或先坐实 super 尾部空闲 extent 方案，见下"窗口数学"）。boot_a 槽是我们的
-> 自留地，flash 它不受此限。
+> **暂停门（2026-10-23 评审 + 用户指示）**：第 0 步 `stage-system.sh` 向 userdata 尾部写 ~2.4G，事先不校验这些块是否被 f2fs 占用，且现有备份不含 userdata。当前策略 = 调试只做 RAM 启动、不落持久数据 → 跑第 0 步前必须先经用户同意（或先坐实 super 尾部空闲 extent 方案，见下"窗口数学"）。boot_a 槽是我们的自留地，flash 它不受此限。
 
 ```bash
 # 0) Android 在 slot _b 上正常开机，KernelSU 授权 adb
@@ -108,23 +84,13 @@ fastboot --set-active=a && fastboot reboot
 #      读 boot_a 头部确认是我们的镜像，重刷 auto.img 看是否同样循环
 fastboot --set-active=b && fastboot reboot          # 任何时候回用户 Android
 ```
-注意：variant C 的暂存区随时可能被 slot b 的 f2fs 写花——**每次试 C 前重跑 stage**。
-窗口数学：变体 C 要 loader 找到 **≥3.35G 单块连续空闲**（resident 2.49G + 内核自身
-768M 预留 + 64M，choose_window 取最大自由块，MAX_MEM_SIZE 封顶 6G）。splash 循环不
-黑屏 = 大概率块不够 → 用 payload `physbase=<地址>` 强制指定（候选 0x100000000，
-前提是那块确实整段空闲；届时看屏指纹或修好的日志通道确认）。
-super 尾部空闲 extent 是更稳的落点（f2fs 不会碰），偏移要等设备的 loader
-`ufs=1` 日志 + tools/ufs-super.py 解析出 lp 空闲区后固化进 rdfile= 参数。
+注意：variant C 的暂存区随时可能被 slot b 的 f2fs 写花——**每次试 C 前重跑 stage**。窗口数学：变体 C 要 loader 找到 **≥3.35G 单块连续空闲**（resident 2.49G + 内核自身 768M 预留 + 64M，choose_window 取最大自由块，MAX_MEM_SIZE 封顶 6G）。splash 循环不黑屏 = 大概率块不够 → 用 payload `physbase=<地址>` 强制指定（候选 0x100000000，前提是那块确实整段空闲；届时看屏指纹或修好的日志通道确认）。super 尾部空闲 extent 是更稳的落点（f2fs 不会碰），偏移要等设备的 loader `ufs=1` 日志 + tools/ufs-super.py 解析出 lp 空闲区后固化进 rdfile= 参数。
 
 ## 外设开关（改 payload cmdline，重打包 c.img 即可）
 
 C 的图形里程碑达成后，逐个外设加旗标复测（payload `--cmdline` 追加）：
 
-- `touchscreen=2`：annibale Goodix 触摸（cc9ff58 参数化）。锁屏上手指的滑动解锁
-  就是验收；坏了指纹=日志落 boot_a 里 `goodix:` 前缀行。
-- `hv_haptic=3`：PMIC 震动自检——起内核后 30 ms 直驱一次马达，**手感就是验收**
-  （屏幕/串口都看不到它）。没感觉再加 `haptic_amp=128` 试更大；仍无 → boot_a 读
-  `haptic:` 前缀（arbiter 表、revision、fault 都在里面）。
-- `hv_haptic=4`：iOS 反馈直通马达（/dev/redwood-haptic，DIRECT_PLAY 跟随响度）。
-  桌面点击该有震感。上限 1 s/次，fault 自动弃疗。
+- `touchscreen=2`：annibale Goodix 触摸（cc9ff58 参数化）。锁屏上手指的滑动解锁就是验收；坏了指纹=日志落 boot_a 里 `goodix:` 前缀行。
+- `hv_haptic=3`：PMIC 震动自检——起内核后 30 ms 直驱一次马达，**手感就是验收** （屏幕/串口都看不到它）。没感觉再加 `haptic_amp=128` 试更大；仍无 → boot_a 读 `haptic:` 前缀（arbiter 表、revision、fault 都在里面）。
+- `hv_haptic=4`：iOS 反馈直通马达（/dev/redwood-haptic，DIRECT_PLAY 跟随响度）。桌面点击该有震感。上限 1 s/次，fault 自动弃疗。
 - 触摸/震动都惰性于默认 cmdline（不带旗标=零动作），QEMU 同理不需要它们。

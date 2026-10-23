@@ -1,9 +1,6 @@
 # Docker 环境（M0）
 
-linux/arm64 的 Ubuntu 24.04，装齐 HackiOS 构建 + QEMU 运行依赖
-（python3 / 7z / clang+lld / dtc / qemu-system-aarch64 / edk2-aarch64，另带
-nasm+iasl+uuid-dev 备后将来源码编 Mu-Silicium UEFI）。QEMU 在 OrbStack 里仍是 TCG
-（虚拟机内无嵌套 KVM），与上游 Linux 主机一致，无影响。
+linux/arm64 的 Ubuntu 24.04，装齐 HackiOS 构建 + QEMU 运行依赖（python3 / 7z / clang+lld / dtc / qemu-system-aarch64 / edk2-aarch64，另带 nasm+iasl+uuid-dev 备后将来源码编 Mu-Silicium UEFI）。QEMU 在 OrbStack 里仍是 TCG （虚拟机内无嵌套 KVM），与上游 Linux 主机一致，无影响。
 
 ```sh
 ./build.sh            # 产出 hackios-dev:latest
@@ -28,11 +25,8 @@ qemu/screendump.sh /tmp/ios.png                    # 锁屏截图 = “开机”
 qemu/touch.py drag up                              # 上滑解屏；qemu/stop.sh 提前停
 ```
 
-内存：每个 QEMU 实例吃宿主机 ~3GB；`run-ios.sh` 会在可用内存 <3GB 时拒启
-（OrbStack 虚机内存是真实上限，不够就调 OrbStack 设置或 `QEMU_RAM_GB=3`）。
-端口：monitor 4444 / QMP 4445（多实例 `-e QEMU_INSTANCE=1`）。
+内存：每个 QEMU 实例吃宿主机 ~3GB；`run-ios.sh` 会在可用内存 <3GB 时拒启（OrbStack 虚机内存是真实上限，不够就调 OrbStack 设置或 `QEMU_RAM_GB=3`）。端口：monitor 4444 / QMP 4445（多实例 `-e QEMU_INSTANCE=1`）。
 
 ## 性能备注
 
-/workspace 走 VirtioFS，大文件（IPSW 解包、apfs 打包）可能慢；若明显拖速，
-把树挪进容器卷再干活，回写 git 改动即可。
+/workspace 走 VirtioFS，大文件（IPSW 解包、apfs 打包）可能慢；若明显拖速，把树挪进容器卷再干活，回写 git 改动即可。

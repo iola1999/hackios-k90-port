@@ -4,13 +4,13 @@
 
 ## 0. 结论（TL;DR）
 
-- 红杉（POCO X5 Pro / SM7375 "yupik"）的相机栈**不是半成品，是端到端能跑的裸寄存器方案**：kernel `redwood_camera.c`（cam=1..5 分级）出 RAW10 帧 → mediaserverd 里注入 dylib 冒充 H10ISP 的 FigCaptureDevice → 软 ISP（camera_isp.c）出图，Camera.app 预览 + 快门拍照 + 点按对焦 + 手电都有真机回归脚本（rc.jobs.camera / rc.jobs.photo）。
+- redwood（POCO X5 Pro / SM7375 "yupik"）的相机栈**不是半成品，是端到端能跑的裸寄存器方案**：kernel `redwood_camera.c`（cam=1..5 分级）出 RAW10 帧 → mediaserverd 里注入 dylib 冒充 H10ISP 的 FigCaptureDevice → 软 ISP（camera_isp.c）出图，Camera.app 预览 + 快门拍照 + 点按对焦 + 手电都有真机回归脚本（rc.jobs.camera / rc.jobs.photo）。
 - iOS 用户态**没有被裁剪/魔改相机框架**：CMCapture/CMCore 原样跑在 mediaserverd 内，靠 `inject_media.c` 换 `BWFigCaptureDeviceVendor` 的 create 函数接管；camerad/MMCS 不参与出画面。annibale 复用这套用户态零改动，要重写的全部在 kernel/资源层。
 - annibale 的 CAMSS 资源：`/tmp/hw_check.dts`（annibale-dtbo 反编译，model "Sun SoC"）里全套节点都在（CSIPHY×6 / CSID×3+lite×2 / IFE×3+lite×2 / camcc / CCI×3 / CPAS / SMMU / GDSC / 4 路 sensor 供电与 GPIO），**本档即为第一份相机资源表**；annibale-hw-map.md 目前只有 camera_region 两行 reserved-memory（#L266-L267）和 SE8/SE9 摄像头 I2C 总线（#L196-L197），CAMSS MMIO 全空白。
-- 最大未知数 = **主摄 OV50E（光影猎人800，OV 定制）的上电/初始化寄存器表与模式表**，只存在于设备 `/vendor/lib64/camera/com.qti.sensormodule.*.bin`（红杉同款来源），当前 annibale-backup 只有 vendor_boot，**没有 vendor 分区 dump** → 这是 L0/L1 的第一道门。
+- 最大未知数 = **主摄 OV50E（光影猎人800，OV 定制）的上电/初始化寄存器表与模式表**，只存在于设备 `/vendor/lib64/camera/com.qti.sensormodule.*.bin`（redwood同款来源），当前 annibale-backup 只有 vendor_boot，**没有 vendor 分区 dump** → 这是 L0/L1 的第一道门。
 - 建议：L1（单摄预览，先 TPG 后真 sensor）3–5 周 + 6–10 个真机窗口；L2（拍照）+2–3 周。sensor 表拿不到则停在 TPG 演示或回 L0。
 
-## 1. 红杉现状盘点（以仓库实际代码/注释为准）
+## 1. redwood现状盘点（以仓库实际代码/注释为准）
 
 ### 1.1 kernel：`hackios-xnu-kernel/xnu/files/bsd/dev/redwood_camera.c`（4264 行）
 
@@ -54,11 +54,11 @@
 | CSIPHY0–5 | `0xada9000` 起步进 `0x2000`（各 8K） | csiphy **v2.3.0**（CSIPHY2 带 p11 修订），C/D-PHY 通用，`cphy_rx_clk_src`；#L39330-L39490 |
 | CCI0/1/2 | `0xac7b000` / `0xac7c000` / `0xac7d000` | #L39485、#L39671、#L39857 |
 | CSID0/1/2 | 节点名 `@ad26/29/2c000`，reg `0xad27000`/`0xad2a000`/`0xad2d000`（0x2b00） | compatible `qcom,csid980`；**节点名与 reg 差 0x1000，写文档时以 reg 为准** |
-| CSID-lite0/1 | reg `0xad6d000`/`0xad72000`（0xa00） | `qcom,csid-lite980`——红杉同款 lite 思路在 sun 上仍有硬件对应 |
+| CSID-lite0/1 | reg `0xad6d000`/`0xad72000`（0xa00） | `qcom,csid-lite980`——redwood同款 lite 思路在 sun 上仍有硬件对应 |
 | IFE0/1/2 | `0xac86000`/`0xac96000`/`0xaca6000`（各 64K） | `qcom,ife0..2`，时钟名 **tfe_0..2**（TFE 血统），UBWC static cfg；#L41027+ |
 | IFE-lite0/1 | `0xad6d000+0x2800` / `0xad72000+0x2800` | 与对应 csid-lite 同窗（lite 把 CSID+IFE 打包）；#L41161+ |
-| CAM-CPAS | `0xac13000` | reg-names：cam_cpas_top / camnoc_nrt / camnoc_rt / rpmh / cesta；client 表含全部 csiphy/csid/ife/ipe/cdm/icp——**titan 访问前必须先起 CPAS/CAMNOC，红杉没有这一步** |
-| CAM SMMU | `qcom,cam_smmu` 多 context：ife / icp / jpeg / cdm / secure，各带 resv region | #L39947-L40182；红杉只配 1 个 match reg+context，这里至少 IFE 一路 + RT buf |
+| CAM-CPAS | `0xac13000` | reg-names：cam_cpas_top / camnoc_nrt / camnoc_rt / rpmh / cesta；client 表含全部 csiphy/csid/ife/ipe/cdm/icp——**titan 访问前必须先起 CPAS/CAMNOC，redwood没有这一步** |
+| CAM SMMU | `qcom,cam_smmu` 多 context：ife / icp / jpeg / cdm / secure，各带 resv region | #L39947-L40182；redwood只配 1 个 match reg+context，这里至少 IFE 一路 + RT buf |
 | ICP0/ICP1 | `0xac05000` / `0xac150000`（dts 原值，疑 `0xac15000`+页对齐笔误，待复核） | #L41322+；配 `qcom,ofe`——L1 不用 |
 | CSIPHY TPG13–15 | `0xad8b000`+（各带 `0xac04000` 第二窗） | TPG 演示路径存在（cam=3 等价物的依托） |
 | RT-CDM | `cam-cdm-intf` + `rt-cdm2_2`×5（cam_hw_pid 0x18..0x1c） | #L40865-L40978；IFE980 主要靠 RT-CDM 缓冲编程，非纯直写 |
@@ -74,7 +74,7 @@
 | front（eeprom 0x51） | **QUP SE9 I2C `0x884000`，slave 0x10** | sd-index 4 | MCLK4（GPIO93），RESET 7 | —（#L33217 起，同构） |
 
 - 主摄身份：光影猎人800 = **OmniVision OV50E 的小米定制版**，50MP、1/1.55"、OIS（[百度百科](https://baike.baidu.com/item/%E5%85%89%E5%BD%B1%E7%8C%8E%E4%BA%BA800/68104798)、[fonearena 发布稿](https://www.fonearena.com/blog/467264#1)）；K90 另配 50MP 2.5x 长焦 + 超广角（[ixbt](https://www.ixbt.com/news/2025-10-23/120-ip68-ip69-7100-100-2-5-bose-nfc-redmi-k90.html)）。DTS 不含型号/寄存器表：CamX 从 vendor 用户态 bin 探测加载 → **chip ID、上电序列、模式表全部待取**。
-- 供电 phandle（0x3f8/0x411/0x3f6/0x3fd…）是 RPMH PMIC LDO，具体 LDO 名待从 base dts 反查（红杉的 PM8008i-手撸-I2C 经验不适用，annibale 应走 SPMI/RPMH，更接近 redwood_battery/buttons 的路子）。
+- 供电 phandle（0x3f8/0x411/0x3f6/0x3fd…）是 RPMH PMIC LDO，具体 LDO 名待从 base dts 反查（redwood的 PM8008i-手撸-I2C 经验不适用，annibale 应走 SPMI/RPMH，更接近 redwood_battery/buttons 的路子）。
 
 ### 2.4 映射状态小结
 
@@ -82,19 +82,19 @@
 
 ## 3. 结构性差异与最小路线
 
-### 3.1 SM7375(yupik) → SM8750(sun) 的差异（对"红杉式裸写"的影响）
+### 3.1 SM7375(yupik) → SM8750(sun) 的差异（对"redwood式裸写"的影响）
 
-1. **CPAS/CAMNOC/cesta 是新必经环节**：不初始化 CPAS（`0xac13000`，含 RPMH bw voter），titan 域访问起不来；红杉完全没有这块 → 纯盲写，靠读回+报错二分。
-2. camcc 换 `sun-camcc`：GDSC 偏移变了（titan_top=+0x134c）、多出 camnoc_rt/cesta 时钟族；红杉 camcc 例程的偏移/时钟 id 全要重排，但"RCG+branch+GDSC+PLL"套路一致。
-3. **CSID980/IFE980 走 RT-CDM 缓冲编程**（rt-cdm2_2 + cam-cdm-intf + UBWC），不再是红杉那种 CSID-lite/IFE-lite 直写 RDI 就能出帧的最短路径；好在 **csid-lite980/ife-lite0 仍在**（`0xad6d000`），L1 首选复刻红杉 cam=3/4 的 lite 路径，TPG13–15 可先证通路。
+1. **CPAS/CAMNOC/cesta 是新必经环节**：不初始化 CPAS（`0xac13000`，含 RPMH bw voter），titan 域访问起不来；redwood完全没有这块 → 纯盲写，靠读回+报错二分。
+2. camcc 换 `sun-camcc`：GDSC 偏移变了（titan_top=+0x134c）、多出 camnoc_rt/cesta 时钟族；redwood camcc 例程的偏移/时钟 id 全要重排，但"RCG+branch+GDSC+PLL"套路一致。
+3. **CSID980/IFE980 走 RT-CDM 缓冲编程**（rt-cdm2_2 + cam-cdm-intf + UBWC），不再是redwood那种 CSID-lite/IFE-lite 直写 RDI 就能出帧的最短路径；好在 **csid-lite980/ife-lite0 仍在**（`0xad6d000`），L1 首选复刻redwood cam=3/4 的 lite 路径，TPG13–15 可先证通路。
 4. CSIPHY 升到 v2.3.0（6 个，C/D-PHY 混合，timer/clk 结构不同）：D-PHY4lane 主摄的 settle/时序常数需真机标定。
-5. sensor 控制总线分裂：wide/tele 在 CCI（红杉 CCI 位时序代码可移植，寄存器窗 `0xac7b000`）；**ultra/front 在普通 QUP GENI I2C（SE8/SE9）**，红杉没有 GENI I2C 手撸例——好在 L1 只做 wide，用不到。
-6. SMMU：至少 IFE context + RT buffer 区要配（camera_region `0x9b300000` 就在手边），比红杉 1 个 context 复杂但仍是有限寄存器。
+5. sensor 控制总线分裂：wide/tele 在 CCI（redwood CCI 位时序代码可移植，寄存器窗 `0xac7b000`）；**ultra/front 在普通 QUP GENI I2C（SE8/SE9）**，redwood没有 GENI I2C 手撸例——好在 L1 只做 wide，用不到。
+6. SMMU：至少 IFE context + RT buffer 区要配（camera_region `0x9b300000` 就在手边），比redwood 1 个 context 复杂但仍是有限寄存器。
 7. 供电：RPMH LDO/SPMI + GPIO127 固定轨，替代 PM8008i；写轨前先从 base dts 解出 LDO 身份（TODO）。
 
 ### 3.2 iOS 侧要骗过谁
 
-**不是 camerad。** 出画面的门在 mediaserverd 里的 CMCapture 栈：AVFoundation → mediaserverd → `BWFigCaptureDeviceVendor` → FigCaptureDevice/Stream 属性表 + PixelBufferHandler。红杉已经证明：kernel 出 `/dev/redwood-camera` + loader 假 `/arm-io/isp` 节点 + inject_media 换 vendor，Camera.app 就肯预览/拍照；iOS 16.5 用户态（本仓库固定在 `ios165`）无需再裁再改。annibale 上唯一 iOS 侧改动 = dylib 里 device 属性表若被 iOS 版本差异卡住再调（此处零风险，版本冻结）。
+**不是 camerad。** 出画面的门在 mediaserverd 里的 CMCapture 栈：AVFoundation → mediaserverd → `BWFigCaptureDeviceVendor` → FigCaptureDevice/Stream 属性表 + PixelBufferHandler。redwood已经证明：kernel 出 `/dev/redwood-camera` + loader 假 `/arm-io/isp` 节点 + inject_media 换 vendor，Camera.app 就肯预览/拍照；iOS 16.5 用户态（本仓库固定在 `ios165`）无需再裁再改。annibale 上唯一 iOS 侧改动 = dylib 里 device 属性表若被 iOS 版本差异卡住再调（此处零风险，版本冻结）。
 
 ### 3.3 分级路线
 

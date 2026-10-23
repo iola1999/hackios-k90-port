@@ -1,18 +1,14 @@
 # WCN7850（annibale / REDMI K90）Wi-Fi 移植路径规划
 
-离线调研轮产出（依据：redwood 驱动源码、/tmp/hw_check.dts、annibale-hw-map.md、上游 ath12k）。
-结论先行：**porting-plan.md 的"月级"判断成立，但依据描述有错**（红杉链路里没有 MHI，见 §3）。
-annibale 与红杉是**结构性换路**：片内 WPSS-DSP + GLINK/QMI → PCIe RC0 + MHI。
-fork 内核目前**没有任何 PCIe host 代码**（红杉从不需要），这是最大的新增块。
+离线调研轮产出（依据：redwood 驱动源码、/tmp/hw_check.dts、annibale-hw-map.md、上游 ath12k）。结论先行：**porting-plan.md 的"月级"判断成立，但依据描述有错**（redwood链路里没有 MHI，见 §3）。annibale 与redwood是**结构性换路**：片内 WPSS-DSP + GLINK/QMI → PCIe RC0 + MHI。fork 内核目前**没有任何 PCIe host 代码**（redwood从不需要），这是最大的新增块。
 
 ---
 
-## 1. 红杉（POCO X5 Pro / SM7375 / WCN6750）现状盘点
+## 1. redwood（POCO X5 Pro / SM7375 / WCN6750）现状盘点
 
 ### 1.1 链路形态
 
-WCN6750 **不是 PCIe 设备**：射频 + WPSS（SoC 内 Hexagon DSP，`qcom,wpss@8a00000`，PAS=6）。
-应用侧只做"PIL 起 DSP → 跟固件对话"，全程无 PCIe/MHI：
+WCN6750 **不是 PCIe 设备**：射频 + WPSS（SoC 内 Hexagon DSP，`qcom,wpss@8a00000`，PAS=6）。应用侧只做"PIL 起 DSP → 跟固件对话"，全程无 PCIe/MHI：
 
 ```
 PIL/TrustZone 加载 wpss 固件 → SMP2P/IPCC 门铃 → GLINK(IPCRTR) 通道
@@ -43,7 +39,7 @@ PIL/TrustZone 加载 wpss 固件 → SMP2P/IPCC 门铃 → GLINK(IPCRTR) 通道
 - 驱动替换：`wifi_lx=1`（ath11k 替身 QMI）/ `wifi_lx=2`（真跑，需 `wifi_smmu=2`）
 - SMMU：`wifi_smmu=1` 只读勘察 / `=2` 建 context（会写 SMMU）
 
-### 1.4 MMIO 基址类别（红杉常数，全出自其 DT/Linux）
+### 1.4 MMIO 基址类别（redwood常数，全出自其 DT/Linux）
 
 SMEM `0x80900000+2MB`（WPSS 条目 13）与其锁 `0x1f43000`、IPCC `0x408000`、AOP rsc `0x18200000`、AP RPMh sequencer `0x18220000`、cmd-db `0x80860000`、WPSS PIL 内存 `0x9ae00000+25MB`、radio 寄存器 `0x61e00000+2MB`（固件回报）、SMMU 展示窗 `0xa0000000+256MB`、SoC 外设基址 `0x400000`。
 
@@ -64,7 +60,7 @@ SMEM `0x80900000+2MB`（WPSS 条目 13）与其锁 `0x1f43000`、IPCC `0x408000`
 
 ### 2.2 供电 / 时钟 / 电源域
 
-- 电源轨（RPMh，`rsc@16500000/drv@2`，注意基址与红杉 0x18200000 不同）：`vdd-wlan-io/io12/dig/aon/rfa1/rfa2/ant-share` → hw-map 已映射为 smpd1/ldof2/ldof3/smpg3/smpi7/ldok6 等 LDO/SMP。
+- 电源轨（RPMh，`rsc@16500000/drv@2`，注意基址与redwood 0x18200000 不同）：`vdd-wlan-io/io12/dig/aon/rfa1/rfa2/ant-share` → hw-map 已映射为 smpd1/ldof2/ldof3/smpg3/smpi7/ldok6 等 LDO/SMP。
 - 域与时钟：`gcc_pcie_0_gdsc`（GCC `0x16b004`）、`gcc_pcie_0_phy_gdsc`（`0x16c000`）、pcie_crm `crm@1d01000`（v2）、bi_tcxo + pcie_0_pipe_clk + sleep_clk。
 - CX/MX：`rpmh-regulator-mxlvl`（`vdd-mxa-level`）在 drv@2；上电时序 = gcc gdsc + CRM + RPMh 轨 + wlan-en/sw-ctrl GPIO，顺序在 Linux pci-msm/cnss 源码里可抄。
 
@@ -74,11 +70,11 @@ SMEM `0x80900000+2MB`（WPSS 条目 13）与其锁 `0x1f43000`、IPCC `0x408000`
 
 ### 2.4 IOMMU
 
-端点 `iommu-map <0x1400 &apps_smmu 0x1400 0xff>`（pcie_qtb 域）；PCIe 视口 IOVA 窗 `0x98000000+0x80000000`（geometry），cnss_pci0 fastmap `0x98000000+0x18010000`。与红杉的差别：那边是 radio 单 stream 手建 context，这边要按 stream 0x1400 建整套 PCIe DMA 域，且与内存布局（cnss_wlan_mem 保留区）挂钩。
+端点 `iommu-map <0x1400 &apps_smmu 0x1400 0xff>`（pcie_qtb 域）；PCIe 视口 IOVA 窗 `0x98000000+0x80000000`（geometry），cnss_pci0 fastmap `0x98000000+0x18010000`。与redwood的差别：那边是 radio 单 stream 手建 context，这边要按 stream 0x1400 建整套 PCIe DMA 域，且与内存布局（cnss_wlan_mem 保留区）挂钩。
 
-### 2.5 与红杉的结构性差异总结
+### 2.5 与redwood的结构性差异总结
 
-| 维度 | 红杉 WCN6750 | annibale WCN7850 |
+| 维度 | redwood WCN6750 | annibale WCN7850 |
 |---|---|---|
 | 总线 | 片内 ahb（PIL 起 WPSS DSP） | **PCIe RC0 端点** |
 | 固件加载 | TrustZone PIL（mdt/b0x） | **MHI SBL/EDL 下载**（DT 未列文件名；mainline linux-firmware 无 WCN7850 包，在 CAF/设备 vendor 分区） |
@@ -94,17 +90,17 @@ SMEM `0x80900000+2MB`（WPSS 条目 13）与其锁 `0x1f43000`、IPCC `0x408000`
 
 原文：`Wi-Fi redwood_wifi.c/wlfw（QWC NVM 加载 MHI）→ WCN7850 kiwi PCIe RC0，月级`。
 
-- **“MHI”误**：红杉链路 = PIL + GLINK/QRTR/QMI，全程无 MHI；MHI 是 annibale 侧才出现的新东西。
+- **“MHI”误**：redwood链路 = PIL + GLINK/QRTR/QMI，全程无 MHI；MHI 是 annibale 侧才出现的新东西。
 - **“QWC NVM”无对应物**：实为 QMI WLFW 上载 regdb + BD 板文件。
 - **“kiwi PCIe RC0”对**（wlan-rc-num=0，基址 0x1c00000）。
-- **“月级”维持，且此前偏乐观**：红杉路线里没有 PCIe host 和 MHI，而 fork 内核今天一行 PCIe 都没有；修正为 **4–8 周真机窗口起步、保守 1.5–3 个月到可用联网**。建议把该行改写为：
-  > Wi-Fi：红杉 = WPSS-PIL+GLINK/QMI+ath11k(ahb)（无 MHI）；annibale WCN7850 = PCIe RC0+MHI+ath12k，需新增 PCIe host 与 MHI host 两块，月级（详见 wcn7850-plan.md）。
+- **“月级”维持，且此前偏乐观**：redwood路线里没有 PCIe host 和 MHI，而 fork 内核今天一行 PCIe 都没有；修正为 **4–8 周真机窗口起步、保守 1.5–3 个月到可用联网**。建议把该行改写为：
+> Wi-Fi：redwood = WPSS-PIL+GLINK/QMI+ath11k(ahb)（无 MHI）；annibale WCN7850 = PCIe RC0+MHI+ath12k，需新增 PCIe host 与 MHI host 两块，月级（详见 wcn7850-plan.md）。
 
 ---
 
 ## 4. 最小可行路线排序
 
-原则：沿用红杉"分步 boot-arg + 先读后写"打法；每步独立可验证；先证明总线，再证明固件，最后才是 802.11。
+原则：沿用redwood"分步 boot-arg + 先读后写"打法；每步独立可验证；先证明总线，再证明固件，最后才是 802.11。
 
 | 步 | 内容 | 新增/改动 | 难度 | 盲写比例 |
 |---|---|---|---|---|
