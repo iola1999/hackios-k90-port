@@ -5,6 +5,11 @@ annibale-backup/
 logs-fetch.log
 tools/qemu-efi/*.fd
 
+# 本地调试截图、日志摘录和转储；文字结论保存在 Markdown 文档中
+/docs/progress/evidence/
+/docs/analysis/data/*-debug.txt
+/docs/analysis/local/
+
 # 子模块工作树里的构建产物（父仓库本不跟踪子模块内容，列在这里只为直观）
 hackios-xnu-kernel/out/
 hackios-xnu-kernel/logs/
