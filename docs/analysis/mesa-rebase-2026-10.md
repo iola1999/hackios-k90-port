@@ -7,7 +7,7 @@
 - 8 个 fork 补丁在 26.2.5 上：**4 个原样存活**（air-frontend、air-metal、ir3-round-default、ir3-ssbo-subdword，其中 ssbo-subdword 带 fuzz），**1 个可安全退役**（ir3-shift-split，触发 bug 的上游折叠逻辑已消失），**3 个部分失效需改写**（air-ir3、freedreno-darwin、osmesa-es-profile），全部失效点已被 `rebase-26/0003` 适配层覆盖。
 - darwin 原生编译**全绿**：26.2.5 + 两个 cherry-pick + 适配层后 `ninja` 零错误，产出 `libOSMesa.8.dylib`（20.3 MB，导出 1300 个 `gl*` + 13 个 `OSMesa*`），软管线冒烟（clear→readPixels 像素正确、ES profile 上下文报 "OpenGL ES 3.1 Mesa 26.2.5"）通过。
 - a8xx（SM8750/adreno-830，chipid 0x44050000）：真实 devinfo 条目 26.1.0 起才存在（26.0.x 的 "FD830" 是 cffdump 假条目），`CHIP >= A8XX` 运行时分支 26.0.0 起可用；两个 7 月修复（2ee0a5e6 indirect-buffer WFM、779cdb8e gen8+ query barriers）只进 26.3，cherry-pick 到 26.2.5 干净。
-- 建议路线：**26.2.5 + 0001 + 0002 + 适配层**为基线试验版本；剩余大头是自研 AIR 前端的 26.x NIR/st API 迁移（编译失败，约 12 类机械错误，未开始改）。
+- 建议路线：**26.2.5 + 0001 + 0002 + 适配层**为基线试验版本；自研 AIR 前端的 26.x NIR/st API 迁移**已完成**（第 8 节：编译链接全绿 + 软管线冒烟通过，改动全部在 `tools/mesa/air/` copy 目录内）。
 - 阻塞点：hackios-dev 容器缺 meson/ninja/bison/flex/theos，iOS 交叉构建未做；真机 freedreno 路径未验证（需用户态整机跑通后测）。
 
 ## 1. 试验设置与复现
@@ -49,7 +49,7 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 
 验证（macOS 主机）：`ninja` rc=0；`nm -gU` 见 1300 个 `_gl*`、13 个 `_OSMesa*`；`rebase-26/smoke-osmesa.c` 输出 `GL_VERSION: 3.3 (Compatibility Profile) Mesa 26.2.5 / GL_RENDERER: softpipe`，clear(0.25,0.5,0.75) 回读像素 (64,128,191,255) 正确；`smoke-osmesa-es.c` 用 `OSMESA_ES_PROFILE` 建出 "OpenGL ES 3.1" 上下文。真机 msm 屏路径（osmesa_target 的 driinfo "msm" screen 创建 + IOSurface 导入）未经设备验证。
 
-## 4. AIR 前端 26.x API 漂移（未迁移，下一步主体）
+## 4. AIR 前端 26.x API 漂移（已按第 8 节迁移完成）
 
 `src/compiler/air`（copy 目录）在 26.2.5 下 `air_run` 与 `libredwoodair` 编译失败（每 TU 20 错误被截断），归为 12 类机械问题：`PIPE_SHADER_*`→`MESA_SHADER_*`；`gl_shader_stage`→`mesa_shader_stage` 及 `gl_shader_stage_name` 转内部；`nir_builder.exact` 移除（4 处）；NIR pass 参数 `nir_shader*`→`nir_function_impl*`（2 处）；3 个函数签名参数数变化（含 air_run.c 里同样的 `driParseConfigFiles` 10 参调用）；`pipe_screen.get_compiler_options` 移除；`pipe_context.create_surface` 移除；glsl_type 查询回调返回类型 int→unsigned。libOSMesa 主库不受影响（air 目标 `build_by_default:false`）。预计 1–2 个工作日，全部是机械改写 + 一轮语义复核（尤其 `b->exact` 移除后 iadd 溢出标志的取舍）。
 
@@ -73,6 +73,42 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 - 主机侧本次装了 brew bison 3.8.2（系统 2.3 不可用）；meson 用 /tmp 临时 venv，均为试验环境，不进 prebuilt 流程。
 - 上游源：GitHub 镜像不可靠，走 gitlab.freedesktop.org（GitLab API project 176 查 commit/diff）+ archive.mesa3d.org tarball；`git ls-remote --tags` 的 tag 有 `mesa-` 前缀。
 - 过程文件（构建日志、参考树、diff 前的原树）在 `/tmp/mesa-rebase/`，非持久。
+
+## 8. AIR 前端迁移到 26.2.5（task-6，已完成）
+
+按第 4 节清单把 `tools/mesa/air/`（copy 目录，源即真身，不另做补丁）迁到 26.2.5：`libair.a`、`air2nir`、`air_run`、`libredwoodair.dylib` 及 `air_metal_test` 全部编译链接通过，软管线冒烟通过。改动 7 个文件 +132/−122，全部落在 `tools/mesa/air/`，`rebase-26/0003` 无需连带修改。
+
+### 8.1 逐类落地情况
+
+| 第 4 节清单项 | 落地方式 |
+| --- | --- |
+| `PIPE_SHADER_*`→`MESA_SHADER_*` | 全局改名（`PIPE_SHADER_IR_NIR` 仍在 p_defines.h，不受影响）；`enum pipe_shader_type`→`mesa_shader_stage` |
+| `gl_shader_stage`/`gl_shader_stage_name` | →`mesa_shader_stage`/`_mesa_shader_stage_to_string`（shader_enums.h） |
+| `nir_builder.exact` 移除 | 26.x 用 `b.fp_math_ctrl` 位域替代；air_private.h 加 `air_builder_set_exact()`（清/置 `nir_fp_exact` = no_contract\|no_reassoc\|no_transform），4 处 save/restore 改存 `uint32_t`，语义等价 |
+| NIR pass 参数 `nir_shader*`→`nir_function_impl*` | `nir_block_create(c->nir)`→`nir_block_create(c->b.impl)`（2 处）；`nir_shader_create` 第四参 driver_options 删除（1 处） |
+| 3 个函数签名参数数变化 | `driParseConfigFiles` 10 参→`driConfigFileParseParams` 3 参（air_run.c、air_metal.c 两处，与 0003 同款只填 screenNum/driverName）；`set_constant_buffer` 去 `take_ownership`；`set_sampler_views` 去尾 bool |
+| `get_compiler_options` 移除 | 改读 `screen->nir_options[MESA_SHADER_*]`（freedreno 对 i≤COMPUTE 都填；null=无 NIR，判空语义不变） |
+| `create_surface` 移除 | **实际比清单更大**：26.x 的 `pipe_surface` 成了纯值结构，`pipe_framebuffer_state.cbufs/zsbuf` 按值内嵌。air_metal.c 帧目标块与 air_run.c RT 循环重写为 `pipe_surface_init()` 就地填充，销毁=对 `.texture` 做 `pipe_resource_reference(&…, NULL)`（与 u_fb_copy/u_fb_destroy 的上游惯例一致）；值填充不可能失败，原两条 create 失败错误分支按语义删除 |
+| glsl_type 回调返回 int→unsigned | 两处 `type_size_vec4` 返回类型改 `unsigned` |
+
+### 8.2 清单之外新发现的漂移（本节为权威清单）
+
+- `pipe->clear` 6 参→8 参：新增 `color_clear_mask`/`stencil_clear_mask`/`scissor_state`；两处调用改传 `0xf`/`0xff`/NULL（整面清除，attachments 仍由 buffers 位决定）。
+- `pipe_screen.get_compute_param` 移除，改 `screen->compute_caps` 值结构：`max_threads_per_group` 直读；**`subgroup_sizes` 语义变了**——25.0.7 freedreno 答字面 32，26.x 存"支持宽度集合的位掩码"（rusticl 取位号还原，freedreno 填 `threadsize_base |= 2×base`），取最低位（32|64→32）作为执行宽度；softpipe 全零时仍回退 1，与旧 decline 行为一致。
+- `unreachable()` 改名 `UNREACHABLE()`（util/macros.h），air_metal.c 补 include。
+- `nir_copy_prop`→`nir_opt_copy_prop`（air2nir.c，1 处）。
+- 上游删 `ir3_cmdline.c` 的连带面在测试侧：`discardcheck.py`/`cpuref.py` 需要 `ir3-compiler` 工具（26.x 没有），这两个 harness 在 26.x 主机环境暂不可跑，属 harness 待适配而非前端缺陷。
+
+### 8.3 软管线冒烟（macOS 主机，`AIR_RUN_SOFTWARE=1`，air_run/air_metal_test 均为 26.2.5 产物）
+
+- `fragpos.ll`（自证像素坐标约定的片元着色器）：air_run 4×4 绘制回读像素 (0,0) = **(0.5, 0.5, 0, 1)**，左上原点+y 翻转视口正确。
+- `tools/air/texopcheck.py`：纹理取样 **27/27** 逐一精确命中。
+- `tools/air/argbufruncheck.sh`（走 libredwoodair 的 compute dispatch + 渲染双路径、参数缓冲上传、fence）：**20/20 通过**（air_metal_test 需 install_name_tool 把 `/redwood/lib/libredwoodair.dylib` 改指本地 dylib，纯主机链接路径问题）。
+- 未做：`ios165/rootfs` 的 456 模块 corpus 未在本机解包，corpus.py/intrincheck 语料项跑 0 例（脚本自报 "NOTHING WAS COMPARED"，非失败）；iOS 交叉与真机仍按第 6 节顺序待设备。
+
+### 8.4 复现
+
+构建树 `/tmp/mesa-rebase`（REBASE=26 流程产物）：改 `tools/mesa/air/` 后 `rsync -a --delete` 进 `mesa-26.2.5/src/compiler/air/`，`ninja -C build-darwin -k 0 src/gallium/drivers/freedreno/air_run src/gallium/drivers/freedreno/libredwoodair.dylib src/compiler/air/air2nir src/gallium/drivers/freedreno/air_metal_test`。
 
 ## 附录 A：复现命令
 
