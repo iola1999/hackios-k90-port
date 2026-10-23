@@ -14,7 +14,7 @@
 |---|---|---|---|
 | `xnu-annibale-log.img` (A) | loader.efi(-DDIRECT_PHONE_PLAT) + `--usb` | **首选**：诊断——loader 驻留等 USB；USB 失败则日志落 boot_a | `fastboot boot`（1.26MB，LK 容量内；DTB 槽用 empty.dtb，真 DT 在 FD 内） |
 | `xnu-annibale-auto.img` (B) | loader.efi + kernel(旧 prebuilt) | 自动起 iOS 内核（盲跑），panic 日志落 boot_a；已被 C 取代，留作对照 | `fastboot flash boot_a` + `--set-active=a` + `reboot` |
-| `xnu-annibale-c.img` (C) 8,028,160 B | loader(-DDIRECT_PHONE_PLAT) + 自建 kernel(1dfe4b2，含 hv_haptic) + root.apfs + `--rdfile userdata:2492203008:tail`，cmdline `debug=0x10e serial=3` | **主推**：图形锁屏冲刺（暂存步骤先过暂停门）。payload bytesum=564237e9（boot_a 日志里的对账指纹） | `fastboot flash boot_a` + `--set-active=a` + `reboot`（见下方流程） |
+| `xnu-annibale-c.img` (C) 8,036,352 B | loader(-DDIRECT_PHONE_PLAT) + 自建 kernel(3c4c534，含 hv_haptic 修正 + buttons/battery/torch 三驱动) + root.apfs + `--rdfile userdata:2492203008:tail`，cmdline `debug=0x10e serial=3` | **主推**：图形锁屏冲刺（暂存步骤先过暂停门）。payload bytesum=566a1d37（boot_a 日志里的对账指纹） | `fastboot flash boot_a` + `--set-active=a` + `reboot`（见下方流程） |
 
 FD 均含：XNUP 补丁 + boot_a 日志回退 + 合并 DTB（vendor_boot base ⊕ dtbo overlay）+ K90 面板 XML。
 
@@ -91,10 +91,10 @@ fastboot --set-active=b && fastboot reboot          # 任何时候回用户 Andr
 C 的图形里程碑达成后，逐个外设加旗标复测（payload `--cmdline` 追加）：
 
 - `touchscreen=2`：annibale Goodix 触摸（cc9ff58 参数化）。锁屏上手指的滑动解锁就是验收；坏了指纹=日志落 boot_a 里 `goodix:` 前缀行。
-- `hv_haptic=3`：PMIC 震动自检——起内核后 30 ms 直驱一次马达，**手感就是验收** （屏幕/串口都看不到它）。没感觉再加 `haptic_amp=128` 试更大；仍无 → boot_a 读 `haptic:` 前缀（arbiter 表、revision、fault 都在里面）。
+- `hv_haptic=3`：PMIC 震动自检——起内核后 30 ms 直驱一次马达，**手感就是验收** （屏幕/串口都看不到它）。注意 059a59e 修正了 ppid（0x0f0→0x7f0，TI 块在 slave 7，DT 路径裁决），**旧镜像这步必然无感，必须用新 kernel**。没感觉再加 `haptic_amp=128` 试更大；仍无 → boot_a 读 `haptic:` 前缀（arbiter 表、revision、fault 都在里面）。
 - `hv_haptic=4`：iOS 反馈直通马达（/dev/redwood-haptic，DIRECT_PLAY 跟随响度）。桌面点击该有震感。上限 1 s/次，fault 自动弃疗。
-- `buttons=1`：音量/电源键（待离线移植；音量上=TLMM GPIO6 直读，电源/音量下=PMK8550 PON 纯读）。
-- `torch_secs=3`：手电盲测——亮 3 秒自己灭，肉眼即验收（待离线移植，PMI 闪光灯块）。
-- 电池（待定型：内核 SPMI 直读 PMIH010X FG）：验收=屏幕电量图标出数。
-- **真机一把过批次**：cmdline 一次带全 `touchscreen=2 hv_haptic=3 buttons=1 torch_secs=3`，观察顺序 看屏→搓屏→手感→音量键→手电→电量图标，收尾 `adb pull /vendor/lib64/camera`（纯拷贝，不动块）。
+- `buttons=1`：音量/电源键（已入库 redwood_buttons_hv.c，纯读零写入 PMIC）。音量上=PMI GPIO slave1 function 0x18d 低有效带上拉（DT #L9164/#L21098，**不是**任务书早先写的 TLMM GPIO6——若真机无事件先查这条）；电源/音量下=PMK8550 PON（KPDPWR/RESIN）。按键事件进 boot_a 日志 `buttons:` 行 + `/dev/redwood-input`。细分步 `buttons_hv_steps=1..5`。
+- `torch_secs=3`：手电盲测——亮 3 秒自己灭，肉眼即验收（redwood_torch_hv.c；先验 TYPE/SUBTYPE+无 fault 才写，每写必回读；`torch_ma=1..500` 调电流默认 125；实时 fault 直接拒亮不猜）。
+- `battery=1`：电量（redwood_battery_hv.c，纯读）——SDAM 校验 VALID=1 才发布，电量图标出数即验收；step2 全总线 TYPE/SUBTYPE 普查是**勘察红利**（FG=0x0d/SDAM=0x2e 命中自动采用，slave7 优先），boot_a 里 `battery:` 前缀可回收全部 PMIC 外设表。细分步 `battery_hv_steps=1..5`。
+- **真机一把过批次**：cmdline 一次带全 `touchscreen=2 hv_haptic=3 buttons=1 battery=1 torch_secs=3`，观察顺序 看屏→搓屏→手感→音量键→手电→电量图标，收尾 `adb pull /vendor/lib64/camera`（纯拷贝，不动块）。
 - 触摸/震动都惰性于默认 cmdline（不带旗标=零动作），QEMU 同理不需要它们。
