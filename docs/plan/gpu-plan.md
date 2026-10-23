@@ -117,24 +117,28 @@ torvalds/linux master（gh api 实查，当前 v7.3）。Mesa/linux-firmware 已
 | **L0** | 维持软渲染（现状）。GPU 不碰 | 0 | 0 | 无（perf 差是已知税） |
 | **L1a** | gen8 上电阶梯：平移红杉步进机（adreno=1..21 语义），地址表 §2.3，寄存器语义抄上游 a8xx_gpu.c/a6xx_gmu.c；先做到"GMU 跑起来 + GX 上电 + 读到 slice 数" | ~2–3 周编码，**盲写 ~30–40%**（有上游逐寄存器对照，AQE 是新面孔但微码已在 linux-firmware，§2.1） | **高**：必须逐步跑（TZ/静默复位文化照抄红杉：pause+loader 旁路日志）。估 3–5 个窗口 | 中高：HFI 时序无第二来源、zap/secure 状态、hypervisor 权限（固件可得性已排除） |
 | **L1b** | 2D blit 合成：ctx0 页表（照抄红杉）+ CP 发 copy/清屏包 + MiniIMF.swap 换 GPU blit | ~1–2 周，盲写 ~40%（a6xx CP 包格式对 gen8 大体在，但 aperture/slice 前置让每个包都要复核；UBWC5 先绕开，用线性像素） | 中 | 中：写花屏可恢复 |
-| **L2** | GLES 服务：RedwoodGPU msm 协议层平移（改动小）+ **押 turnip(A8XX 上游有) 做底座 + GL-over-Vulkan 桥**（红杉 gallium GL 直译不可行，见 §2.1：Mesa GL 无 gen8） | **月级**，盲写高：要么自拖 gallium 过 gen8（无上游对照），要么 ANGLE/MoltenGL 式桥（GL→Vulkan→turnip）。外部未知已消除，剩下是工程量选型 | 中 | 路线重，但风险已从"外部未知"变"可控工时" |
-| **L3** | Metal 全速：air/AIR→NIR 不动，跟随 Mesa **turnip gen8 的 fdl/ISAZ**（非 ir3——gen8 shader ISA 走新后端）；补 IOGPU-free 栈的缺课（红杉也未完成：456 语料里"真机跑通"README 口径 293） | 月级，跟随上游 | 中 | 深水区但**无 iOS 侧风险**；可长期演进 |
+| **L2** | GLES 服务：RedwoodGPU msm 协议层平移（改动小）+ Mesa 底座二选一：**首选 fork rebase 26/27 直译 gallium gen8**（上游 `CHIP >= A8XX` 分支已在接、见 §2.1，红杉补丁栈大概率变薄）；不通再退 **turnip 底座 + GL-over-Vulkan 桥** | 直译路线：周级（rebase+darwin 化+真机 deqp 抽查）；桥路线：月级、盲写高（ANGLE/MoltenGL 式）。先便宜后贵 | 中 | 直译=上游无 CI 背书，可能踩到半截支持；桥=路线重但风险可控 |
+| **L3** | Metal 全速：air/AIR→NIR 不动，**shader 后端仍是 ir3**（a8xx 在 fd6/turnip 都走 ir3，差异由 CHIP 模板 + devinfo props 吸收；`fdl` 只是寄存器发射库——"gen8 换后端"是误传）；补 IOGPU-free 栈的缺课（红杉也未完成：456 语料里"真机跑通"README 口径 293） | 月级，跟随上游 | 中 | 深水区但**无 iOS 侧风险**；可长期演进 |
 
-建议序（Mesa 结论已定）：**L1a → L1b →（选型：GL 桥 vs 自拖 gallium）→ L2**；若只求 UI 流畅，L1b 2D 合成性价比最高，可长期停在 L1b 不上 L2。
+建议序：**fork rebase 实测（1 离线轮，定 L2 选型）→ L1a → L1b → L2（直译或桥，按 rebase 结果定）**；
+若只求 UI 流畅，L1b 2D 合成性价比最高，可长期停在 L1b 不上 L2。rebase 实测不占真机窗口，可与 L1a 编码并行。
 
 ## 5. 放弃 / 推迟准则
 - **立即推迟**：真机验证 L1a 步骤 14–17 连续 3 个窗口过不了（GMU 固件起不来 / 静默复位无解；固件本身已在
   linux-firmware 拿齐，若仍起不来就是 HFI 时序/权限问题，离线再抠边际收益低）→ GPU 回 L0，条目转"perf backlog"，与相机同级往后排。
-- **放弃 L2/L3（保 L1b）**：GL-over-Vulkan 桥做到 2 个月 CA 还喂不饱，或 Mesa GL gen8 迟迟不来且桥风险失控 → 2D 合成 + CPU GLES 兜底即可撑 UI。
+- **放弃 L2/L3（保 L1b）**：rebase 直译实测失败、且 GL-over-Vulkan 桥做 2 个月 CA 还喂不饱 → 2D 合成 + CPU GLES 兜底即可撑 UI（L1b 已解决观感大头）。
 - **放弃整条 GPU 线**：locked/secure 状态下 TZ 拒绝我们碰 GX（红杉时代 `adreno=11/12` 一类探测步就是为此设计，
   先跑等价步）且无解刷方案 → 硬件 GPU 对本工程永久关闭。
 - **止损线**：任何一级连续 2 个真机窗口无前进记录，降级回上一级并写 postmortem 进 docs/analysis/。
 
 ## TODO（留给在线轮）
-1. ~~Mesa a8xx GL/ir3/turnip 支持面~~ **已办结（2026-10-23，§2.1）**：turnip 有、GL 无。
-   余留：L2 选型调研（ANGLE-for-freedreno 桥 vs MoltenGL 式直译，红杉 EAGL 垫片改接 turnip 的改动面）。
+1. ~~Mesa a8xx GL/ir3/turnip 支持面~~ **已办结（2026-10-23，§2.1，两轮实查）**：turnip 成熟；gallium GL 有
+   `CHIP >= A8XX` 运行时分支与专修提交但无 CI 背书。余留＝**离线做**：fork rebase 到 26/27 编 darwin，
+   跑 `tools/mesa` 现有 GLES 用例撞一撞 a830 代码路径（不用真机即可暴露大半缺口）；桥路线改动面调研顺延到 rebase 失败后。
 2. ~~0x44050000 归属~~ **已办结**：上游 catalog 认得（a830，fuse 位勘误 48be91d1）；固件 = linux-firmware
    gen80200 三件套（gmu/sqe/aqe），下载即可，无需真机 dump。zap 是否需要仍看真机（上游 gen80200 无 zapfw）。
 3. HFI 版本号（gen8 用哪个 MSGQ/HFI ver）与 `qcom,gmu-freq-table` 语义（dts 里 0x1dcd6500/0x26be3680）。
-4. 上游 a8xx 合入的具体 tag 序列（当前已知 master v7.3 含）。
+4. ~~上游 a8xx 合入 tag~~ **已办结**：GitHub compare 核验——`288a9320` 在 **v6.19** 内（v6.18 diverged 不含）。
+   另注意内核 catalog 只有 0x44050a01，我们的 0x44050000 仍需自加条目（固件/频率表照抄 0x44050a01）。
 5. `docs/metal.md`（redwoodmetal.m 引用的测量文档）在本仓缺失——从 hackios-xnu-userland 上游仓库补档。
+6. 红杉 fork 相对 upstream Mesa 的落后幅度（`git log --oneline` 数一数 fork 基线到 26/27 的漂移，评估 rebase 真实成本）。

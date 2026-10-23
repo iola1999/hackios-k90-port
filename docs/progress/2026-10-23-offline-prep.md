@@ -63,10 +63,15 @@
     （288a9320，复用 a6xx GMU/HFI 框架）；SM8750 基址从设备树拆齐（3D 0x3d00000、
     GMU 0x3d37000、GPUCC 0x3d90000、SMMU 0x3da0000…），chipid 0x44050000 需自扩
     catalog。红杉全链路（上电阶梯→Mesa redwood-drm 桩→Mini IOSurface/FB→Metal
-    半成品）盘点完毕，L1/L2/L3 三级均不动 iOS 用户态。头号外部未知已当场办结
-    （web 工具恢复后 GitLab API 实查）：**turnip 有 A8XX、gallium GL 没有**；
+    半成品）盘点完毕，L1/L2/L3 三级均不动 iOS 用户态。外部未知经两轮实查收敛
+    （web 恢复后 GitLab API；子 agent 复核修正了我一轮的过度结论——大写串 grep
+    假阴性）：**turnip 的 A8XX 生产可用级；gallium GL 并非零——fd6 已 CHIP 模板化、
+    有 `CHIP >= A8XX` 运行时分支与专修提交，只缺 CI 背书**。L2 选型：先 fork
+    rebase 26/27 直译实测（离线可做、与 L1a 并行），不通再退 turnip+GL 桥。
     0x44050000 上游 catalog 认得（fuse 勘误补丁进 25.3）；gen80200 固件三件套
-    （gmu/sqe/aqe）linux-firmware 直接可拿，L1a 不用等真机 dump。
+    （gmu/sqe/aqe）linux-firmware 直接可拿，L1a 不用等真机 dump。附："Introduce
+    A8x"（288a9320）核验在 v6.19 内、v6.18 不含；"gen8 弃 ir3"系误传，shader
+    后端仍是 ir3，差异由 CHIP 模板+devinfo 吸收。
 12. **相机移植调研完成**：`docs/plan/camera-plan.md`。红杉链路是完整方案（内核
     cam=1..5 + mediaserverd 注入 + 软 ISP，非半成品）；annibale CAMSS 基址/供电/
     I2C 从 /tmp/hw_check.dts 拆齐补录（hw-map 待同步）；L1a TPG→CSID-lite→IFE-lite
