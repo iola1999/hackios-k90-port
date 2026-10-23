@@ -15,7 +15,7 @@
 |---|---|---|---|
 | `xnu-annibale-log.img` (A) | loader.efi(-DDIRECT_PHONE_PLAT) + `--usb` | **首选**：诊断——loader 驻留等 USB；USB 失败则日志落 boot_a | `fastboot boot`（1.26MB，LK 容量内；DTB 槽用 empty.dtb，真 DT 在 FD 内） |
 | `xnu-annibale-auto.img` (B) | loader.efi + kernel(旧 prebuilt) | 自动起 iOS 内核（盲跑），panic 日志落 boot_a；已被 C 取代，留作对照 | `fastboot flash boot_a` + `--set-active=a` + `reboot` |
-| `xnu-annibale-c.img` (C) 8,022,016 B | loader(-DDIRECT_PHONE_PLAT) + 自建 kernel(8a86129) + root.apfs + `--rdfile userdata:2492203008:tail`，cmdline `debug=0x10e serial=3` | **主推**：图形锁屏冲刺。payload bytesum=5630d796（boot_a 日志里的对账指纹） | `fastboot flash boot_a` + `--set-active=a` + `reboot`（见下方流程） |
+| `xnu-annibale-c.img` (C) 8,028,160 B | loader(-DDIRECT_PHONE_PLAT) + 自建 kernel(1dfe4b2，含 hv_haptic) + root.apfs + `--rdfile userdata:2492203008:tail`，cmdline `debug=0x10e serial=3` | **主推**：图形锁屏冲刺（暂存步骤先过暂停门）。payload bytesum=564237e9（boot_a 日志里的对账指纹） | `fastboot flash boot_a` + `--set-active=a` + `reboot`（见下方流程） |
 
 FD 均含：XNUP 补丁 + boot_a 日志回退 + 合并 DTB（vendor_boot base ⊕ dtbo overlay）+ K90 面板 XML。
 
@@ -89,9 +89,15 @@ head -c 2048 /tmp/logdump.bin
 
 ## 变体 C（rdfile，图形锁屏冲刺）流程
 
+> **暂停门（2026-10-23 评审 + 用户指示）**：第 0 步 `stage-system.sh` 向 userdata
+> 尾部写 ~2.4G，事先不校验这些块是否被 f2fs 占用，且现有备份不含 userdata。
+> 当前策略 = 调试只做 RAM 启动、不落持久数据 → 跑第 0 步前必须先经用户同意
+> （或先坐实 super 尾部空闲 extent 方案，见下"窗口数学"）。boot_a 槽是我们的
+> 自留地，flash 它不受此限。
+
 ```bash
 # 0) Android 在 slot _b 上正常开机，KernelSU 授权 adb
-hackios-xnu-kernel/tools/stage-system.sh            # 2.4G system.apfs → userdata 尾部，~2min
+hackios-xnu-kernel/tools/stage-system.sh --yes       # 2.4G system.apfs → userdata 尾部，~2min（⚠ 先过暂停门，用户点头才加 --yes）
 # 1) 烧 c 镜像并切槽（c.img 8.2MB：loader+kernel+root.apfs；system 靠暂存区）
 fastboot flash boot_a hackios-xnu-kernel/xnu-annibale-c.img
 fastboot --set-active=a && fastboot reboot
@@ -109,3 +115,16 @@ fastboot --set-active=b && fastboot reboot          # 任何时候回用户 Andr
 前提是那块确实整段空闲；届时看屏指纹或修好的日志通道确认）。
 super 尾部空闲 extent 是更稳的落点（f2fs 不会碰），偏移要等设备的 loader
 `ufs=1` 日志 + tools/ufs-super.py 解析出 lp 空闲区后固化进 rdfile= 参数。
+
+## 外设开关（改 payload cmdline，重打包 c.img 即可）
+
+C 的图形里程碑达成后，逐个外设加旗标复测（payload `--cmdline` 追加）：
+
+- `touchscreen=2`：annibale Goodix 触摸（cc9ff58 参数化）。锁屏上手指的滑动解锁
+  就是验收；坏了指纹=日志落 boot_a 里 `goodix:` 前缀行。
+- `hv_haptic=3`：PMIC 震动自检——起内核后 30 ms 直驱一次马达，**手感就是验收**
+  （屏幕/串口都看不到它）。没感觉再加 `haptic_amp=128` 试更大；仍无 → boot_a 读
+  `haptic:` 前缀（arbiter 表、revision、fault 都在里面）。
+- `hv_haptic=4`：iOS 反馈直通马达（/dev/redwood-haptic，DIRECT_PLAY 跟随响度）。
+  桌面点击该有震感。上限 1 s/次，fault 自动弃疗。
+- 触摸/震动都惰性于默认 cmdline（不带旗标=零动作），QEMU 同理不需要它们。

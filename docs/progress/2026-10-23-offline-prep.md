@@ -49,8 +49,23 @@
 8. **c.img 重打包**：8,022,016 B，payload bytesum=5630d796，内嵌自建内核 +
    DIRECT_PHONE_PLAT loader + rdfile 参数。装配线必须在 hackios-dev 容器里跑
    （宿主缺 llvm-objcopy，BootShim 重编需要）。
+9. **震动驱动完成**（kernel 2006f81 + prebuilt 1dfe4b2）：新文件
+   `redwood_haptic_hv.c`，自带 SPMI **v7** master（arbiter 布局与 redwood 的 v5
+   完全不同：obsrvr/chnls/core+0x2000 通道表），`hv_haptic=1..4` 四级，参数照抄
+   设备树（hv-haptics TI 内置马达，5714us/1300mV/brake ff 3f 1f）。容器增量编译
+   ≈2min（全量 35min），产物 +17KB；QEMU 回归再次进 SpringBoard（不带旗标=驱动
+   惰性，证明挂载/初始化安全）。c.img 重打包 8,028,160 B / bytesum=564237e9。
+   真机验收=cmdline 加 `hv_haptic=3` 数秒后**手感 30ms 震动**，无需屏幕。
+10. **Wi-Fi 移植调研完成**：`docs/plan/wcn7850-plan.md`。勘误红杉链路（PIL+GLINK/
+    QMI，无 MHI）；annibale WCN7850 走 PCIe RC0@0x1c00000 + MHI，fork 内核两块
+    全新增，估算 4–8 周真机窗口起步。硬前提：先 dump vendor 分区拿固件。
 
 ## 等设备回到视野后（按序）
+
+0. **暂停门**：评审指出 stage-system.sh 往 userdata 尾部写 2.4G 前不校验块占用、
+   且备份不含 userdata；用户指示当前一切调试限 RAM 启动、不做持久化。
+   → 变体 C 的暂存步骤**先问用户**；空窗期可先走 A（USB 诊断，纯 RAM）与
+   super 尾部空闲 extent 的只读勘察（loader `ufs=1` 日志 + tools/ufs-super.py）。
 
 1. `tools/stage-system.sh` → flash `xnu-annibale-c.img` boot_a → `--set-active=a`
    → `reboot` → **看屏**（图形=里程碑；乱码=改 1440x3200 几何；黑+循环=取证回 b）。

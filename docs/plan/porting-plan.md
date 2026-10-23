@@ -66,8 +66,16 @@
   非 a8c000）、GPIO40-43(mux1)/161/162/avdd114、TLMM 0x0f000000、RPMh drv-2 0x16520000
   （TCS 偏移同 0xd00）、供电名 ldob12、SMEM 扫 cmd_db 魔数、引擎时钟=vote 位 24 纯分支 +
   qspi_ref(0x188c4)/固定分频(0x1828c) 读速（无 DFS，GENI_CLK_SEL=0）；redwood 常数零改动。
-  振动 `redwood_haptic.c`（SPMI→LRA）→ annibale hv-haptics SPMI@c42d000 从设备7 f000；
-  Wi-Fi `redwood_wifi.c/wlfw`（QWC NVM 加载 MHI）→ WCN7850 kiwi PCIe RC0，月级；
+  振动 **已完成新驱动 redwood_haptic_hv.c**（kernel 2006f81，等真机）：K90 马达在 PMIC 内置
+  hv-haptics（SPMI 外设 0xf0 驱动/0xf1 图案/0xf2 boost；arbiter **v7** 布局：读通道
+  obsrvr+0x8000·ee+0x20·apid、写 chnls+0x1000·apid、外设表 core+0x2000、属主 cnfg+4n，
+  与 redwood buttons 的 v5 完全不同）——boot-arg `hv_haptic=1..4`：查表读 revision→配置
+  （5714us 周期/1300mV/brake ff 3f 1f/正弦波，全部读回校验）→30ms 直驱自检→iOS 反馈直通
+  （/dev/redwood-haptic，DIRECT_PLAY 跟随响度，tap/长震切分沿用 redwood 语义）；
+  redwood_haptic.c 零改动。
+  Wi-Fi：红杉 = WPSS-PIL+GLINK/QMI+ath11k(ahb)（勘误：无 MHI）；annibale WCN7850 =
+  PCIe RC0@0x1c00000 + MHI + ath12k 蓝本，fork 内核 PCIe host 与 MHI host 两块全新增，
+  4–8 周真机窗口起步/保守 1.5–3 个月（详见 wcn7850-plan.md）；
   相机（camera_*.c 用户态 + redwood_camera.c）→ annibale CSI/IFE 连资源都未映射，
   排在开机之后。root 传输变体 C（rdfile 读 userdata 尾，loader 72bbea4 +
   tools/stage-system.sh）编译就绪，等真机窗口。
