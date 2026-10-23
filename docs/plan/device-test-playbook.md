@@ -77,3 +77,26 @@ head -c 2048 /tmp/logdump.bin
 7. 桌面 wch 串口（921600）是桌上另一台设备（desk-01 JSON）。手机真 console =
    GENI uart **0xa9c000 / 115200n8**（docs/analysis/annibale-hw-map.md），
    QUP 时钟默认 gating，未飞线前别在串口上耗时间。
+8. **面板点亮取决于进入方式**：`reboot`/开机进 slot_a → LK 跑 splash →
+   0xFC800000 区域被 DMA 驱动，loader 的 SCREEN fallback 把我们文字和内核
+   BootArgs.video 都落在真屏上；`fastboot boot` 不经 LK splash → 面板全黑
+   （写 fb 无害）。想看画面必须用 `--set-active=a` + `reboot`。
+
+## 变体 C（rdfile，图形锁屏冲刺）流程
+
+```bash
+# 0) Android 在 slot _b 上正常开机，KernelSU 授权 adb
+hackios-xnu-kernel/tools/stage-system.sh            # 2.4G system.apfs → userdata 尾部，~2min
+# 1) 烧 c 镜像并切槽（c.img 8.2MB：loader+kernel+root.apfs；system 靠暂存区）
+fastboot flash boot_a hackios-xnu-kernel/xnu-annibale-c.img
+fastboot --set-active=a && fastboot reboot
+# 2) 观察（无 USB/串口也能看）：
+#    - 屏亮出 iOS 图形（SpringBoard 或纯黑渐变）→ BootArgs.video 通了，里程碑
+#    - 屏出乱码 → fb 几何/stride 不对，改 loader.c 里 1440x3200 重试
+#    - 屏维持 REDMI splash 后 30s 重启循环 → 内核早期死；回 slot b 取证：
+#      读 boot_a 头部确认是我们的镜像，重刷 auto.img 看是否同样循环
+fastboot --set-active=b && fastboot reboot          # 任何时候回用户 Android
+```
+注意：variant C 的暂存区随时可能被 slot b 的 f2fs 写花——**每次试 C 前重跑 stage**。
+super 尾部空闲 extent 是更稳的落点（f2fs 不会碰），偏移要等设备的 loader
+`ufs=1` 日志 + tools/ufs-super.py 解析出 lp 空闲区后固化进 rdfile= 参数。

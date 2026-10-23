@@ -52,6 +52,23 @@
   已挂进 annibalePkg RAW。**唯一悬念**：DisplayDxe 按 DDIC ID 匹配 `<PanelName>`，
   K90 的 DDIC 自报 ID 未知——USB 日志到手后看 DisplayDxe 打印再定名
 - 内核平台层：UFS 时钟、pinctrl/SPMI、cpufreq、Goodix SPI 触摸改造
+- **图形路线定案（2026-10-23 晚，离线轮）**：内核显示唯一入口是 **BootArgs.video**
+  （QEMU 锁屏 = ramfb BAR 全靠它，chosen 里根本没有 framebuffer 属性）。真机上 loader
+  在 GOP 缺失时把 **LK splash 区 0xFC800000**（DT 的 cont_splash_region，与我方
+  Display_Reserved 同址）填进 BootArgs.video（commit a6bdbab）——**开机到图形锁屏
+  不需要 MDSS/DSI 驱动**；DisplayDxe 的 PanelName 悬念降级为"快进路径不再必需"。
+  前提：用 `--set-active=a + reboot` 启动让 LK 点屏（playbook 陷阱 8）。
+  GPU 加速（Adreno 830/gen8）维持不做；redwood 的 a660 GPU 驱动（redwood_adreno.c，
+  含面板扫描）是将来 perf 的参考蓝本。
+- **外设驱动盘点**（fork 的真机驱动全是 bsd/dev/redwood_*.c 裸寄存器 + boot-arg 开关，
+  无 IOKit 框架）：触摸 `redwood_goodix.c`（GT9916/FT3680 @GENI SE，轮询 IRQ 125Hz）→
+  annibale 改 = SE2 **0xa88000**（勘误：非 a8c000）+ pinctrl-sun GPIO40-43/161/162 +
+  gcc-sm8750 时钟位 + RPMh LDO（L12B/avdd），GENI FIFO 协议跨代一致，天级；
+  振动 `redwood_haptic.c`（SPMI→LRA）→ annibale hv-haptics SPMI@c42d000 从设备7 f000；
+  Wi-Fi `redwood_wifi.c/wlfw`（QWC NVM 加载 MHI）→ WCN7850 kiwi PCIe RC0，月级；
+  相机（camera_*.c 用户态 + redwood_camera.c）→ annibale CSI/IFE 连资源都未映射，
+  排在开机之后。root 传输变体 C（rdfile 读 userdata 尾，loader 72bbea4 +
+  tools/stage-system.sh）编译就绪，等真机窗口。
 - 第一里程碑 = loader USB 日志 + verbose 启动文本；第二 = 锁屏（软渲染，无 GPU/Wi-Fi/音频）
 - `fastboot boot` 已实测：≤2MB 镜像可用（LK 侧容量上限），大镜像走 `_a` 槽 `fastboot flash boot_a`
   （unlocked 橙牌放行；回退 = `--set-active=b`）

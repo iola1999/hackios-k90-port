@@ -1,0 +1,48 @@
+# 2026-10-23 离线准备轮（设备 blackout，用户不在手机前）
+
+背景：slot_a 变体 B（PLAT 修复后）在真机上静默循环，USB 无反应，用户不便操作
+——按指示转向"准备好直到开机+图形+触摸/震动/联网资源"的离线工作。
+
+## 完成
+
+1. **rootfs 路线 D 落地（变体 C，transport 全链路就绪）**
+   - loader `rdfile=<分区>:<字节>[:<偏移>|tail]` XNUP 条目：起内核前用 EDK2
+     BlockIo（读实测可用）把 system.apfs 从分区批量预读进常驻窗
+     （phys_base+RESIDENT_RD_OFFSET），先 memset 清零再填（QEMU 稀疏文件的
+     洞=零，这边手工补），1MB 弹跳缓冲，进度打印。复用 QEMU rdres 的
+     全部下游（md0=root/md1=ramdisk 语义在 loader.c DT writer 处实证一致）。
+     kernel 72bbea4。
+   - mkpayload `--rdfile`；`tools/stage-system.sh`（Android 侧 dd 到 userdata 尾，
+     不动 f2fs 头部；每轮试前重跑防 f2fs 写花）。
+   - `xnu-annibale-c.img` 8,237,056 B 编译就绪（boot_a 100,663,296 B 富余）。
+   - 备选：super 尾部空闲 extent 更稳（f2fs 碰不到），偏移等 `ufs=1` 日志 +
+     tools/ufs-super.py 解析后固化。
+2. **图形直通定案（本轮最大发现）**：内核显示只认 BootArgs.video（QEMU ramfb
+   实证；chosen 无 framebuffer 属性）。GOP==NULL 时 loader 现把 LK splash 区
+   0xFC800000 当 fb 交给内核（kernel a6bdbab）→ **真机图形锁屏不需要 MDSS 驱动**。
+   启动方式必须 `--set-active=a + reboot`（LK 点屏），`fastboot boot` 黑屏。
+   splash_region@0xfc800000 与 DT/Display_Reserved 三方同址已在 hw-map 复核。
+3. **sub agent 交付验收**（各 1 个，符合 ≤3 约束）：
+   - rootfs-strategy.md 终版（含对我早期草稿 4 处勘误：gzip 只 -3.5%、boot_a
+     实测 96MiB、rd=md0 只是设备名、B1 FLASHBOOT 二线定位）。数字已抽查复核。
+   - annibale-hw-map.md 5553 节点重写版；**两处勘误被我在权威 DT 上证实**：
+     触摸 SPI=spi@a88000(SE2)（a8c000 是 I2C SE3×fsa4480）；DT 确有
+     splash_region 0xfc800000+0x2b00000（我此前"无显示 carveout"结论错误）。
+4. **外设驱动盘点**进 porting-plan M3：fork 真机驱动 = bsd/dev/redwood_*.c 裸
+   寄存器全家桶（goodix 触摸/haptic/wifi/ufshc/adreno 3800 行含面板），annibale
+   适配 = 逐驱动换 gcc/pinctrl/PMIC 常数；触摸天级、震动天级、Wi-Fi 月级、
+   相机未映射最后做。
+
+## 等设备回到视野后（按序）
+
+1. `tools/stage-system.sh` → flash `xnu-annibale-c.img` boot_a → `--set-active=a`
+   → `reboot` → **看屏**（图形=里程碑；乱码=改 1440x3200 几何；黑+循环=取证回 b）。
+2. 同场加 LK-splash 截图需求：屏摄几张（LK splash / iOS 画面）归档 evidence/。
+3. loader USB 通道（QCOM_USB_DEVICE OUT 通知）继续排查——现在只是锦上添花
+   （屏就是日志通道了）。
+
+## 设备状态备忘
+
+slot _a active（boot_a=auto.img 8,034,304 B 旧版），静默循环；`--set-active=b`
+随时可回用户 Android（boot_b/userdata 头未动）。c.img 与本轮所有镜像在
+hackios-xnu-kernel/ 根目录（gitignore）。
