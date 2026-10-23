@@ -21,5 +21,6 @@ HackiOS（XNU + 未修改 iOS 16.5 用户态）移植到 REDMI K90（SM8750，�
 - 真机操作前后先看 `docs/plan/device-test-playbook.md` 的陷阱清单。
 - Android 通知栏、手势条消失或 SystemUI 反复崩溃时，先看 [系统界面修复记录](docs/analysis/2026-10-23-android-systemui-recovery.md)。该文档也记录 userdata 尾部暂存的风险、备份边界和 loader USB 日志读取方法；真机调试优先通过 USB 把系统盘传入 RAM。
 - 接手、排查、构建和真机操作前阅读 [项目排查与协作手册](docs/plan/debugging-and-collaboration.md)，按其中的前提、操作、成功条件和失败处理执行；近期实测见 [2026-10-23 调试案例](docs/analysis/2026-10-23-boot-debugging-sop.md)。旧文档与新结果有差异时核对源码、产物和实测时间，设备当前状态重新读取。
+- 经验文档优先记录排查方法、底层原理、判断依据和验收边界；已由代码或工具链解决的问题简短提及，具体命令集中在当前操作手册。
 - 原始日志、截图、转储和本轮产物清单保存在 `.gitignore` 覆盖的本地调试目录，文字结论与必要的日志摘录写进 Markdown；提交前检查父仓库及各子模块的变更归属。
 - 进度与队列的唯一总账是 `docs/plan/2026-10-23-tracking.md`：保持简练（一项一行），细节写进各条目链接的专门文档，不要把展开内容堆回总账。
