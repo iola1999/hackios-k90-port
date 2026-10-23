@@ -68,3 +68,12 @@ head -c 2048 /tmp/logdump.bin
 2. `fastboot boot` 容量上限 ≈2MB（7.5MB 被拒）；大镜像走 flash `_a` 槽。
 3. 设备"无响应地从 USB 消失" ≈ shutdown = 固件跑到最后一步，是好消息。
 4. 一切以 `_b` 槽完好为前提；`_a` 槽和它的 boot_a 分区随我们折腾。
+5. 驻留期主机侧 `18d1:d00d` 可能是 LK 也可能是 loader（同款 PID）。用
+   `getvar product` 区分：秒回 `annibale`=LK；不响应=loader 命令通道未通。
+   `fastboot reboot` 回显 Finished 不作证据（工具对 reboot 不等 OK）。
+6. EDK2 BlockIo **写** UFS 当前不落地（五分区探针全灭；读正常）——"写分区再回
+   Android 取证"的手段暂不可用；可用间接指纹 = payload bytesum、镜像容量、
+   GONE 时长。rootfs 路线 D 只依赖读，不受影响。
+7. 桌面 wch 串口（921600）是桌上另一台设备（desk-01 JSON）。手机真 console =
+   GENI uart **0xa9c000 / 115200n8**（docs/analysis/annibale-hw-map.md），
+   QUP 时钟默认 gating，未飞线前别在串口上耗时间。
