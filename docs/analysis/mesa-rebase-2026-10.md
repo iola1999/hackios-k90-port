@@ -97,7 +97,7 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 - `pipe_screen.get_compute_param` 移除，改 `screen->compute_caps` 值结构：`max_threads_per_group` 直读；**`subgroup_sizes` 语义变了**——25.0.7 freedreno 答字面 32，26.x 存"支持宽度集合的位掩码"（rusticl 取位号还原，freedreno 填 `threadsize_base |= 2×base`），取最低位（32|64→32）作为执行宽度；softpipe 全零时仍回退 1，与旧 decline 行为一致。
 - `unreachable()` 改名 `UNREACHABLE()`（util/macros.h），air_metal.c 补 include。
 - `nir_copy_prop`→`nir_opt_copy_prop`（air2nir.c，1 处）。
-- 上游删 `ir3_cmdline.c` 的连带面在测试侧：`discardcheck.py`/`cpuref.py` 需要 `ir3-compiler` 工具（26.x 没有），这两个 harness 在 26.x 主机环境暂不可跑，属 harness 待适配而非前端缺陷。
+- 上游删 `ir3_cmdline.c` 的连带面在测试侧：`discardcheck.py` 需要 `ir3-compiler` 工具（26.x 没有），已按"无离线编译器则该条 SKIPPED"适配（第 10 节）；`cpuref.py` 本就不碰 ir3，原句把两个 harness 一起归因于 ir3 是错的，纠账见 10.1——它的 host 前置是 metallib corpus（8.3），不是 ir3。同病未修的还有 `fbfetchcheck.py`/`vattrcheck.py`/`corpus.py --ir3`（10.3）。
 
 ### 8.3 软管线冒烟（macOS 主机，`AIR_RUN_SOFTWARE=1`，air_run/air_metal_test 均为 26.2.5 产物）
 
@@ -160,6 +160,37 @@ VERSION=26.2.5 SHA256=794b3d1729075dae7ebd47c7283b7ca0cdb5dec668f7f11cc0a5d82f61
 ### 9.6 交接面
 
 kernel 树的 `tools/mesa/**` 与 `tools/mk-mesa.sh` 是 userland 仓的 overlay（`common/setup.sh` 用 `--work-tree` 展开），本次已按 userland 现内容 rsync 同步过（kernel git 不跟踪它们，status 干净）；正式做法是 lead 提交 userland 后在 kernel 树 `common/ugit` 拉齐。`xnu-deps/host/bin/{ld64,xnu-clang++}` 是脚本运行时生成的未跟踪符号链接，不入库。kbuild 容器未动过（只读探测取 pin）。
+
+## 10. harness 收尾：discardcheck 适配 26.x、cpuref 纠账、SHA256SUMS 扩表（2026-10-23）
+
+### 10.1 纠账：cpuref.py 不需要 ir3-compiler
+
+`cpuref.py` 源码里没有一处 ir3：它的机器是 host triple 下 `llc` 编模块、生成的 C harness 链接运行、与前端折叠后的 NIR 对数（docs/air.md 4 节）。在 26.2.5 的 darwin 产物（§8.4 构建树）上跑 `tools/air/loweringcheck.py`——逐模块走的就是 cpuref 那套——得 `20 of 20 modules behaved as expected -- 18 compared against LLVM on this processor, 2 refused by name`，四个 switch 臂全达。cpuref 的机器在 26.x 上全程可跑；`cpuref.py --all` 覆盖全语料的前置是 `ios165/rootfs` 的 metallib corpus（8.3），与 ir3 无关。§8.2 原句已就地改写。
+
+### 10.2 discardcheck.py 的适配（已入库，不需要编译）
+
+host 侧原判定三段里，前两段（可翻译；NIR 带 `demote` 不带 `terminate`）的 NIR 读数从 `ir3_cmdline` 的顺带打印换成 `air2nir` 默认模式的 `nir_print_shader` 输出（同一台打印机的两个出口，`@demote` 判据不变）；第三段 ir3 指令面在 `$IR3` 二进制不存在时打 SKIPPED 行、不再拦停前两段与 air_run 拒绝校验，存在时行为如旧（25.0.7 老树 bisect 仍可用）。实测（`build-darwin` 产物，`IR3` 指向不存在路径）：`2 of 2 shapes as expected`，rc=0。与设备侧的 `--emit`/`--check` 契约未动。
+
+### 10.3 为什么 26.x 没有等价的离线编译入口
+
+上游在 986530d231（25.3+）删了 `ir3_cmdline.c`，26.x 没有留下替身：NIR→ir3 全在 libgallium 内部（`ir3_compiler_nir.c`），要 screen 与 compiler-options 上下文；`src/freedreno/` 的独立工具（`pgmdump2`、`computerator` 等）吃的是编好的 program 二进制，帮不上；turnip 不在 darwin 配置里。把 cmdline 复活等于给还在漂移的 a8xx 接口重写一个上游不收的工具，而指令形状本来就是设备侧问题：26.x 的 a8xx 编译器对 demote 发自己的 `ir3_DEMOTE` 指令（`ir3_compiler_nir.c`），不是 a6xx 编码器的 DEMOTE→KILL 映射，旧 harness"kill for both kinds"的结论只对 a6xx 成立，现已改写为"两族映射并存、7c+ Gen 3 取哪个由 `--emit`/`--check` 上机裁决"。同病（硬要 `$IR3`）还剩 `fbfetchcheck.py`、`vattrcheck.py`、`corpus.py --ir3` 三家，本次未动，可照 10.2 同款降级。
+
+### 10.4 SHA256SUMS 扩表
+
+`prebuilt/userland/SHA256SUMS`（build.sh 装配时随 prebuilt 一并进 `obj/`，所以构建树里看到的 `obj/SHA256SUMS` 就是它）原来只有老 prebuilt 集 19 条；尾部新增 26.2.5 GL 链六产物区块（libOSMesa.8.dylib、libredwoodair.dylib、libredwood-gl.dylib、gl_test、u2f_test、air_run），路径按构建树 `userland/obj/…` 记，区块头写明来源（out/ 双戳 + GL 分支联链）、root/ 落点同字节、复验命令。这六件不是 prebuilt、build.sh 也不校验这张表，扩表保持文档性；实测复验命令在构建树 6/6 OK。是否把校验接进 build.sh 归闸门定。
+
+### 10.5 复现
+
+```bash
+cd hackios-xnu-userland
+export PATH=/opt/homebrew/opt/llvm/bin:$PATH          # llvm-as/llc/llvm-dis
+D=/tmp/mesa-rebase/build-darwin/src/gallium/drivers/freedreno
+AIR2NIR=/tmp/mesa-rebase/build-darwin/src/compiler/air/air2nir \
+  AIR_RUN=$D/air_run IR3=/nonexistent python3 tools/air/discardcheck.py
+mkdir -p build/mesa-host && ln -s /tmp/mesa-rebase/build-darwin build/mesa-host/build
+python3 tools/air/loweringcheck.py                    # 硬编码 build/mesa-host，跑完删掉符号链接
+(cd hackios-xnu-kernel && sha256sum -c <(grep -E '^[0-9a-f]{64}  userland/obj/' prebuilt/userland/SHA256SUMS))
+```
 
 ## 附录 A：复现命令
 
