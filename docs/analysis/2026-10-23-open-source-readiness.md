@@ -30,7 +30,7 @@
 
 只清理当前文件无法移除旧提交中的标识。本次对含有个人标识的可达历史执行定向替换，保留提交邮箱、上游版权声明及干净的上游历史。重写会改变受影响提交及其后续提交的 ID；顶层历史中的 kernel 子模块指针同步映射到清理后的 commit。
 
-远端更新使用带预期旧值的强制推送，避免覆盖期间出现的新提交。已有其他 checkout 在继续推送前需要重新同步清理后的分支；本地原始历史备份仅用于恢复。分支改写只清理新分支可达的提交。GitHub 的旧 commit URL、隐藏引用、缓存和其他克隆仍可能保留旧内容；公开前需要核对服务器上的旧提交是否仍可读取，GitHub 支持是否清理取决于其敏感数据处理条件；使用只含清理后历史的新仓库发布可以隔离原仓库的旧引用。参见 [GitHub 历史清理说明](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)。
+远端更新使用带预期旧值的强制推送，避免覆盖期间出现的新提交。已有其他 checkout 在继续推送前需要重新同步清理后的分支；本地原始历史备份仅用于恢复。分支改写只清理新分支可达的提交。GitHub 的旧 commit URL、隐藏引用、缓存和其他克隆仍可能保留旧内容；2026-10-23 推送后，通过已认证的 GitHub API 确认顶层仓库和 kernel 的旧提交仍可按 SHA 读取。三个仓库当前均为私有。GitHub 支持是否清理取决于其敏感数据处理条件；使用只含清理后历史的新仓库发布可以隔离原仓库的旧引用。参见 [GitHub 历史清理说明](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)。
 
 ## 4. fork 关系的后续选择
 
@@ -44,4 +44,6 @@ GitHub 公共 REST 接口提供新建 fork，未提供把当前独立仓库直�
 
 本次保留私有可见性。顶层仓库尚未选择单独的许可证；kernel 和 userland 保留各自现有 `LICENSE`。预构建固件、设备提取资料及其他第三方文件的分发许可需要按实际发布内容核对，本次隐私扫描未代替逐项许可审阅。
 
-公开前复查最终分支、标签、Git 历史、Git LFS／Release／Actions 等托管内容，并确认发布范围。具体提交 ID 和远端核对结果记录在本轮完成报告中。
+三个仓库已推送并核对远端 commit；两个代码仓库默认分支均为 `k90-port`。本轮扫描中，待发布分支及标签的可达历史未检出已识别的个人标识，顶层历史中的子模块指针均可在对应子模块分支或标签中找到。当前没有 Release 或 Actions 产物。
+
+公开前复查最终分支、标签、Git 历史、Git LFS／Release／Actions 等托管内容，并确认发布范围。原仓库的旧提交仍可读取，建议发布到只接收清理后历史的新仓库，两个代码仓库可同时从上游建立正式 fork；原仓库继续保持私有。具体提交 ID 和远端核对结果记录在本轮完成报告中。
