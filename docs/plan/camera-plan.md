@@ -2,7 +2,7 @@
 
 状态：调研稿（离线，35 分钟时间盒）。前提 = iOS 已能开机（软渲染锁屏之后）；porting-plan.md 已把相机排在开机之后（[porting-plan.md#L81](./porting-plan.md#L81)、#L91）。
 
-## 0. 结论（TL;DR）
+## 1. 结论（TL;DR）
 
 - redwood（POCO X5 Pro / SM7375 "yupik"）的相机栈**不是半成品，是端到端能跑的裸寄存器方案**：kernel `redwood_camera.c`（cam=1..5 分级）出 RAW10 帧 → mediaserverd 里注入 dylib 冒充 H10ISP 的 FigCaptureDevice → 软 ISP（camera_isp.c）出图，Camera.app 预览 + 快门拍照 + 点按对焦 + 手电都有真机回归脚本（rc.jobs.camera / rc.jobs.photo）。
 - iOS 用户态**没有被裁剪/魔改相机框架**：CMCapture/CMCore 原样跑在 mediaserverd 内，靠 `inject_media.c` 换 `BWFigCaptureDeviceVendor` 的 create 函数接管；camerad/MMCS 不参与出画面。annibale 复用这套用户态零改动，要重写的全部在 kernel/资源层。
@@ -10,7 +10,7 @@
 - 最大未知数 = **主摄 OV50E（光影猎人800，OV 定制）的上电/初始化寄存器表与模式表**，只存在于设备 `/vendor/lib64/camera/com.qti.sensormodule.*.bin`（redwood同款来源），当前 annibale-backup 只有 vendor_boot，**没有 vendor 分区 dump** → 这是 L0/L1 的第一道门。
 - 建议：L1（单摄预览，先 TPG 后真 sensor）3–5 周 + 6–10 个真机窗口；L2（拍照）+2–3 周。sensor 表拿不到则停在 TPG 演示或回 L0。
 
-## 1. redwood现状盘点（以仓库实际代码/注释为准）
+## 2. redwood现状盘点（以仓库实际代码/注释为准）
 
 ### 1.1 kernel：`hackios-xnu-kernel/xnu/files/bsd/dev/redwood_camera.c`（4264 行）
 
@@ -39,7 +39,7 @@
 - 测试/回归：`camera_test.c`（raw/cycle/noise 三模式，帧率、四摄轮切、黑电平噪声表征）、`camera_avtest.m`（AVFoundation 枚举）、`rc.jobs.camera`（开 Camera.app 预览 40s + 快门/切前摄/变焦/点按对焦，靠 loader 假 `/arm-io/isp` 节点出图标）、`rc.jobs.photo`（关 Live Photo 后连按两次快门）。
 - **能做到什么程度（文档口径）**：四摄取流、预览、静止拍照、AF、变焦、手电、噪声测量都写成了真机流程；没有录像/视频稳像/RAW 域多帧。结论：annibale 移植时用户态这一半≈免费，**改动全在 kernel**。
 
-## 2. annibale 侧资源
+## 3. annibale 侧资源
 
 ### 2.1 来源
 
@@ -80,7 +80,7 @@
 
 已映射：SE8/SE9 摄像头 I2C 总线（hw-map §8 #L196-L197）、camera_region×2（§10）。**完全空白**：camcc/CSIPHY/CSID/IFE/CPAS/CDM/SMMU-ife 全部 MMIO 与中断、CSIPHY↔sensor 路由、GDSC/时钟 id（sun camcc 的 RCG/branch 编号）、sensor 供电轨 LDO 名、vendor 侧 sensor 驱动 bin。本档 §2.2/§2.3 应先原样搬进 annibale-hw-map.md 新章节。
 
-## 3. 结构性差异与最小路线
+## 4. 结构性差异与最小路线
 
 ### 3.1 SM7375(yupik) → SM8750(sun) 的差异（对"redwood式裸写"的影响）
 
@@ -108,14 +108,14 @@
 
 合计 L1 = 3–5 周（TPG 先行则风险主要在 CPAS/camcc）；L2 累计 5–8 周。均为周级、单人。
 
-## 4. 放弃 / 推迟准则
+## 5. 放弃 / 推迟准则
 
 1. **vendor dump 门**：拿不到 `/vendor/lib64/camera/com.qti.sensormodule.annibale_*.bin`（或等价 sensor 驱动）且真机 `cam=2` 式探针两次窗口内读不到 OV50E chip ID → **L1b/L2 立即冻结，只保留 L1a TPG 演示或回 L0**；sensor 表反推（从 Android logcat/CamX trace 抠寄存器）不进本期。行动项：下次真机窗口顺路 `adb pull /vendor/lib64/camera`（annibale-backup 现在只有 vendor_boot，无 vendor 分区）。
 2. **CPAS 门**：CPAS/CAMNOC 初始化连续 2 个真机窗口无法让 tfe/gdsc 稳定上电（读回失败/总线挂死）→ 降级为"仅 TPG 内存图 + loader 直接铺 framebuffer"的静态相机演示，相机整体转 perf backlog（与 GPU 同排，见 [gpu-plan.md#L113](./gpu-plan.md#L113) 的先例）。
 3. **窗口预算门**：单周窗口数 < 1 时只做盲写与离线校验（fw tab 解析、寄存器读回白名单），不开新硬件路径。
 4. iOS 侧出现必须动用户态才通的新依赖（capture stack 探测了 annibale 才有的东西）→ 记录后推迟，不阻塞 kernel 分级验证。
 
-## 5. TODO（未及，留待下轮）
+## 6. TODO（未及，留待下轮）
 
 - 反查 supply phandle（0x3f8/0x411/0x3f6/0x3fd/0x5e）→ 具体 PMIC LDO 名与 SPMI 地址；`0x5e`=cam_clk 域供电疑为 titan GDSC 的 regulator。
 - sun camcc 时钟 id 表（dts `clocks=<0x42 N>` 的 N）：从 AOSP `camcc-sun.c` 对表，补进 hw-map。

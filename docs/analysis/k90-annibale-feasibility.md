@@ -4,7 +4,7 @@
 
 ---
 
-## 0. 结论速览
+## 1. 结论速览
 
 1. **可行性**：架构上无死结，同高通家族、GICv3+PSCI 骨架与 redwood 同路；但 778G→8 Elite 跨 4~5 代，**最大门槛是给 SM8750 做 UEFI**（Mu-Silicium 尚无 SM8750 平台包），GPU（Adreno 830 / Mesa 无 a8xx 后端）和 Wi-Fi（WCN785x = ath12k，非 ath11k）是第二梯队工作。第一阶段目标：无 GPU/无 Wi-Fi，framebuffer+触摸软渲染进锁屏（与 QEMU 形态等价）。
 2. **调试不需要格式化手机存储**：日常全部跑 RAM；持久化测试才需要"缩容 + 改 GPT"（非格式化）；唯一真正的清数据事件是解锁 bootloader 那一次。
@@ -13,7 +13,7 @@
 
 ---
 
-## 1. 两个仓库的关系（背景摘要）
+## 2. 两个仓库的关系（背景摘要）
 
 | 仓库 | 作用 |
 |---|---|
@@ -22,7 +22,7 @@
 
 两仓库**合成同一棵树**构建（`common/setup.sh` 把 userland 以 `.userland.git` 检出到 kernel 仓库目录，`common/ugit` 操作之）；仓库内不含任何 Apple 文件（`ios165/fetch.sh` 现场从苹果 CDN 拉取）。启动链：`fastboot boot` → UEFI（Mu-Silicium）→ xnuloader（驻留，提供 USB fastboot 通道/看门狗/日志）→ XNU（驱动替身：APFS、AMFI/Sandbox 替身、IOSurface、输入、GPU、Wi-Fi、音频）→ 原版 iOS launchd → SpringBoard。
 
-## 2. 本机（K90 annibale）硬件体检
+## 3. 本机（K90 annibale）硬件体检
 
 | 项目 | 实测值 | 对移植的意义 |
 |---|---|---|
@@ -41,7 +41,7 @@
 
 设备树已归档：`annibale.fdt`（原件）与 `annibale.dts.gz`（反编译）在本目录。
 
-## 3. `fastboot boot` 实测（本次会话核心验证）
+## 4. `fastboot boot` 实测（本次会话核心验证）
 
 背景：此前"小米 fastboot 不支持 `fastboot boot`"是老机型（LK 时代）的传闻；redwood（POCO X5 Pro，同为小米系）的 `xl enter` 就是靠 `fastboot boot` 起 UEFI 的（[xl:88](../hackios-xnu-kernel/xl)，且注释提示 "刚进 fastboot 第一次 boot 偶尔不生效，需重试"）。本机（K90）上实测：
 
@@ -56,7 +56,7 @@ $ fastboot boot boot_a.img            → Sending 'boot.img' (98304 KB)  OKAY [2
 - **一个诚实的保留项**：`boot_a` 与 `boot_b` 的内核字节级同版（6.6.77 GKI 同构建），因此本次测试无法区分"XBL 真正引导了暂存镜像"还是"回落到槽上镜像正常启动"。这个区分要等自制的 BootShim/UEFI 镜像——其特征（USB 上出现 `xnuloader` fastboot 设备）一眼可辨。就 HackiOS 的风险模型而言，被排除的是"命令被拒"这一否决项，已排除。
 - `getvar all` 还显示：`awu:yes`、`parallel-download-flash:yes`、擦除/逻辑块 4096（GPT dd 恢复按此对齐）。
 
-## 4. 分区备份
+## 5. 分区备份
 
 ### 4.1 本次备份（Mac 本地）
 
@@ -82,13 +82,13 @@ $ fastboot boot boot_a.img            → Sending 'boot.img' (98304 KB)  OKAY [2
 - 4 个"NAS 缺失"（dbg、xbl_ramdump_a/b、xbl_sc_logs）是 NAS 当时有意跳过的日志区，本次已补。
 - 结论：两份备份互为印证、可互为恢复源。恢复方法见 `../annibale-backup/README.md`。
 
-## 5. 存储/格式化三档结论
+## 6. 存储/格式化三档结论
 
 1. **日常调试：零写入**。镜像走 `xl ramdisk` 进 RAM，`/private/var` 是 ramfs；内核 UFS 驱动默认全部分区 `EROFS`（`redwood_ufs.c`："Without ufs_write=1 nothing writes at all"）。
 2. **入场写入（一次性/可逆）**：解锁 bootloader 清一次用户数据；（若 fastboot boot 实测后仍需刷）UEFI 只占 boot 分区——且 K90 有 A/B 双槽，可固定用空闲的 `_a` 槽做实验，`_b` 原样保留。
 3. **持久化测试（可选，非格式化）**：`var_store=1 ufs_write=1` 需要一块自己的分区——`userdata-carve.py` 用 Android 内核 ioctl 原地缩容 f2fs + 重写双份 GPT 切出 `darwin`。**K90 适配点**：本机 `/data` 是 **dm-default-key（inlinecrypt 加密）之上的 f2fs**，redwood 工具 "超级块裸奔在 flash"的前提不成立，脚本会拒收，需要改造；"缩容+改 GPT 必须在同一次 Android 会话内完成（防 fs_mgr 自动长大）"这条纪律依然适用。动手前先备份 GPT（已有）。
 
-## 6. 移植工作分解（对应上游 docs/PORTING.md 五步，K90 具体化）
+## 7. 移植工作分解（对应上游 docs/PORTING.md 五步，K90 具体化）
 
 | 步骤 | 内容 | 量级 |
 |---|---|---|
@@ -98,7 +98,7 @@ $ fastboot boot boot_a.img            → Sending 'boot.img' (98304 KB)  OKAY [2
 | 4 固件 | 从本机拉：`gen80000_*`（GPU）、`adsp.*`（音频）、WCN785x wifi/bt 固件；路径写进 `annibale.conf` | 天级 |
 | 5 跑 | `common/build.sh annibale && common/run.sh annibale`；里程碑：loader USB 日志 → 内核 verbose → 锁屏 | — |
 
-## 7. 风险与下一步
+## 8. 风险与下一步
 
 **风险**：SM8750 UEFI 无现成底子是最大不确定性（可跟进 WoA/edk2-msm 社区 SM8750 进展）；Gunyah 环境下 EL2/内存图细节；modemst 等校准分区恢复顺序；HyperOS 升级可能改分区表（改前先 diff `partitions.txt`）。
 
@@ -109,7 +109,7 @@ $ fastboot boot boot_a.img            → Sending 'boot.img' (98304 KB)  OKAY [2
 - [ ] 若做持久化：先改造 `userdata-carve.py` 适配 dm-default-key f2fs
 - [ ] Mac 上先跑 QEMU 链路验证整套工具（`ios165/fetch.sh` 需 7.4GB 下载与 Linux 环境）
 
-## 附录：文件索引
+## 9. 附录：文件索引
 
 - 本目录：`README.md`（本文）、`annibale.fdt`、`annibale.dts.gz`、`fastboot-test/{getvar-all.txt,fastboot-boot.txt}`
 - 本次备份：`../annibale-backup/20261022-2355/`（含 `nas-compare.txt`）、恢复说明 `../annibale-backup/README.md`

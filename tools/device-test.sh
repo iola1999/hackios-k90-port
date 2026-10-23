@@ -5,7 +5,11 @@
 set -uo pipefail   # F05: a test battery that cannot see a failed pipe reports the wrong verdict
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 K="$ROOT/hackios-xnu-kernel"
-SER=${SER:-${ANDROID_SERIAL}}
+SER=${SER:-${ANDROID_SERIAL:-}}
+if [ -z "$SER" ]; then
+  printf 'Set SER or ANDROID_SERIAL to the device selected from adb/fastboot enumeration.\n' >&2
+  exit 2
+fi
 say() { echo "[device-test] $*"; }
 
 # every grep below consumes its stream to EOF: with pipefail on, grep -q would kill the producer

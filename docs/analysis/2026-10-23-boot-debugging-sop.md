@@ -1,6 +1,6 @@
 # annibale 调试案例与方法验证
 
-记录日期：2026-10-23。来源为 dsh 会话 `session-DSH_SESSION_ID` 与 [Codex 主会话](codex://threads/SOURCE_CONVERSATION_ID)。本文保留有助于后续思考的案例和结论边界；通用方法见[项目排查与协作手册](../plan/debugging-and-collaboration.md)，当前命令见[真机调试手册](../plan/device-test-playbook.md)。
+记录日期：2026-10-23。本文根据 dsh 与 Codex 的本次调试记录整理，保留有助于后续思考的案例和结论边界；通用方法见[项目排查与协作手册](../plan/debugging-and-collaboration.md)，当前命令见[真机调试手册](../plan/device-test-playbook.md)。
 
 本次整理核对到 `handoff-platform.bin`、检查点 68／69、真机 `ios-first/089.log` 中 23:17 的首屏初始化结果，以及用户确认桌面正常后补充的壁纸、半透明和触摸反馈。主会话仍在调试；具体设备状态重新读取。本文按运行目录和文件名定位本地日志，部分已复制到 `docs/progress/evidence/2026-10-23-handoff/`，均按本地产物保存。
 

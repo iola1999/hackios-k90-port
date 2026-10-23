@@ -86,7 +86,7 @@
 - **放弃整条 GPU 线**：locked/secure 状态下 TZ 拒绝我们碰 GX（redwood时代 `adreno=11/12` 一类探测步就是为此设计，先跑等价步）且无解刷方案 → 硬件 GPU 对本工程永久关闭。
 - **止损线**：任何一级连续 2 个真机窗口无前进记录，降级回上一级并写 postmortem 进 docs/analysis/。
 
-## TODO（留给在线轮）
+## 6. TODO（留给在线轮）
 1. ~~Mesa a8xx GL/ir3/turnip 支持面~~ **已办结（2026-10-23，§2.1，两轮实查）**：turnip 成熟；gallium GL 有 `CHIP >= A8XX` 运行时分支与专修提交但无 CI 背书。余留＝**离线做**：fork rebase 到 26/27 编 darwin，跑 `tools/mesa` 现有 GLES 用例撞一撞 a830 代码路径（不用真机即可暴露大半缺口）；桥路线改动面调研顺延到 rebase 失败后。
 2. ~~0x44050000 归属~~ **已办结**：上游 catalog 认得（a830，fuse 位勘误 48be91d1）；固件 = linux-firmware gen80200 三件套（gmu/sqe/aqe），下载即可，无需真机 dump。zap 是否需要仍看真机（上游 gen80200 无 zapfw）。
 3. HFI 版本号（gen8 用哪个 MSGQ/HFI ver）与 `qcom,gmu-freq-table` 语义（dts 里 0x1dcd6500/0x26be3680）。

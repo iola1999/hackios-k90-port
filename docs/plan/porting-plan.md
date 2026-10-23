@@ -2,7 +2,7 @@
 
 制定于 2026-10-23。总目标：**先到 iOS 开机**；**不需要持久化**（全程 RAM 模式，`var_store`/`ufs_write` 不启用，跳过 userdata-carve 适配）。
 
-## 里程碑
+## 1. 里程碑
 
 ### M0 — 工作区 + 构建环境 ✅ 2026-10-23 完成
 - [x] git 工作区 + 两个 submodule（origin=私有仓库，upstream=oosexgang，工作分支 `k90-port`）
@@ -37,11 +37,11 @@
 - 第一里程碑 = loader USB 日志 + verbose 启动文本；第二 = 锁屏（软渲染，无 GPU/Wi-Fi/音频）
 - `fastboot boot` 已实测：≤2MB 镜像可用（LK 侧容量上限），大镜像走 `_a` 槽 `fastboot flash boot_a` （unlocked 橙牌放行；回退 = `--set-active=b`）
 
-## 明确不做（本期）
+## 2. 明确不做（本期）
 
 - 存储持久化（carve d 分区、APFS 写路径）；GPU（gen8/Adreno 830 等 Mesa a8xx）；Wi-Fi ath12k；音频 ADSP；相机。都排在 iOS 开机之后。
 
-## 风险登记
+## 3. 风险登记
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|

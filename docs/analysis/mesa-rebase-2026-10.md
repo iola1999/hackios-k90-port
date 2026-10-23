@@ -2,7 +2,7 @@
 
 日期：2026-10-23。作者：mesa（GPU L2 前置试验，task-5）。产物：本文档 + `hackios-xnu-userland/tools/mesa/rebase-26/`。
 
-## 0. 结论速览
+## 1. 结论速览
 
 - 8 个 fork 补丁在 26.2.5 上：**4 个原样存活**（air-frontend、air-metal、ir3-round-default、ir3-ssbo-subdword，其中 ssbo-subdword 带 fuzz），**1 个可安全退役**（ir3-shift-split，触发 bug 的上游折叠逻辑已消失），**3 个部分失效需改写**（air-ir3、freedreno-darwin、osmesa-es-profile），全部失效点已被 `rebase-26/0003` 适配层覆盖。
 - darwin 原生编译**全绿**：26.2.5 + 两个 cherry-pick + 适配层后 `ninja` 零错误，产出 `libOSMesa.8.dylib`（20.3 MB，导出 1300 个 `gl*` + 13 个 `OSMesa*`），软管线冒烟（clear→readPixels 像素正确、ES profile 上下文报 "OpenGL ES 3.1 Mesa 26.2.5"）通过。
@@ -10,7 +10,7 @@
 - 建议路线：**26.2.5 + 0001 + 0002 + 适配层**为基线试验版本；自研 AIR 前端的 26.x NIR/st API 迁移**已完成**（第 8 节：编译链接全绿 + 软管线冒烟通过，改动全部在 `tools/mesa/air/` copy 目录内）。
 - 阻塞点：hackios-dev 容器缺 meson/ninja/bison/flex/theos，iOS 交叉构建未做；真机 freedreno 路径未验证（需用户态整机跑通后测）。
 
-## 1. 试验设置与复现
+## 2. 试验设置与复现
 
 流程与 `hackios-xnu-userland/tools/mk-mesa.sh` 一致：解压上游 tarball → 依序应用 `tools/mesa/*.patch` → 拷入 `src/compiler/air`、`src/redwood-drm`（mk-mesa.sh 的 copy 目录，不是补丁）→ 应用 rebase-26 层。
 
@@ -18,7 +18,7 @@
 - 构建机：macOS 27 / arm64 主机原生（补丁里的 darwin 分支按 `host_machine.system()=='darwin'` 走，与 iOS 交叉路径同一批代码）。工具链：ninja 1.13.2（brew），bison 3.8.2（brew，**本次会话在主机安装的**，系统 bison 2.3 过老），meson 1.12.1 + mako + pyyaml（venv，临时在 /tmp）。
 - configure 相对 mk-mesa.sh 的改动：去掉 `-Dgallium-vdpau` `-Dgallium-xa`（26.x 已删这两个 option），`-Dshared-glapi=enabled` 保留但上游已标记废弃（deprecation warning），其余 flag 不变。完整命令见本报告末尾附录 A。
 
-## 2. 逐补丁存活表（26.2.5）
+## 3. 逐补丁存活表（26.2.5）
 
 | 补丁 | 严格应用(fuzz=0) | 默认 fuzz | 逐文件明细 | 处置 |
 | --- | --- | --- | --- | --- |
@@ -33,7 +33,7 @@
 
 对照：26.1.8 与 26.3.0-rc1 上默认 fuzz 的失败集合与 26.2.5 基本相同（rc1 另有个别 osmesa 文件缺失跳过导致的退出码差异）。
 
-## 3. 最大成本：上游删除了 OSMesa
+## 4. 最大成本：上游删除了 OSMesa
 
 upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除 OSMesa 前后端，替代路线是 EGL surfaceless；而 hackios 的 CoreAnimation 供帧路径（`userland/src/eagl.c`、`gl_osmesa.c`）dlopen 的是 `libOSMesa.8.dylib`，iOS 侧没有现成 EGL 栈，短期只能恢复 OSMesa。恢复清单（全部固化在 `rebase-26/0003-restore-osmesa-26.x-drift-adaptations.patch`）：
 
@@ -49,32 +49,32 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 
 验证（macOS 主机）：`ninja` rc=0；`nm -gU` 见 1300 个 `_gl*`、13 个 `_OSMesa*`；`rebase-26/smoke-osmesa.c` 输出 `GL_VERSION: 3.3 (Compatibility Profile) Mesa 26.2.5 / GL_RENDERER: softpipe`，clear(0.25,0.5,0.75) 回读像素 (64,128,191,255) 正确；`smoke-osmesa-es.c` 用 `OSMESA_ES_PROFILE` 建出 "OpenGL ES 3.1" 上下文。真机 msm 屏路径（osmesa_target 的 driinfo "msm" screen 创建 + IOSurface 导入）未经设备验证。
 
-## 4. AIR 前端 26.x API 漂移（已按第 8 节迁移完成）
+## 5. AIR 前端 26.x API 漂移（已按第 8 节迁移完成）
 
 `src/compiler/air`（copy 目录）在 26.2.5 下 `air_run` 与 `libredwoodair` 编译失败（每 TU 20 错误被截断），归为 12 类机械问题：`PIPE_SHADER_*`→`MESA_SHADER_*`；`gl_shader_stage`→`mesa_shader_stage` 及 `gl_shader_stage_name` 转内部；`nir_builder.exact` 移除（4 处）；NIR pass 参数 `nir_shader*`→`nir_function_impl*`（2 处）；3 个函数签名参数数变化（含 air_run.c 里同样的 `driParseConfigFiles` 10 参调用）；`pipe_screen.get_compiler_options` 移除；`pipe_context.create_surface` 移除；glsl_type 查询回调返回类型 int→unsigned。libOSMesa 主库不受影响（air 目标 `build_by_default:false`）。预计 1–2 个工作日，全部是机械改写 + 一轮语义复核（尤其 `b->exact` 移除后 iadd 溢出标志的取舍）。
 
-## 5. a8xx（SM8750）可用性结论
+## 6. a8xx（SM8750）可用性结论
 
 - 真实 devinfo：`0xffff44050000` + a8xx_gen1 gallium props（含 `gmem_vpc_bv_pos_buf_size`）由 48be91d1 于 **26.1.0** 进入；26.0.x 仅有 cffdump 假 "FD830"，**26.0.x 否决**。
 - `CHIP >= A8XX` 运行时分支：26.0.0 起存在（fd6_emit.cc 等），26.2.5 齐备。
 - 两个关键修复仅在 26.3-branchpoint：`2ee0a5e6`（Indirect buffer needs WFM on a8xx+，改 fd6_barrier.*/fd6_context.cc）、`779cdb8e`（Fix query barriers for gen8+，改 fd6_query.cc）。cherry-pick 到 26.2.5 零冲突，已作为 `rebase-26/0001、0002` 存档。
 - 26.3.0-rc1 原生含这两个修复，且 fork 补丁栈失败集合与 26.2.5 相同、适配层 0003 仅 `freedreno/meson.build` 2 个 hunk 需手工移植——想省 cherry-pick 可换 26.3 基线，代价是 rc 质量。
 
-## 6. 建议路线
+## 7. 建议路线
 
 1. 短期试验基线：**26.2.5 + 0001 + 0002 + 0003**，`mk-mesa.sh` 的 `VERSION=25.0.7`、`SHA256=592272df…` 改 `26.2.5` / `794b3d17…`，并在原 `for p in tools/mesa/*.patch` 循环后追加 `for p in tools/mesa/rebase-26/*.patch`（rebase-26 子目录不在现有 glob 内；mk-mesa.sh 不在本次写权限内，留给 Lead 改）。
 2. 稳定后整理补丁栈：ir3-shift-split 删除；freedreno-darwin 按功能拆成 drm-meson / bo-iosurface / batch-fb_read / osmesa-target 多片；osmesa 恢复独立成片（升级上游版本时最先重挂的就是它）。
 3. AIR 前端按第 4 节清单迁移，迁移完再谈 iOS 交叉与真机。
 4. 真机验证清单（设备可用后）：a830 上 air_run 单测 → GLES 用例经 eagl/OSMesa 全链路 → `2ee0a5e6/779cdb8e` 针对的 indirect/query 场景专项。
 
-## 7. 环境缺件与阻塞记录
+## 8. 环境缺件与阻塞记录
 
 - hackios-dev 容器（Ubuntu 24.04 arm64）缺 meson、ninja、bison、flex、theos 与 iPhoneOS16.5.sdk，iOS 交叉构建本次未做；未在容器硬装（按约定记录）。
 - 主机侧本次装了 brew bison 3.8.2（系统 2.3 不可用）；meson 用 /tmp 临时 venv，均为试验环境，不进 prebuilt 流程。
 - 上游源：GitHub 镜像不可靠，走 gitlab.freedesktop.org（GitLab API project 176 查 commit/diff）+ archive.mesa3d.org tarball；`git ls-remote --tags` 的 tag 有 `mesa-` 前缀。
 - 过程文件（构建日志、参考树、diff 前的原树）在 `/tmp/mesa-rebase/`，非持久。
 
-## 8. AIR 前端迁移到 26.2.5（task-6，已完成）
+## 9. AIR 前端迁移到 26.2.5（task-6，已完成）
 
 按第 4 节清单把 `tools/mesa/air/`（copy 目录，源即真身，不另做补丁）迁到 26.2.5：`libair.a`、`air2nir`、`air_run`、`libredwoodair.dylib` 及 `air_metal_test` 全部编译链接通过，软管线冒烟通过。改动 7 个文件 +132/−122，全部落在 `tools/mesa/air/`，`rebase-26/0003` 无需连带修改。
 
@@ -110,7 +110,7 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 
 构建树 `/tmp/mesa-rebase`（REBASE=26 流程产物）：改 `tools/mesa/air/` 后 `rsync -a --delete` 进 `mesa-26.2.5/src/compiler/air/`，`ninja -C build-darwin -k 0 src/gallium/drivers/freedreno/air_run src/gallium/drivers/freedreno/libredwoodair.dylib src/compiler/air/air2nir src/gallium/drivers/freedreno/air_metal_test`。
 
-## 9. iOS 交叉构建端到端可复现（26.2.5 基线，2026-10-23）
+## 10. iOS 交叉构建端到端可复现（26.2.5 基线，2026-10-23）
 
 任务背景：用户拍板不再跟上游，构建链可复现升为验收面。此前"在 hackios-dev 容器里跑 mk-mesa.sh"只是一句口头流程，环境缺件靠临场手补，没人能重放。本节把这条链钉死：镜像、脚本、判定面各改到位，`docker/dev.sh` 里一条命令出全部 iOS 产物。
 
@@ -161,7 +161,7 @@ VERSION=26.2.5 SHA256=794b3d1729075dae7ebd47c7283b7ca0cdb5dec668f7f11cc0a5d82f61
 
 kernel 树的 `tools/mesa/**` 与 `tools/mk-mesa.sh` 是 userland 仓的 overlay（`common/setup.sh` 用 `--work-tree` 展开），本次已按 userland 现内容 rsync 同步过（kernel git 不跟踪它们，status 干净）；正式做法是 lead 提交 userland 后在 kernel 树 `common/ugit` 拉齐。`xnu-deps/host/bin/{ld64,xnu-clang++}` 是脚本运行时生成的未跟踪符号链接，不入库。kbuild 容器未动过（只读探测取 pin）。
 
-## 10. harness 收尾：discardcheck 适配 26.x、cpuref 纠账、SHA256SUMS 扩表（2026-10-23）
+## 11. harness 收尾：discardcheck 适配 26.x、cpuref 纠账、SHA256SUMS 扩表（2026-10-23）
 
 ### 10.1 纠账：cpuref.py 不需要 ir3-compiler
 
@@ -194,7 +194,7 @@ python3 tools/air/loweringcheck.py                    # 硬编码 build/mesa-hos
 (cd hackios-xnu-kernel && sha256sum -c <(grep -E '^[0-9a-f]{64}  userland/obj/' prebuilt/userland/SHA256SUMS))
 ```
 
-## 附录 A：复现命令
+## 12. 附录 A：复现命令
 
 ```bash
 # 假设 /tmp/mesa-rebase 下已解压 mesa-26.2.5 并应用 fork 补丁栈 + rebase-26/*.patch，

@@ -9,7 +9,7 @@ iOS 交叉链也已入镜像：theos + ld64（x86_64，靠 OrbStack 的 Rosetta 
 ./dev.sh              # 进容器，工作区挂在 /work
 ```
 
-## 容器内首次初始化（一棵树 = 两个 submodule）
+## 1. 容器内首次初始化（一棵树 = 两个 submodule）
 
 ```sh
 cd /work/hackios-xnu-kernel          # k90-port 分支
@@ -18,7 +18,7 @@ ios165/fetch.sh                      # 7.4GB IPSW，解包到 ios165/extract/
 userland/build.sh                    # 产 userland/{root,system}.apfs（REST=1 可换源）
 ```
 
-## headless 跑 QEMU（验收 iOS 开机的标准姿势）
+## 2. headless 跑 QEMU（验收 iOS 开机的标准姿势）
 
 ```sh
 cd /work/hackios-xnu-kernel
@@ -29,6 +29,6 @@ qemu/touch.py drag up                              # 上滑解屏；qemu/stop.sh
 
 内存：每个 QEMU 实例吃宿主机 ~3GB；`run-ios.sh` 会在可用内存 <3GB 时拒启（OrbStack 虚机内存是真实上限，不够就调 OrbStack 设置或 `QEMU_RAM_GB=3`）。端口：monitor 4444 / QMP 4445（多实例 `-e QEMU_INSTANCE=1`）。
 
-## 性能备注
+## 3. 性能备注
 
 /workspace 走 VirtioFS，大文件（IPSW 解包、apfs 打包）可能慢；若明显拖速，把树挪进容器卷再干活，回写 git 改动即可。

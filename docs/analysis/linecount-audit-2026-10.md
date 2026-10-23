@@ -2,14 +2,14 @@
 
 依据 [AGENTS.md](../../AGENTS.md) 的"代码行数约定"（单文件 ≤800 行；生成表等不可拆者文件头写明理由；存量不回溯、逐个判定）。范围 = `hackios-xnu-kernel` 的 `xnu/files/**`、`xnuloader/*.c`、`wifi/lx/**`、`tools/**`（`git ls-files` 口径，不含 xnu-src 上游树；`wc -l` 统计，2026-10-27 复测）。只读审计，一行代码未动；拆分与排期由 Lead 按本表裁决。用户态侧（`tools/mesa/air/**`、`tools/air/*.py`、userland/src）见姊妹文档 [linecount-audit-userland-2026-10.md](linecount-audit-userland-2026-10.md)（task-16），此处不重列。
 
-## 结论速览
+## 1. 结论速览
 
 - 设备批次 boot-arg 触及面（touchscreen=2、hv_haptic=3、buttons、battery、torch_secs、pcie 路）中，越线文件只有两个：**redwood_goodix.c 1640**（touchscreen=2 生产路）与 **annibale_haptic.c 815**（新文件，越 15 行）。buttons/battery/torch/pcie 各路文件（redwood_buttons 588、annibale_buttons 621、redwood_battery 198、annibale_battery 640、annibale_torch 687、mhi_pcie 603）全部合规。
 - **loader.c 是存量里工程风险最高的一块**：设备轮每次开机都跑它、c.img 同批重打也在动它，拆分必须等设备轮之后。
 - 红杉专属驱动（wifi/camera/adreno/adsp/mic/sound/speaker/haptic/ufshc）已被 task-12 保险丝（`redwood_soc_is_sm8750()`，kernel 265d336）兜底：K90 上入口即 skip，拆分对设备轮风险很小，但属大 diff，建议设备轮后集中排。注意（独立评估 F02/F08 收紧）：保险丝依赖的 TCSR0 寄存器解释尚未实证，task-17 stepper C 的首次调用回读日志是收账点；收账前此类条目的风险按"低（依赖待验证的机型保护）"读，不读成零风险——真实风险按调用关系和产物变化判断，拆分本身不改变运行面。
 - 私有头先例：内核侧已有 `xnu/files/bsd/sys/redwood_qrtr.h`、`redwood_lx.h` 这类跨文件内部头；下表"共享私有头"一律照此放置，不新增构建机制。拆分任务落地时同步进 `xnu/files/bsd/conf/files` 清单（走 patches/series 的 04 片），闸门照旧 kbuild+QEMU。
 
-## 审计表 — 自有代码（>800 行，逐文件判定）
+## 2. 审计表 — 自有代码（>800 行，逐文件判定）
 
 | 文件 | 行数 | 性质 | 建议拆法（层缝，含私有头） | 设备批次风险 | 时机建议 |
 |---|---|---|---|---|---|
@@ -37,7 +37,7 @@
 | xnu/files/bsd/dev/redwood_qmi.c | 957 | 自有（sys/redwood_qmi.h 的实现） | 越线 157 行：编码表接口与事务/指示两部分拆；或接受小越线，待 ath11k QMI 大改时按"大改须合规"顺手拆 | 无（支撑库） | 设备轮后，或等大改触发 |
 | xnu/files/bsd/dev/annibale_haptic.c | 815 | **新文件越线 15 行，处置必填** | 波形/时序参数表抽 `annibale_haptic_data.h`（纯数据头，风格照红杉波形表先例），hv_haptic 状态机与 SPMI 层留 .c → .c 落回 ~600 行；diff 纯搬迁、可 QEMU+真机日志复验 | **有**（hv_haptic=3 是设备批次） | **设备轮前可做**：纯数据表搬迁零行为变化，是全部 22 个文件里唯一"越线且值得轮前动"的；或随该文件下一次行为改动顺手做——由 Lead 裁决 |
 
-## 生成表与上游（分类标注，不细审）
+## 3. 生成表与上游（分类标注，不细审）
 
 | 文件 | 行数 | 判定 |
 |---|---|---|
@@ -47,15 +47,15 @@
 | xnu/files/bsd/miscfs/ramfs/ramfs.c | 1998 | Apple 上游 ramfs——**永不拆** |
 | xnu-deps/hostinc/** | — | vendored 主机头树——不参与内核构建行数口径 |
 
-## 归 task-16（用户态侧，本表不展开）
+## 4. 归 task-16（用户态侧，本表不展开）
 
 tools/mesa/air/**（air_metal.c 6978、air_metal_test.c 6765、air_to_nir.c 4086、air_run.c 2093、air_intrinsics.c 1954、air_module.c 1950、air_metal.h 1313）、tools/air/**（intrincheck.py 2452、kinput.py 1451、metalcheck.py 1387、argbufcheck.py 1096）、tools/metal/owesclass.py 1002（GL 分析边界，归口请 Lead 一并裁定）。见姊妹文档 task-16。
 
-## 新文件预警（不在 git ls-files，拆分归 its owner）
+## 5. 新文件预警（不在 git ls-files，拆分归 its owner）
 
 `xnu/files/bsd/dev/adreno8.c` 2599 行（task-4 在途、当前未跟踪）：**新文件必须合规**，落地时需按 step 组拆（gcc/gmu/smmu/submit/bo）+ `adreno8_private.h`，owner=adreno 队友，排期由 Lead 裁。本审计未动它。
 
-## 统计口径复现
+## 6. 统计口径复现
 
 ```
 cd hackios-xnu-kernel && git ls-files 'xnu/files/**' 'xnuloader/*.c' 'wifi/lx/**' 'tools/**' | xargs wc -l | sort -rn

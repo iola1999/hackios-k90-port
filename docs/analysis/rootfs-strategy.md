@@ -2,7 +2,7 @@
 
 > 调研起草于 2026-10-23（取代同日早期草稿；旧稿勘误见 §0.1）。目标里程碑：**真机开机到锁屏，不要求持久化，文件系统可读即可**。所有行号/数字均为当日在工作区实测（gzip 在 host 直跑，`system.apfs` 为 `userland/build.sh` 当前产物）。
 
-## 0. 一页结论
+## 1. 一页结论
 
 - **现状**：内核只认 RAM 盘 root（`rd=md0` + 设备树 `chosen/memory-map` 的 `RAMDisk` 属性）。QEMU 把 system.apfs 预放在 guest 物理内存里；真机上这块内存目前只能由 PC 经 USB（`xl ramdisk`）灌入，而 K90 的 loader USB 通道还没修好——**这就是"真机没有 root"的全部原因**。
 - **全量进 boot.img 被数字否决**：system.apfs gzip -6 后 **2,406,100,090 B（2.24 GiB）**（内容已是压缩态，只缩 3.5%），而 boot_a 分区实测 **100,663,296 B（96 MiB）**，LK `fastboot boot` 上限 ~2 MiB，payload 容器上限 `PAYLOAD_MAX`=64 MiB——差 24 倍；且 DSC（dyld 共享缓存 ~2 GB）是不可裁的下限。
@@ -21,7 +21,7 @@
 | "boot_a ≥64 MB" | 我方 GPT 备份实测 **96 MiB**（`annibale-backup/20261022-2355/partitions.txt:20`，sde14） |
 | "system ext4 化 22 MB" | 盘上不存在 ext4 路线；fork 自带**完整自研 APFS 驱动**（读为主+root mount+switch_root），无需换格式 |
 
-## 1. QEMU 里 root 到底怎么进内核（问题 1）
+## 2. QEMU 里 root 到底怎么进内核（问题 1）
 
 ### 1.1 总链路
 
@@ -71,7 +71,7 @@ xnu 内核
 - loader 返回后常驻区不再被写（root 只读），**一次灌入可多次 run**——QEMU 与 `xl ramdisk` 共同的复用模式。
 - `redwood_virtio_blk.c`（`/dev/rvblk0`，boot-arg `virtio_blk=1`）在 run-ios.sh 的启动路径里 **没有启用**——它是 APFS 驱动研发期读 host 大镜像（5.6 G rootfs.dmg）用的旁路，与 root 无关。
 
-## 2. fork 现有存储驱动盘点（问题 2）
+## 3. fork 现有存储驱动盘点（问题 2）
 
 | 组件 | 位置 | 实态 |
 |---|---|---|
@@ -90,7 +90,7 @@ xnu 内核
 - 巧合但重要：**SM8750 的 UFSHC 寄存器基址与 redwood（SM7325）同为 0x1d84000** （我方合并 DT：`/soc/ufshc@1d84000`，reg `1d84000/3000` + ice + `mcq_sqd 1da5000`——注意 UFSHCI 4.0 **MCQ**，见 §3.B/§4 风险）。loader 的 `HC_PA` 与内核 `UFSHC_PHYS` 常量都对得上。
 - K90 无 `logdump` 分区：loader 日志回退写 boot_a（会写污染启动槽），且 BlockIo 写本来就不落地——调试期日志走"RAM 留痕 + warm reset 桥"（annibale-uefi-build.md 已立项）。
 
-## 3. 真机选项评估（问题 3，全部给数）
+## 4. 真机选项评估（问题 3，全部给数）
 
 ### 3.0 关键容量数字（实测）
 
@@ -160,7 +160,7 @@ boot.img(不变, ~8 MB) ─▶ BootShim ─▶ Mu UEFI(DXE: UFS/GOP/…) ─▶ 
 - **小 initramfs 只到 panic 前**：现状（root.apfs 4 MB 当 root）就是它——能验证内核起没起，到不了锁屏（没有 launchd 全家 + DSC）。作为 B/C 的回归基准保留。
 - md1 的用途提醒：完整启动时 root.apfs 不是 root 而是 `/redwood`（注入物），方案 C/D 都保留"payload 带 root.apfs"的形态，不要只发 system 不发 root。
 
-## 4. 推荐路线与任务分解（问题 4）
+## 5. 推荐路线与任务分解（问题 4）
 
 **推荐：D 为主线（loader BlockIo 预读 → 常驻 md0），A 否决，B2 缓行；B1 二线，D-USB 先行。** 与 `docs/progress/2026-10-23-annibale-device-trials.md` 既定的"rootfs 路线 D"一致，本文补齐数据与落点选择。
 
@@ -186,7 +186,7 @@ boot.img(不变, ~8 MB) ─▶ BootShim ─▶ Mu UEFI(DXE: UFS/GOP/…) ─▶ 
 | BlockIo 写不落地未修 | loader 日志/持久化受阻（**不阻 D 读路径**） | 日志桥先行；修复另案 |
 | SM8750 MCQ 使 native 换环假设失效 | B1 性能手段受限 | 中转单深度仍可用；T6 探明后再决定是否投 B2 |
 
-## 5. 证据索引
+## 6. 证据索引
 
 - 摆放/参数：[qemu/run-ios.sh](../../hackios-xnu-kernel/qemu/run-ios.sh)（39-43、87-88 行）、[qemu/run.sh](../../hackios-xnu-kernel/qemu/run.sh)、[xnuloader/loader.c](../../hackios-xnu-kernel/xnuloader/loader.c)（26-34、2585-2634、2752-2806、2862-2927、3042-3105、3183-3197、3690-3775、4039）
 - 内核侧：`hackios-xnu-kernel/xnu/redwood.patch`（memdev.c、IOKitBSDInit.cpp RAMDisk/RAMDisk1、bsd_init、vfs_conf APFS vfstable）；`xnu/files/bsd/dev/redwood_{virtio_blk,ufs,ufshc}.c`、`redwood_apfs_check.c:1733-1780`；`userland/src/init.c:37-270,1436`

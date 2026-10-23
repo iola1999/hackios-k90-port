@@ -2,7 +2,7 @@
 
 设备：REDMI K90（annibale，SM8750），slot b = 用户 Android，slot a = 实验区。镜像：变体 A `xnu-annibale-log.img`（1.26MB，fastboot boot 用）、变体 B `xnu-annibale-auto.img`（8.0MB，flash boot_a 用）。
 
-## 已证实的事实
+## 1. 已证实的事实
 
 分级口径（独立评估 F07，docs/analysis/2026-10-23-independent-review.md）：各条的"观测"部分均为实锤；由间接现象（USB 消失、驻留时长、共用 VID/PID、getvar 无响应）推断"固件各阶段跑到哪"属推断，凡此一律标**待验证**——下一轮成功条件是能区分至少四阶段的阶段标记（loader 已运行 / 内核已运行 / 系统盘已挂载 / SpringBoard 已显示）。
 
@@ -14,7 +14,7 @@
 6. **blackbox 分区不收录 `fastboot boot` 会话**：整分区 154MB 扫完，只有 XBL 的 `B-/D-` 与内核 printk，没有我方 EDK2/loader 输出。pstore 空。
 7. **变体 B 首刷观察**：观测：`flash boot_a + --set-active=a + reboot` 后 100s 内 USB 全静默（无 gadget/adb/LK）。归因为下述平台选错 bug 的表现（内核拿 QEMU GIC/核心参数起、早期即死、循环重启不到 fastboot）与现象吻合，但同属推断**待验证**：修复后的复跑日志到手前，不能排除其它早死路径。
 
-## 当天修掉的根因：GOP 缺失 → 平台选择停留在 qemu_virt
+## 2. 当天修掉的根因：GOP 缺失 → 平台选择停留在 qemu_virt
 
 `loader.c` 的 `DIRECT_PHONE_PLAT` 回退只写在"找到 GOP"分支里；K90 面板 XML 未匹配（PanelName 悬念未解）→ DisplayDxe 没产 GOP → `locate_protocol` 失败 → **PLAT 一直是 platform_qemu_virt**。连锁后果：
 
@@ -23,13 +23,13 @@
 
 修复（kernel 仓 commit 872da86）：GOP 缺失时 DIRECT_PHONE_PLAT 也强制选 annibale；`fb_base=0xFC800000`（我方 FD MemoryMapLib 的 `Display_Reserved`；设备自家 DT 的显示保留区是 0xF2400000，两套 carveout 并存，取 EDK2 实际告知 GOP 的那个）。
 
-## LK fastboot 行为备忘
+## 3. LK fastboot 行为备忘
 
 - `fastboot boot` 容量上限 ~2MB；超限/状态脏报 `Load Error`，`reboot bootloader` 重进 LK 再试基本第 2 次就 OKAY。
 - LK 不支持 `fetch`；`reboot fastboot` 进的是 fastbootd（拒收未签名镜像），回 LK 用 `reboot bootloader`。
 - boot_a 只有 Android 侧可读（su dd /dev/block/sde14）；XBL 对反复启动失败多久掉 fastboot 未观察到（变体 B 循环 20+ 分钟未见 LK）。
 
-## 下一步（按依赖排序）
+## 4. 下一步（按依赖排序）
 
 1. 带 PLAT 修复的 A 镜像重跑：若 `usb: started` 后 getvar 仍不应 → 用 idalib 查 QcomPkg USB 端点通知路径；同时探针复测（PLAT 修好后 write_logs 路径应通）。
 2. 变体 B 重刷（boot_a 已是新镜像，等设备可见后 --set-active=a reboot 即可）。

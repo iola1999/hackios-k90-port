@@ -81,7 +81,7 @@
 
 ## 5. 用状态和资源归属理解设备行为
 
-Android、LK fastboot、fastbootd、驻留 loader 和 XNU 是不同执行环境。切换后重新枚举并查询身份；本机 Android/LK 序列号为 `${ANDROID_SERIAL}`，loader 为 `xnuloader`。USB 枚举只说明设备描述可见，协议命令是否可用另行检查。
+Android、LK fastboot、fastbootd、驻留 loader 和 XNU 是不同执行环境。切换后重新枚举并查询身份；Android/LK 的目标序列号通过环境变量 `ANDROID_SERIAL` 提供，loader 使用 `xnuloader`。USB 枚举只说明设备描述可见，协议命令是否可用另行检查。
 
 loader 与 XNU 在其他 CPU 上并行运行，仍共享中断控制器、定时器、内存和固件资源。`cpus=1` 限制 XNU 使用的 CPU 数量，`bootcpu=` 选择启动 CPU；逻辑 CPU 编号与 MPIDR 分别核对。某个初始化动作可能影响仍在处理 USB 的 loader，排查需要检查资源修改范围及调用顺序。单 CPU 交接可作为对照，但运行期间 USB 无响应可能来自控制权已交给内核，须等返回或读取新的启动状态后再判断。
 

@@ -2,7 +2,7 @@
 
 背景：slot_a 变体 B（PLAT 修复后）在真机上静默循环，USB 无反应，用户不便操作——按指示转向"准备好直到开机+图形+触摸/震动/联网资源"的离线工作。
 
-## 完成
+## 1. 完成
 
 1. **rootfs 路线 D 落地（变体 C，transport 全链路就绪）**
    - loader `rdfile=<分区>:<字节>[:<偏移>|tail]` XNUP 条目：起内核前用 EDK2 BlockIo（读实测可用）把 system.apfs 从分区批量预读进常驻窗（phys_base+RESIDENT_RD_OFFSET），先 memset 清零再填（QEMU 稀疏文件的洞=零，这边手工补），1MB 弹跳缓冲，进度打印。复用 QEMU rdres 的全部下游（md0=root/md1=ramdisk 语义在 loader.c DT writer 处实证一致）。kernel 72bbea4。
@@ -15,7 +15,7 @@
    - annibale-hw-map.md 5553 节点重写版；**两处勘误被我在权威 DT 上证实**：触摸 SPI=spi@a88000(SE2)（a8c000 是 I2C SE3×fsa4480）；DT 确有 splash_region 0xfc800000+0x2b00000（我此前"无显示 carveout"结论错误）。
 4. **外设驱动盘点**进 porting-plan M3：fork 真机驱动 = bsd/dev/redwood_*.c 裸寄存器全家桶（goodix 触摸/haptic/wifi/ufshc/adreno 3800 行含面板），annibale 适配 = 逐驱动换 gcc/pinctrl/PMIC 常数；触摸天级、震动天级、Wi-Fi 月级、相机未映射最后做。
 
-## 下午追加（同一离线轮的后半段）
+## 2. 下午追加（同一离线轮的后半段）
 
 5. **内核自建流水线跑通**（详见 docs/analysis/kernel-build-linux.md）：Docker `kbuild` 容器（--platform linux/amd64）theos+clang-11 工具链全量构建 ~35min，增量构建只重编改动文件。首产物已替换 `prebuilt/mach.development.bcm2837` （kernel 8a86129；旧版 9239d4ad… 仍在 git 历史可 A/B）。
 6. **触摸 annibale 参数化完成**（kernel cc9ff58，文档见 porting-plan 盘点）：`redwood_goodix.c` 常数改运行时表，boot-arg `touchscreen=2` 选 annibale 板参数（TLMM/SE 时钟/ldob12 供电/SMEM 扫 cmd_db），redwood 常数零改动。期间打掉两个 host 构建坑（strlcpy shim 63f0f01、varinit 探测缓存 b7ac03a）。
@@ -32,7 +32,7 @@
 17. **AIR 前端迁移 26.x 完成（task-6，userland ced0ed5）**：7 文件 +132/−122 全在 tools/mesa/air/，ninja 全树绿、softpipe 冒烟三连过（fragpos 回读正确/texopcheck 27/27/argbufruncheck 20/20）；清单外新漂移 pipe_surface 值结构化是最大一块（报告 §8）。GPU L2 的地基自此在 26.2.5 上成立。**上游关系改章**（用户拍板）：不再跟进 hackios 上游，贡献攒通用修复反向送 PR、不收则自家开源；内核层机制改造（task-8 patch series 工具等）按我方工程判断放开做。
 18. **PCIe 勘察驱动入库（task-7，kernel f2175a8 + prebuilt 4f5ab24）**：redwood_pcie.c 606 行，`pcie=1..3` 三步只读阶梯（GDSC/TLMM 六脚/LTSSM/链路位 → link up 才做 iATU 借窗 BAR sizing 全存全恢 → MHI 状态机读数），boot-arg 特意用 pcie= 避开老 redwood_wifi.c 的 wifi=（碰撞经裁决：老驱动不动）。QEMU 回归绿，c.img 重打包 8,042,496 B / bytesum=5678cb64，playbook 一把过批次加 pcie=3。**命名三层制获批**（task-10 排队）：板级四件套→annibale_*、IP 级→无前缀（adreno8.c/mhi_pcie.c）、ABI 面（/dev/redwood-*、kern.redwood.*）冻结待真机后改名波。
 
-## 等设备回到视野后（按序）
+## 3. 等设备回到视野后（按序）
 
 0. **暂停门**：评审指出 stage-system.sh 往 userdata 尾部写 2.4G 前不校验块占用、且备份不含 userdata；用户指示当前一切调试限 RAM 启动、不做持久化。→ 变体 C 的暂存步骤**先问用户**；空窗期可先走 A（USB 诊断，纯 RAM）与 super 尾部空闲 extent 的只读勘察（loader `ufs=1` 日志 + tools/ufs-super.py）。
 
@@ -40,7 +40,7 @@
 2. 同场加 LK-splash 截图需求：屏摄几张（LK splash / iOS 画面）归档 evidence/。
 3. loader USB 通道（QCOM_USB_DEVICE OUT 通知）继续排查——现在只是锦上添花（屏就是日志通道了）。
 
-## 设备状态备忘
+## 4. 设备状态备忘
 
 slot _a active（boot_a=auto.img 8,034,304 B 旧版），静默循环；`--set-active=b` 随时可回用户 Android（boot_b/userdata 头未动）。c.img 与本轮所有镜像在 hackios-xnu-kernel/ 根目录（gitignore）。
 19. **mesa iOS 交叉构建可复现（task-9，userland b9baeac + 父仓 983f7ba）**：在重建后的 hackios-dev:latest 容器内 `VERSION=26.2.5 SHA256=794b… REBASE=26 AIR=1 tools/mk-mesa.sh` 端到端 rc=0，产出 libOSMesa.8.dylib（18 659 056 B，1300 个 gl* 导出）、libredwoodair.dylib（13 063 080 B，31 个 rwa_*）、air_run，导出符号面与 host darwin 构建逐名一致。mk-mesa.sh 六处 26.x 修正（vdpau/xa 版本开关、REBASE=26 容忍旧补丁环失败、ld64/xnu-clang++ 自建符号链接、install_name_tool 走 $THEOS、nm→llvm-nm、gl.xml 路径回退）。Dockerfile 固化：iOS 工具链钉版本（theos 304e0799 + ld64/install_name_tool/SDKSettings.plist 三个 sha256 构建期校验，漂移即失败）、amd64 multiarch 层（ports 无 amd64 索引与 zlib1g Multi-Arch:same 互锁的绕法进注释）、apt 依赖补齐（meson 故意不进 apt，走 mk-mesa venv 钉 1.12.1）。溯源结论（报告 §9）：老 prebuilt dylib 历史上从未入库、系 ad hoc 手搓不可复现，从今天起 out/ 产物就是 userland/build.sh 的可复现对接面。kernel 树 common/ugit 视图对齐 b9baeac（修复 .gitignore skip-worktree 丢失导致的 pull 卡死；README/.gitignore/LICENSE 按 setup.sh 设计保留 kernel 版）。

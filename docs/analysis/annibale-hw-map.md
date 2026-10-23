@@ -284,7 +284,7 @@ iOS 侧关键：**splash_region 0xFC800000+0x2B00000（GOP framebuffer / 连续 
 
 sensor 挂线：wide 主摄=CCI0 m1/CSIPHY3/MCLK1(GPIO90)/RESET GPIO6，轨 VIO1.8/VDIG1.15/ VANA2.8(`camera_wide_avdd_ldo`，GPIO127 开关)/VAF3.1/BOB2 2.7；tele=CCI1 m0/CSIPHY1；ultra=QUP SE8 I2C `0x880000`（0x7a）/CSIPHY2；front=SE9 `0x884000`（0x10）/CSIPHY4。供电轨都是 RPMH LDO（走 SPMI，非redwood PM8008i 手撸 I2C）。主摄=光影猎人800 （OV50E 小米定制，50MP/1/1.55"/OIS）；chip ID/上电序列在 vendor sensormodule bin，待真机 `adb pull /vendor/lib64/camera`。
 
-## 附：与既有文档/代码的衔接核对
+## 13. 附：与既有文档/代码的衔接核对
 
 1. `docs/analysis/annibale-uefi-build.md`：merged DTB 生成方式（v3.dtb + 自家 dtbo，fdtoverlay，956,243B）与本文数据源一致；面板 XML 节点 label `dsi_p11_42_0d_0a_p10_dsc_cmd` 的全部被消费字段已在 §4 表中给出。
 2. `docs/analysis/uefi-sm8750.md` 提到的 "kiwi Wi-Fi、Goodix goodix_core 触摸" 与 §6/§3 一致（DT 主 compatible 分别是 `qcom,cnss-kiwi` / `xiaomi,touch-spi`）。

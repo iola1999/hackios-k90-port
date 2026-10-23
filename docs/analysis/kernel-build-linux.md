@@ -2,7 +2,7 @@
 
 背景：`prebuilt/mach.development.bcm2837` 原是上游交付物；我们改 `xnu/files/bsd/dev/redwood_*.c`（如 annibale 触摸参数化 cc9ff58）必须重编内核才能进 payload。macOS 上没有构建所需的一整套 Linux host 工具 + theos，故在 docker 里建（容器 `kbuild` 常驻复用：`docker start kbuild`）。
 
-## 容器与依赖
+## 1. 容器与依赖
 
 ```sh
 docker volume create kb
@@ -13,7 +13,7 @@ docker run -d --name kbuild --platform linux/amd64 \
 - **必须 `--platform linux/amd64`**：theos 的 Linux cctools/ld64 只有 x86_64；OrbStack 的 Rosetta 透明加速，性能可接受（全量 -j8 约 35 分钟）。
 - apt（tuna 源）：`git curl ca-certificates tar xz-utils make clang lld python3 perl flex bison m4 autoconf automake libtool pkg-config zlib1g-dev gawk file unzip zstd libzstd-dev bzip2 zip binutils uuid-dev libssl-dev libxml2-dev libbz2-dev liblzma-dev libncurses-dev python-is-python3`
 
-## theos（XNU 的 SDK 与链接器）
+## 2. theos（XNU 的 SDK 与链接器）
 
 ```sh
 git clone --depth 1 https://github.com/theos/theos.git /root/theos
@@ -22,7 +22,7 @@ curl -sL https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOST
 /root/theos/bin/install-sdk iPhoneOS16.5     # 提供 sdks/iPhoneOS16.5.sdk
 ```
 
-## 构建步骤（容器内，仓库克隆在 /work/repo）
+## 3. 构建步骤（容器内，仓库克隆在 /work/repo）
 
 ```sh
 git clone -b k90-port file:///src /work/repo
@@ -33,7 +33,7 @@ bash xnu-build.sh -j8 BUILD_DSYM=0 KEXT_CREATE_SYMBOL_SET=/bin/true
 
 产物：`xnu-src/xnu-8796.121.2/BUILD/obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837`。
 
-## 踩过的坑（均已修复，前两个已提交进仓库）
+## 4. 踩过的坑（均已修复，前两个已提交进仓库）
 
 | 症状 | 根因 | 修复 |
 |---|---|---|
@@ -47,7 +47,7 @@ bash xnu-build.sh -j8 BUILD_DSYM=0 KEXT_CREATE_SYMBOL_SET=/bin/true
 
 另注意：改了 `hostcompat.h` 后旧 `.o` 不会自动重编（无头文件依赖），要 `rm -rf BUILD/obj/SETUP`。
 
-## 换入 payload 的流程
+## 5. 换入 payload 的流程
 
 ```sh
 docker cp kbuild:/work/repo/xnu-src/xnu-8796.121.2/BUILD/obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837 \
