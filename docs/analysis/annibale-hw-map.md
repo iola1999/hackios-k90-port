@@ -89,7 +89,7 @@ I2C 系触摸（goodix/parade/novatek/synaptics/atmel 的 i2c 节点）合并树
 
 `tools/dts2panelxml.py` 已用字段：`qcom,mdss-dsi-panel-width/height`、`h-/v-front-porch`、`h-/v-back-porch`、`h-/v-pulse-width`、`panel-framerate`、`panel-clockrate`、`panic-lanes`、`mdss-dsc-slice-width/height`、`dsc-version`（默认 0x11）、`on-command`（6 字节头命令流 → UEFI XML `<type> data [delay]`）。这些属性分布在节点的 `qcom,mdss-dsi-display-timings/timing@N` 子块内（工具按 label 抓整块所以能命中）。用法：`python3 tools/dts2panelxml.py <merged.dts> dsi_p11_42_0d_0a_p10_dsc_cmd <out.xml> <PanelName>`。DisplayDxe 按 `<PanelName>`/DDIC ID 匹配，K90 DDIC 自报 ID 仍未取得（待日志）。
 
-**GOP framebuffer**：`/reserved-memory/splash_region`（label `splash_memory`，别名 `cont_splash_region`）`reg = <0 0xfc800000 0 0x2b00000>`（43MB，非 reusable）——与我方 FD `MemoryMapLib` 的 `Display_Reserved`（0xFC800000+0x2B00000）**同址同大小**，loader `platform_annibale.fb_base` 已接（kernel 仓 872da86）。另一显示区 `non_secure_display_region` 是 `shared-dma-pool`+reusable、size 0xfc00000（252MB）、无固定地址（限 4G 内、对齐 4M），Linux CMA 性质，与 EDK2 carveout 是两回事。
+**GOP framebuffer**：`/reserved-memory/splash_region`（label `splash_memory`，别名 `cont_splash_region`）`reg = <0 0xfc800000 0 0x2b00000>`（43MB，非 reusable）——与我方 FD `MemoryMapLib` 的 `Display_Reserved`（0xFC800000+0x2B00000）**同址同大小**，loader `platform_annibale.fb_base` 已接（kernel 仓 872da86）。另一显示区 `non_secure_display_region` 是 `shared-dma-pool`+reusable、size 0xfc00000（252MB）、无固定地址（限 4G 内、对齐 4M），Linux CMA 性质，与 EDK2 carveout 是两回事。**待验证（独立评估 F07）**：同址同大小仅支持"该内存区可定位"；LK 本次启动实际选择的模式/stride/像素格式、接管后面板是否继续扫描、软件写入能否上屏，均无记录——且上表同时存在 1440×3200 默认面板节点与 1156×2510 XML 面板节点，loader 在 GOP 缺失时写死的 `0xFC800000`/1440×3200/stride 5760 是否与实际扫描一致，需真机静态色块+阶段标记验证后才能升格为"显示可用"。
 
 ## 5. 震动：qpnp 压电/LRA 马达
 

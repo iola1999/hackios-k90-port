@@ -19,7 +19,8 @@
 - `common/new-device.sh annibale docs/analysis/data/annibale.fdt` 生成 profile + platform 骨架（已完成，见 k90-port）
 - UEFI 调研：✅ 已出结论（docs/analysis/uefi-sm8750.md）——**Mu-Silicium 主线已支持 SM8750**（dodgePkg/paganiPkg 实测在跑），姊妹机型 myron（K90 Pro Max）入口已被 gbl-chainload 打通（本机 annibale 待同款确认）
 - **构建线已开**（docs/analysis/annibale-uefi-build.md）：镜像仓 `iola1999/hackios-mu-silicium`（main=上游快照，k90-port=工作分支）；`annibalePkg` 骨架已提交（dodgePkg 改名 + **合并 DTB**：vendor_boot base DT ⊕ 自家 dtbo overlay，`fdtoverlay` 合成 956KB）
-- **真机实测结论（2026-10-23）**：`fastboot boot` 我方 FD → BootShim/EDK2/大部分 QcomPkg 驱动/XNU loader **全链路跑通**，最后走"无 OS → shutdown"（设备从 USB 消失 = 成功指纹）。黑屏 = dodge 面板 XML 与 K90 面板不符（预期内）。LK 的 fastboot boot 有容量上限（~2MB，7.5MB 镜像被拒 Load Error）且状态偶发脏（重进 LK 即愈；`reboot fastboot` 进的是 fastbootd=假故障，回 LK 用 `reboot bootloader`）。
+- **UEFI 进构建输入记录（待办，独立评估 F08）**：Mu 工作树在被忽略的独立目录（HEAD `87416d23…`，含 BootShim/Mu_Basecore 等本地状态），顶层两 submodule 指针记不住这些输入。要把 Mu 提交与子模块状态、应用的补丁清单、合并 DTB 与 FD 哈希写进同一份构建输入记录，并在独立目录验证一次完整恢复（本轮未重建 FD，未判定本地状态是否全部可由现有脚本恢复）。
+- **真机实测结论（2026-10-23）**：`fastboot boot` 我方 FD → BootShim/EDK2/大部分 QcomPkg 驱动/XNU loader **全链路跑通**（阶段归属为间接推断，F07 分级：设备从 USB 消失只是间接指纹，支持"跑到最后一步"但不能唯一确定到达阶段，待四阶段阶段标记收账），最后走"无 OS → shutdown"。黑屏 = dodge 面板 XML 与 K90 面板不符（预期内）。LK 的 fastboot boot 有容量上限（~2MB，7.5MB 镜像被拒 Load Error）且状态偶发脏（重进 LK 即愈；`reboot fastboot` 进的是 fastbootd=假故障，回 LK 用 `reboot bootloader`）。
 - 待办：boot_a 日志分区通道首次取证（xnu-annibale-log.img 已备好）→ USB 协议 (QCOM_USB_DEVICE) 卡点定位 → 面板点屏（XML 已按自家 DTS 生成，见 M3）
 - **2026-10-23 下午真机轮结**（详见 docs/progress/2026-10-23-annibale-device-trials.md）：gadget 18d1:d00d 确认为 loader 描述符但命令通道无响应；EDK2 BlockIo 对五个候选分区（boot_a/misc/metadata/logfs/xbl_sc_logs）写全部不落地；串口线是桌上无关设备（真 console pad=QUP4 SE10）；**修掉 GOP 缺失时平台停留 qemu_virt 的选择 bug** （kernel 仓 872da86，此前所有真机轮都带着错平台跑）。
 - **rootfs 策略已定路线 D**（docs/analysis/rootfs-strategy.md）：root.apfs 4.6MB + system 转 ext4 ≈22MB 随 payload 走，loader 经 EDK2 BlockIo 批量读进 RAM 交给内核虚拟盘；不要求内核带 UFS 驱动，与"不需要持久化"匹配。

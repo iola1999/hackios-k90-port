@@ -4,13 +4,15 @@
 
 ## 已证实的事实
 
-1. **全链路 EDK2 接管成立**：`fastboot boot` OKAY 后 ~1s USB 消失（GONE）= LK 把设备交给我们 FD 的 BootShim；运行窗口 >100s。
-2. **loader 的 USB 描述符确实枚举了**：驻留期主机侧出现 gadget `18d1:d00d` （=loader.c `usb_dev_desc` 的 fastboot 标准 VID/PID；此前记 0xCFFD 是十进制 53261 换算错）。但 LK fastboot 同为 18d1:d00d，**区分方法是 `getvar product`：LK 秒回 `annibale`，loader 不响应**（驻留窗口内 getvar 挂 45s+，OUT 端点数据没进 loader 的 usb_rx——QCOM_USB_DEVICE 的 TransferNotification 在 SM8750 上疑似不触发，待查）。
+分级口径（独立评估 F07，docs/analysis/2026-10-23-independent-review.md）：各条的"观测"部分均为实锤；由间接现象（USB 消失、驻留时长、共用 VID/PID、getvar 无响应）推断"固件各阶段跑到哪"属推断，凡此一律标**待验证**——下一轮成功条件是能区分至少四阶段的阶段标记（loader 已运行 / 内核已运行 / 系统盘已挂载 / SpringBoard 已显示）。
+
+1. **全链路 EDK2 接管成立**：观测：`fastboot boot` OKAY 后 ~1s USB 消失（GONE），运行窗口 >100s。阶段归属为推断**待验证**：GONE 只说明 LK 的 fastboot 让出了端口，不能唯一确定 BootShim/EDK2/loader 各自跑到哪；"LK 交给我们 FD 的 BootShim"待阶段标记收账。
+2. **loader 的 USB 描述符确实枚举了**：观测：驻留期主机侧出现 gadget `18d1:d00d` （=loader.c `usb_dev_desc` 的 fastboot 标准 VID/PID；此前记 0xCFFD 是十进制 53261 换算错）。但 LK fastboot 同为 18d1:d00d，**区分方法是 `getvar product`：LK 秒回 `annibale`**（这一侧指纹可靠）；"loader 不响应"（驻留窗口内 getvar 挂 45s+）作为"该 gadget 是我们 loader"的支撑属高置信推断，**loader 具体运行到 usb 轮询哪一步待验证**（OUT 端点数据没进 loader 的 usb_rx——QCOM_USB_DEVICE 的 TransferNotification 在 SM8750 上疑似不触发，待查）。
 3. **驻留期发 `fastboot reboot` 后设备确实回了 Android**（20s 内 adb 可见）。注意 fastboot 工具对 reboot 不等 OK，不能据此断言 loader 命令通道活着，也可能是主机侧 USB 复位触发了 EDK2 路径。
 4. **五分区写探针全灭**：变体 A 探针依次对 boot_a/misc/metadata/logfs/xbl_sc_logs 块 0 写 `XNUPROBE-<名>-001`，回 Android dd 验证：全部保持原内容（misc 还是 Android 自己的 `bootonce-bootloader`）。BlockIo **写** 在 QcomPkg/SM8750 上不落地，读正常。原因待查（写探针打印在 loader 日志里，日志通道恰好就是卡点，鸡生蛋）。
 5. **串口线是假目标**：`/dev/cu.wchusbserial3120` 921600 波特抓到的是桌上另一台设备（desk-01，周期 JSON）；手机 debug pad 实测在 **QUP4 SE10 UART**（见 docs/analysis/annibale-hw-map.md），当前未飞线。
 6. **blackbox 分区不收录 `fastboot boot` 会话**：整分区 154MB 扫完，只有 XBL 的 `B-/D-` 与内核 printk，没有我方 EDK2/loader 输出。pstore 空。
-7. **变体 B 首刷观察**：`flash boot_a + --set-active=a + reboot` 后 100s 内 USB 全静默（无 gadget/adb/LK）——与下述平台选错 bug 的表现吻合（内核拿着 QEMU 的 GIC/核心参数起，早期即死，循环重启且不到 fastboot）。
+7. **变体 B 首刷观察**：观测：`flash boot_a + --set-active=a + reboot` 后 100s 内 USB 全静默（无 gadget/adb/LK）。归因为下述平台选错 bug 的表现（内核拿 QEMU GIC/核心参数起、早期即死、循环重启不到 fastboot）与现象吻合，但同属推断**待验证**：修复后的复跑日志到手前，不能排除其它早死路径。
 
 ## 当天修掉的根因：GOP 缺失 → 平台选择停留在 qemu_virt
 

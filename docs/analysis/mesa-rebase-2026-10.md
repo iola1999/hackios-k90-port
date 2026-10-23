@@ -122,7 +122,7 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 - `libredwoodair.dylib` 13 063 080 字节，31 个 `rwa_*` 导出，与主机 darwin 构建同数同集合；
 - `air_run` 13 620 416 字节；`exported-gl.txt`、`gl.xml`、`built-from`、`built-from-air` 齐。
 
-判定面要说清楚：二进制本身按 mk-mesa.sh 头注（Mesa 性质，25.0.7 实测两次构建差 9 132 774 字节）不按字节复现，所以"交叉链与已验证的主机链等价"用**导出面**判定，字节哈希只用来对输入（tarball、补丁栈、镜像内工具）钉版。
+判定面要说清楚：二进制本身按 mk-mesa.sh 头注（Mesa 性质，25.0.7 实测两次构建差 9 132 774 字节）不按字节复现，所以"交叉链与已验证的主机链等价"用**导出面**判定，字节哈希只用来对输入（tarball、补丁栈、镜像内工具）钉版。按独立评估 F08 收紧这个"等价"的射程：导出集合一致只确认**符号名称**这一层，不覆盖类型布局、调用约定、运行行为、着色器结果、设备适配——当前可确认的范围就是三条：构建流程完成、产物可识别（名称/数量/输入哈希钉版）、部分主机测试通过（§8.3 软管线冒烟 + check.sh 全套 rc）；"iOS 上行为等价"整句**待设备轮验证**，在此之前不升格。
 
 ### 9.2 交叉路径的真实依赖（此前没人记录的部分）
 
@@ -174,6 +174,8 @@ host 侧原判定三段里，前两段（可翻译；NIR 带 `demote` 不带 `te
 ### 10.3 为什么 26.x 没有等价的离线编译入口
 
 上游在 986530d231（25.3+）删了 `ir3_cmdline.c`，26.x 没有留下替身：NIR→ir3 全在 libgallium 内部（`ir3_compiler_nir.c`），要 screen 与 compiler-options 上下文；`src/freedreno/` 的独立工具（`pgmdump2`、`computerator` 等）吃的是编好的 program 二进制，帮不上；turnip 不在 darwin 配置里。把 cmdline 复活等于给还在漂移的 a8xx 接口重写一个上游不收的工具，而指令形状本来就是设备侧问题：26.x 的 a8xx 编译器对 demote 发自己的 `ir3_DEMOTE` 指令（`ir3_compiler_nir.c`），不是 a6xx 编码器的 DEMOTE→KILL 映射，旧 harness"kill for both kinds"的结论只对 a6xx 成立，现已改写为"两族映射并存、7c+ Gen 3 取哪个由 `--emit`/`--check` 上机裁决"。同病（硬要 `$IR3`）的 `fbfetchcheck.py`、`vattrcheck.py`、`corpus.py --ir3` 三家已照 10.2 同款降级（草稿在 userland 工作树）：`$IR3` 存在时行为一字不改，缺失时 fbfetch 的 isamm 段与 vattr 的 VFD fetch-table 段打 SKIPPED 行计入通过、corpus 的 ir3 列整列去掉表格停在 translate，三家 stderr 各留一行说明，rc 均不拦停——check.sh 只取这三家的退出码，26.x host 上从此不再硬失败。实测（`build-darwin` 产物、`IR3` 指向不存在路径）：fbfetch `7 of 7`、vattr `16 of 16`（QuartzCore 缺库段照旧自报 NO REAL MODULE）、corpus 拿单个 `.bc` 走 `--ir3` 去列 rc=0。
+
+设备轮观察项排期（F08）：本节的 `--emit`/`--check` 上机裁决（含 discardcheck 设备契约、ir3_DEMOTE-vs-KILL 收账）是 GL 族观察项，排在 F07 四阶段观测与启动验收**之后**——下一个真机窗口优先阶段标记与静态色块，GL 族在启动验收通过后同轮再排，不在一轮里叠加多个新启用面。
 
 ### 10.4 SHA256SUMS 扩表
 

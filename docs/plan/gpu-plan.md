@@ -1,6 +1,6 @@
 # GPU 计划（SM8750 / Adreno 830 "sun"）— 离线调研 2026-10
 
-状态：调研文档。porting-plan.md 里 "GPU 加速维持不做" 维持不变；本文回答"将来要做时，从哪切、要什么、坑在哪"。输入：redwood_adreno.c（4125 行）、RedwoodGPU.cpp（1295 行）、MiniIOSurface/MiniIOMobileFramebuffer、hackios-xnu-userland tools/mesa（air/freedreno 补丁）、/tmp/hw_check.dts（本机 DT 实拆）、torvalds/linux master（gh api 实查，当前 v7.3）。Mesa/linux-firmware 已于 2026-10-23 在线复核完毕（GitLab API），结论见 §2.1——原"最大外部未知"已收敛。
+状态更新（2026-10-27，F08 文档对齐）：**已进入实现期**——adreno8.c L1a 上电阶梯五分片已入库（kernel 80c7f11，task-4 闸门全绿），Mesa 26.2.5 基线（tools/mesa AIR 前端 + 可复现交叉链，docs/analysis/mesa-rebase-2026-10.md）同步落地；porting-plan.md 的 "GPU 加速维持不做" 指本期设备轮不排 GPU 设备批次，离线准备照常。本文仍是实现输入——"从哪切、要什么、坑在哪"正按原文执行。输入：redwood_adreno.c（4125 行）、RedwoodGPU.cpp（1295 行）、MiniIOSurface/MiniIOMobileFramebuffer、hackios-xnu-userland tools/mesa（air/freedreno 补丁）、/tmp/hw_check.dts（本机 DT 实拆）、torvalds/linux master（gh api 实查，当前 v7.3）。Mesa/linux-firmware 已于 2026-10-23 在线复核完毕（GitLab API），结论见 §2.1——原"最大外部未知"已收敛。
 
 ---
 

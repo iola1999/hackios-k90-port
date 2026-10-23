@@ -87,8 +87,8 @@ K90 真机工作仍处于早期启动验证阶段。当前最大的限制是缺�
 | F04 | 🔵处理中 | adreno / task-20 | 失败传播+annibale 入口传 -DDIRECT_PHONE_PLAT+双产物分路径；设备轮打包依赖此项，轮前必完 |
 | F05 | 🔵处理中 | adreno / task-20 | 测试入口 pipefail 与缺依赖汇总 |
 | F06 | ⚖按设计 | Lead | RAM-only 零持久化 + stage-system.sh --yes 用户同意门是既定裁决；"分配与并发"层面的重设计 ⏸暂缓（同意门在，风险受控） |
-| F07 | 🔵处理中 | mesa / task-21 | 显示/启动结论按"已观测/待验证"分级收紧 |
-| F08 | 🔵处理中 | mesa / task-21 | 工程表述与排期按实际消费路径收紧（P2） |
+| F07 | ✅已闭环 | mesa / task-21 | 已审查入库：trials 分级口径段+事实 1/2/7 观测/归属两级、playbook 间接指纹+boot_a 取证标注当前不可用+行 C 指纹说明+四阶段分级段、hw-map GOP 待验证注（随本次父仓提交） |
+| F08 | ✅已闭环 | mesa / task-21 | 已审查入库：mesa-rebase §9.1 收紧到符号名称层+§10.3 GL 观察项排期、内核审计零风险→低（F02 收账点）+Mini 两行改判、porting-plan 间接指纹+UEFI 构建输入记录待办、gpu-plan 状态对齐实现期、README 上游状态行（Lead 补批）（随本次父仓提交） |
 
 
 ### F09：USB 诊断模式带有自动覆盖分区首块的探针

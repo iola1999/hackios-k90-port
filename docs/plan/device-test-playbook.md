@@ -4,9 +4,9 @@
 
 ## 当前设备状态（预期）
 
-- 上一轮 `fastboot boot` 后走"无 OS → shutdown"= 固件全链路健康的指纹，设备**关机**。
+- 上一轮 `fastboot boot` 后走"无 OS → shutdown"，设备**关机**。注意这是**间接指纹**（独立评估 F07）：它支持"固件跑到最后一步"，但不能唯一确定 BootShim/EDK2/loader/内核各自到了哪一阶段；阶段归属以四阶段阶段标记验证为准。
 - Android 完好在 `_b` 槽；`_a` 槽 = 实验田（现在存的是旧实验 boot 镜像）。
-- `xnu-annibale-log.img` 会把日志写进 `boot_a` 分区（GPT 名匹配），随时可 fetch 取证。
+- `xnu-annibale-log.img` 设计为把日志写进 `boot_a` 分区（GPT 名匹配）后 fetch 取证——**当前不可用**：2026-10-23 实测 EDK2 BlockIo 写不落地（陷阱 6、真机试跑记录事实 4），本轮有效观测面 = 屏幕 + USB（若通）+ 主机侧枚举指纹；boot_a 取证是日志通道修复后的恢复手段，下文凡引用 boot_a 日志处同此。
 
 ## 变体清单（备好待测）
 
@@ -14,7 +14,7 @@
 |---|---|---|---|
 | `xnu-annibale-log.img` (A) | loader.efi(-DDIRECT_PHONE_PLAT) + `--usb` | **首选**：诊断——loader 驻留等 USB；USB 失败则日志落 boot_a | `fastboot boot`（1.26MB，LK 容量内；DTB 槽用 empty.dtb，真 DT 在 FD 内） |
 | `xnu-annibale-auto.img` (B) | loader.efi + kernel(旧 prebuilt) | 自动起 iOS 内核（盲跑），panic 日志落 boot_a；已被 C 取代，留作对照 | `fastboot flash boot_a` + `--set-active=a` + `reboot` |
-| `xnu-annibale-c.img` (C) 8,042,496 B | loader(-DDIRECT_PHONE_PLAT) + 自建 kernel(4f5ab24，含 hv 四件套+haptic ppid 修正+PCIe 勘察) + root.apfs + `--rdfile userdata:2492203008:tail`，cmdline `debug=0x10e serial=3` | **主推**：图形锁屏冲刺（暂存步骤先过暂停门）。payload bytesum=5678cb64（boot_a 日志里的对账指纹） | `fastboot flash boot_a` + `--set-active=a` + `reboot`（见下方流程） |
+| `xnu-annibale-c.img` (C) 8,042,496 B | loader(-DDIRECT_PHONE_PLAT) + 自建 kernel(4f5ab24，含 hv 四件套+haptic ppid 修正+PCIe 勘察) + root.apfs + `--rdfile userdata:2492203008:tail`，cmdline `debug=0x10e serial=3` | **主推**：图形锁屏冲刺（暂存步骤先过暂停门）。payload bytesum=5678cb64。行 C 指纹说明（F07）：bytesum/GONE 时长/镜像容量都是**间接指纹**，只能缩小候选阶段，不能唯一判定 loader/内核跑到哪；且 bytesum 的对账位置在 boot_a 日志里，该通道当前不落地（陷阱 6），日志通道恢复后才可用 | `fastboot flash boot_a` + `--set-active=a` + `reboot`（见下方流程） |
 
 FD 均含：XNUP 补丁 + boot_a 日志回退 + 合并 DTB（vendor_boot base ⊕ dtbo overlay）+ K90 面板 XML。
 
@@ -86,6 +86,8 @@ fastboot --set-active=b && fastboot reboot          # 任何时候回用户 Andr
 ```
 注意：variant C 的暂存区随时可能被 slot b 的 f2fs 写花——**每次试 C 前重跑 stage**。窗口数学：变体 C 要 loader 找到 **≥3.35G 单块连续空闲**（resident 2.49G + 内核自身 768M 预留 + 64M，choose_window 取最大自由块，MAX_MEM_SIZE 封顶 6G）。splash 循环不黑屏 = 大概率块不够 → 用 payload `physbase=<地址>` 强制指定（候选 0x100000000，前提是那块确实整段空闲；届时看屏指纹或修好的日志通道确认）。super 尾部空闲 extent 是更稳的落点（f2fs 不会碰），偏移要等设备的 loader `ufs=1` 日志 + tools/ufs-super.py 解析出 lp 空闲区后固化进 rdfile= 参数。
 
+**F07 四阶段分级（本轮成功条件）**：上面的屏侧指纹分别对应 "SpringBoard 已显示"（屏亮 iOS 图形）/"内核已运行但几何不符"（乱码）/"内核早期死"（splash 循环）；"loader 已运行"与"系统盘已挂载"两阶段目前没有独立屏侧标记，依赖 boot_a 日志（被陷阱 6 卡住）或 USB——阶段标记拿到手之前，"loader 已运行并成功装载 rdfile"这类判断一律记**待验证**。
+
 ## 外设开关（改 payload cmdline，重打包 c.img 即可）
 
 C 的图形里程碑达成后，逐个外设加旗标复测（payload `--cmdline` 追加）：
@@ -97,5 +99,5 @@ C 的图形里程碑达成后，逐个外设加旗标复测（payload `--cmdline
 - `torch_secs=3`：手电盲测——亮 3 秒自己灭，肉眼即验收（redwood_torch_hv.c；先验 TYPE/SUBTYPE+无 fault 才写，每写必回读；`torch_ma=1..500` 调电流默认 125；实时 fault 直接拒亮不猜）。
 - `battery=1`：电量（redwood_battery_hv.c，纯读）——SDAM 校验 VALID=1 才发布，电量图标出数即验收；step2 全总线 TYPE/SUBTYPE 普查是**勘察红利**（FG=0x0d/SDAM=0x2e 命中自动采用，slave7 优先），boot_a 里 `battery:` 前缀可回收全部 PMIC 外设表。细分步 `battery_hv_steps=1..5`。
 - `pcie=1..3`：Wi-Fi 卡的 PCIe 勘察（redwood_pcie.c，读为主：step2 借 iATU 窗口做 BAR sizing 会存全恢，link down 时拒绝动）。屏上无效果，验收=boot_a 拉出 `pcie:` 前缀行：LTSSM 状态/链路速度宽度/17cb:1107 认卡/BAR0/MHI 状态机。step1 的电源脚+GDSC 普查表是"上电拉 link"批次的输入。boot-arg 用 pcie= 是刻意避开老 redwood_wifi.c 的 wifi=。
-- **真机一把过批次**：cmdline 一次带全 `touchscreen=2 hv_haptic=3 buttons=1 battery=1 torch_secs=3 pcie=3`，观察顺序 看屏→搓屏→手感→音量键→手电→电量图标；日志面验收=回 fastboot `fetch` boot_a 解出 logdump（上面取证小节的方法），grep `buttons:`/`battery:`/`pcie:` 前缀行收普查数据（pcie 无屏上效果，别当失败），收尾 `adb pull /vendor/lib64/camera`（纯拷贝，不动块）。
+- **真机一把过批次**：cmdline 一次带全 `touchscreen=2 hv_haptic=3 buttons=1 battery=1 torch_secs=3 pcie=3`，观察顺序 看屏→搓屏→手感→音量键→手电→电量图标；日志面验收=回 fastboot `fetch` boot_a 解出 logdump（上面取证小节的方法），grep `buttons:`/`battery:`/`pcie:` 前缀行收普查数据（pcie 无屏上效果，别当失败），收尾 `adb pull /vendor/lib64/camera`（纯拷贝，不动块）。（F08 排期注：下一个真机窗口先完成 F07 的四阶段观测与启动验收，验收通过再按上述顺序叠加外设，不在同一轮同时启用多个新驱动。）
 - 触摸/震动都惰性于默认 cmdline（不带旗标=零动作），QEMU 同理不需要它们。

@@ -25,6 +25,7 @@ hackios-k90-port/
 
 ## 子模块与上游跟进
 
+状态（2026-10-23 上游关系改章，见 docs/plan/porting-plan.md）：不再主动跟进 hackios 上游——能给上游贡献的就做，贡献不了的我们自己发开源；下列命令保留给通用修复反向送 PR 与历史流程。
 - 两个 submodule 的 `origin` = 我们私有仓库（iola1999/*，含完整上游历史 + 我们的 `k90-port` 分支）；`upstream` = oosexgang 原仓库。**跟进上游**：`git -C <mod> fetch upstream && git -C <mod> merge upstream/main` （在 `k90-port` 分支上），然后父仓库提交新的 pointer。
 - 我们的改动只落在 `k90-port` 分支；父仓库记录 submodule 的具体 commit。
 
