@@ -33,6 +33,23 @@
    适配 = 逐驱动换 gcc/pinctrl/PMIC 常数；触摸天级、震动天级、Wi-Fi 月级、
    相机未映射最后做。
 
+## 下午追加（同一离线轮的后半段）
+
+5. **内核自建流水线跑通**（详见 docs/analysis/kernel-build-linux.md）：Docker
+   `kbuild` 容器（--platform linux/amd64）theos+clang-11 工具链全量构建 ~35min，
+   增量构建只重编改动文件。首产物已替换 `prebuilt/mach.development.bcm2837`
+   （kernel 8a86129；旧版 9239d4ad… 仍在 git 历史可 A/B）。
+6. **触摸 annibale 参数化完成**（kernel cc9ff58，文档见 porting-plan 盘点）：
+   `redwood_goodix.c` 常数改运行时表，boot-arg `touchscreen=2` 选 annibale 板
+   参数（TLMM/SE 时钟/ldob12 供电/SMEM 扫 cmd_db），redwood 常数零改动。
+   期间打掉两个 host 构建坑（strlcpy shim 63f0f01、varinit 探测缓存 b7ac03a）。
+7. **QEMU 回归通过（自建内核开机进 SpringBoard）**。插曲记入 playbook 陷阱 9：
+   DIRECT_PHONE_PLAT 版 loader 喂给 QEMU 会让内核 5.8s 卡死（GIC 对不上），
+   排查 A/B 掉新旧内核后才定位——**两种 loader 谁用谁现编**。
+8. **c.img 重打包**：8,022,016 B，payload bytesum=5630d796，内嵌自建内核 +
+   DIRECT_PHONE_PLAT loader + rdfile 参数。装配线必须在 hackios-dev 容器里跑
+   （宿主缺 llvm-objcopy，BootShim 重编需要）。
+
 ## 等设备回到视野后（按序）
 
 1. `tools/stage-system.sh` → flash `xnu-annibale-c.img` boot_a → `--set-active=a`

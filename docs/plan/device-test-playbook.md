@@ -14,8 +14,8 @@
 | 镜像 | payload | 用途 | 传输方式 |
 |---|---|---|---|
 | `xnu-annibale-log.img` (A) | loader.efi(-DDIRECT_PHONE_PLAT) + `--usb` | **首选**：诊断——loader 驻留等 USB；USB 失败则日志落 boot_a | `fastboot boot`（1.26MB，LK 容量内；DTB 槽用 empty.dtb，真 DT 在 FD 内） |
-| `xnu-annibale-auto.img` (B) | loader.efi + kernel(=QEMU 同款 mach.development.bcm2837) | 自动起 iOS 内核（盲跑），panic 日志落 boot_a | `fastboot flash boot_a` + `--set-active=a` + `reboot` |
-| （C，并入 A/B） | — | 面板 XML（自家 DTS 转的 `xiaomi p11 42 0d 0a`）已在 FD 内，屏幕可能点亮 | 随 A/B |
+| `xnu-annibale-auto.img` (B) | loader.efi + kernel(旧 prebuilt) | 自动起 iOS 内核（盲跑），panic 日志落 boot_a；已被 C 取代，留作对照 | `fastboot flash boot_a` + `--set-active=a` + `reboot` |
+| `xnu-annibale-c.img` (C) 8,022,016 B | loader(-DDIRECT_PHONE_PLAT) + 自建 kernel(8a86129) + root.apfs + `--rdfile userdata:2492203008:tail`，cmdline `debug=0x10e serial=3` | **主推**：图形锁屏冲刺。payload bytesum=5630d796（boot_a 日志里的对账指纹） | `fastboot flash boot_a` + `--set-active=a` + `reboot`（见下方流程） |
 
 FD 均含：XNUP 补丁 + boot_a 日志回退 + 合并 DTB（vendor_boot base ⊕ dtbo overlay）+ K90 面板 XML。
 
@@ -81,6 +81,11 @@ head -c 2048 /tmp/logdump.bin
    0xFC800000 区域被 DMA 驱动，loader 的 SCREEN fallback 把我们文字和内核
    BootArgs.video 都落在真屏上；`fastboot boot` 不经 LK splash → 面板全黑
    （写 fb 无害）。想看画面必须用 `--set-active=a` + `reboot`。
+9. **loader.efi 有两种构建，谁用谁现编**：手机镜像必须
+   `EXTRA_CFLAGS=-DDIRECT_PHONE_PLAT bash xnuloader/build.sh`；QEMU 回归
+   （run-ios.sh 直接用 xnuloader/loader.efi）必须用默认构建。手机版喂给 QEMU，
+   内核 5.8s 卡在 pe_arm_init_debug 之后（GIC 基址对不上）；默认版喂给手机，
+   平台按 framebuffer 基址匹配不到 annibale。烧机前和跑 QEMU 前各编一次。
 
 ## 变体 C（rdfile，图形锁屏冲刺）流程
 

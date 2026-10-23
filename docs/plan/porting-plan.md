@@ -61,9 +61,11 @@
   GPU 加速（Adreno 830/gen8）维持不做；redwood 的 a660 GPU 驱动（redwood_adreno.c，
   含面板扫描）是将来 perf 的参考蓝本。
 - **外设驱动盘点**（fork 的真机驱动全是 bsd/dev/redwood_*.c 裸寄存器 + boot-arg 开关，
-  无 IOKit 框架）：触摸 `redwood_goodix.c`（GT9916/FT3680 @GENI SE，轮询 IRQ 125Hz）→
-  annibale 改 = SE2 **0xa88000**（勘误：非 a8c000）+ pinctrl-sun GPIO40-43/161/162 +
-  gcc-sm8750 时钟位 + RPMh LDO（L12B/avdd），GENI FIFO 协议跨代一致，天级；
+  无 IOKit 框架）：触摸 `redwood_goodix.c` **已完成 annibale 参数化**（2026-10-23 离线轮，
+  kernel cc9ff58）：开机参数 `touchscreen=2` 即换用 annibale 表——SE2 **0xa88000**（勘误：
+  非 a8c000）、GPIO40-43(mux1)/161/162/avdd114、TLMM 0x0f000000、RPMh drv-2 0x16520000
+  （TCS 偏移同 0xd00）、供电名 ldob12、SMEM 扫 cmd_db 魔数、引擎时钟=vote 位 24 纯分支 +
+  qspi_ref(0x188c4)/固定分频(0x1828c) 读速（无 DFS，GENI_CLK_SEL=0）；redwood 常数零改动。
   振动 `redwood_haptic.c`（SPMI→LRA）→ annibale hv-haptics SPMI@c42d000 从设备7 f000；
   Wi-Fi `redwood_wifi.c/wlfw`（QWC NVM 加载 MHI）→ WCN7850 kiwi PCIe RC0，月级；
   相机（camera_*.c 用户态 + redwood_camera.c）→ annibale CSI/IFE 连资源都未映射，
