@@ -32,6 +32,8 @@
 
 首次改写分支历史后，GitHub 仍能通过旧 SHA 读取顶层仓库和 kernel 的原提交。按用户要求，本轮删除三个旧线上仓库，再按原名称重建；两个代码仓库从对应上游创建正式 fork，顶层工作区创建独立仓库。三个新仓库均只推送清理后的本项目分支，本地备份和 Codex 差异快照引用继续保留在本机。
 
+重建后使用已认证的 GitHub API 检查改写前的 87 个提交标识，其中顶层仓库 60 个、kernel 27 个，全部返回 HTTP 404。未登录访问检查中，两个仓库的当前提交 API 均返回 HTTP 200；各抽查一个改写前提交，其 commit API、网页及原始文件 URL 均返回 HTTP 404。提交邮箱按用户要求保留。
+
 已有其他 checkout 在继续推送前需要重新同步清理后的分支。旧 checkout 合并旧提交可能再次引入个人标识，推送前应检查所包含的历史。GitHub 的服务器备份及其他克隆副本无法通过仓库访问测试确认是否已清除，参见 [GitHub 历史清理说明](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)。
 
 ## 4. fork 关系与仓库信息
