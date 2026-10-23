@@ -110,6 +110,57 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 
 构建树 `/tmp/mesa-rebase`（REBASE=26 流程产物）：改 `tools/mesa/air/` 后 `rsync -a --delete` 进 `mesa-26.2.5/src/compiler/air/`，`ninja -C build-darwin -k 0 src/gallium/drivers/freedreno/air_run src/gallium/drivers/freedreno/libredwoodair.dylib src/compiler/air/air2nir src/gallium/drivers/freedreno/air_metal_test`。
 
+## 9. iOS 交叉构建端到端可复现（26.2.5 基线，2026-10-23）
+
+任务背景：用户拍板不再跟上游，构建链可复现升为验收面。此前"在 hackios-dev 容器里跑 mk-mesa.sh"只是一句口头流程，环境缺件靠临场手补，没人能重放。本节把这条链钉死：镜像、脚本、判定面各改到位，`docker/dev.sh` 里一条命令出全部 iOS 产物。
+
+### 9.1 结论
+
+`VERSION=26.2.5 SHA256=794b3d1729075dae7ebd47c7283b7ca0cdb5dec668f7f11cc0a5d82f6138a0a5 REBASE=26 AIR=1 tools/mk-mesa.sh` 在重建后的 hackios-dev:latest 容器内 rc=0，产出（`xnu-deps/build/mesa/out/`，全部 Mach-O arm64，运行日志留在 `xnu-deps/build/mesa/cross-run.log`）：
+
+- `libOSMesa.8.dylib` 18 659 056 字节，导出 1300 个 gl* ——导出集合与 §8 主机 darwin 构建逐名比对**完全一致**（diff 为空）；
+- `libredwoodair.dylib` 13 063 080 字节，31 个 `rwa_*` 导出，与主机 darwin 构建同数同集合；
+- `air_run` 13 620 416 字节；`exported-gl.txt`、`gl.xml`、`built-from`、`built-from-air` 齐。
+
+判定面要说清楚：二进制本身按 mk-mesa.sh 头注（Mesa 性质，25.0.7 实测两次构建差 9 132 774 字节）不按字节复现，所以"交叉链与已验证的主机链等价"用**导出面**判定，字节哈希只用来对输入（tarball、补丁栈、镜像内工具）钉版。
+
+### 9.2 交叉路径的真实依赖（此前没人记录的部分）
+
+- 编译走 `xnu-deps/host/bin/xnu-clang`：容器原生 clang 18 + `-target arm64-apple-ios16.5` + `--ld-path=$HB/ld64`；`ld64` 是 theos 工具链里 `toolchain/linux/iphone/bin/ld` 的**符号链接**，仓库里没有、也没人建——这就是"老 prebuilt 是谁编的"查不到的直接原因：`git log` 两仓都没有提交过 libOSMesa/libredwoodair，`xnu-deps/build/` 盘上只剩 lzbitmap 和 pthread，历史构建是 ad hoc 手搓的，工具链状态未记录，本来就不可复现。`userland/build.sh` 每次按需回调 mk-mesa.sh（`M=…/build/mesa/out`，产物拷进 `root/lib/`），所以 out/ 目录就是对接面，本次构建即插即用。
+- `xnu-clang++`（xnu-clang 的 basename 分身，`xnu-deps/setup.sh:124` 建）meson 也要，mk-mesa 不跑 setup.sh，现由脚本自建。
+- `install_name_tool`：kbuild 里同样**不在 PATH**（`which` 为空），mk-mesa.sh 裸调它在旧容器的收尾段必炸；现按 `$THEOS/toolchain/linux/iphone/bin` 显式解析。
+- theos 与 SDK 的权威版本从 kbuild 容器只读取到：theos HEAD `304e0799973e8145f32e4ca2de6c747a84b758ce`，ld64-609（L1ghtmann iOSToolchain），iPhoneOS16.5.sdk 已装——镜像照此钉版，不发明新配置。
+
+### 9.3 镜像加了什么（docker/Dockerfile，全部带钉版注释）
+
+- apt 增件（arm64 原生）：`bison flex patch gawk autoconf automake libtool-bin m4 perl libzstd-dev zlib1g-dev python3-venv ninja-build`。meson **故意不用 apt**：noble 只有 1.3，26.x 的 meson.build 要 ≥1.4；由 mk-mesa.sh 的 venv 装 **meson==1.12.1**（与 §8 主机验证版本同）。
+- amd64 multiarch：theos 的 Linux iPhone 工具链是 x86_64 ELF，OrbStack 的 Rosetta 能跑，但 arm64 镜像缺运行时——`dpkg --add-architecture amd64` 后装 `libc6:amd64 libuuid1:amd64 libstdc++6:amd64 libtinfo6:amd64`（ld64→libtapi 的依赖链实测补齐才通）。两个坑：①ports 源没有 amd64 索引，加了 amd64 架构后 apt 全 404，要给 ubuntu.sources 的 ports stanza 补 `Architectures: arm64`，另立主档案源 `Architectures: amd64`（Suites 要带 noble-updates，否则 libc6 版本对不上）；②`zlib1g` 是 Multi-Arch: same，ports 的 arm64 停在 `...ubuntu2.2` 而主档案 amd64 是 `...ubuntu2.3`，apt 直接判 not installable——绕开 dpkg 库直接解包官方 deb（URL 钉死 + sha256 `376249c8…`，与 kbuild 靠 jammy 老 zlib 混过去同一思路）。
+- theos 层：`ENV THEOS=/root/theos`（install-sdk 不认默认路径），clone 后 fetch/checkout 钉 `304e0799…`，L1ghtmann `iOSToolchain-x86_64.tar.xz`（latest 下载但构建期校验 `bin/ld` sha256 `b61576c0…`、`install_name_tool` sha256 `15f03550…`），`bin/install-sdk iPhoneOS16.5` 后校验 `SDKSettings.plist` sha256 `e402d200…`——上游漂移会让镜像构建失败，而不是让产物悄悄漂。
+
+### 9.4 mk-mesa.sh 的 26.x 修正（tools/mk-mesa.sh）
+
+1. `-Dgallium-vdpau/-Dgallium-xa` 在 26.x 已被 upstream 删除，meson 对未知 -D 直接报错：按 VERSION 分支（`LEGACY_TRACKERS`），25.0.7 行为不变。
+2. 旧补丁循环在 REBASE=26 时容忍失败（rebase-26/README 第 1 步写明部分 hunk 失败/跳过属预期，0003 整体重建）；25.0.7 仍严格。
+3. `ld64`、`xnu-clang++` 缺失时自建符号链接（注释写明：容器镜像才是 ld64 的真源，仓库里那个路径只是内核构建的搜索点）。
+4. `install_name_tool` → `$THEOS` 工具链显式路径（macOS 主机回退裸名）。
+5. `nm` → `llvm-nm`（GNU BFD 2.42 不认 arm64 Mach-O，收尾段 rc=1）。
+6. gl.xml 在 26.x 移到 `src/mesa/glapi/glapi/registry/`，按存在性回退。
+
+### 9.5 复现
+
+```bash
+cd docker && ./build.sh && ./dev.sh
+cd /work/hackios-xnu-kernel
+VERSION=26.2.5 SHA256=794b3d1729075dae7ebd47c7283b7ca0cdb5dec668f7f11cc0a5d82f6138a0a5 \
+  REBASE=26 AIR=1 tools/mk-mesa.sh
+```
+
+幂等性实测：补丁栈 sha 戳命中就跳过解包，ninja 增量重跑 rc=0；删掉 `xnu-deps/build/mesa/{mesa-26.2.5,build-*,venv}` 即回到全新路径（本次首跑就是全新路径，meson setup→ninja 约 8 分钟，OrbStack/VirtioFS）。验收判定看 9.1 的导出面，不看字节。
+
+### 9.6 交接面
+
+kernel 树的 `tools/mesa/**` 与 `tools/mk-mesa.sh` 是 userland 仓的 overlay（`common/setup.sh` 用 `--work-tree` 展开），本次已按 userland 现内容 rsync 同步过（kernel git 不跟踪它们，status 干净）；正式做法是 lead 提交 userland 后在 kernel 树 `common/ugit` 拉齐。`xnu-deps/host/bin/{ld64,xnu-clang++}` 是脚本运行时生成的未跟踪符号链接，不入库。kbuild 容器未动过（只读探测取 pin）。
+
 ## 附录 A：复现命令
 
 ```bash

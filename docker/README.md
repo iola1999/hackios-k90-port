@@ -2,6 +2,8 @@
 
 linux/arm64 的 Ubuntu 24.04，装齐 HackiOS 构建 + QEMU 运行依赖（python3 / 7z / clang+lld / dtc / qemu-system-aarch64 / edk2-aarch64，另带 nasm+iasl+uuid-dev 备后将来源码编 Mu-Silicium UEFI）。QEMU 在 OrbStack 里仍是 TCG （虚拟机内无嵌套 KVM），与上游 Linux 主机一致，无影响。
 
+iOS 交叉链也已入镜像：theos + ld64（x86_64，靠 OrbStack 的 Rosetta 跑，故镜像开了 amd64 multiarch）+ iPhoneOS16.5.sdk，版本与 sha256 钉在 Dockerfile 里，`hackios-xnu-kernel/tools/mk-mesa.sh` 开箱即用（详见 docs/analysis/mesa-rebase-2026-10.md 第 9 节）。
+
 ```sh
 ./build.sh            # 产出 hackios-dev:latest
 ./dev.sh              # 进容器，工作区挂在 /work
