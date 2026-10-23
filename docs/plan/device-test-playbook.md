@@ -14,7 +14,7 @@
 |---|---|---|---|
 | `xnu-annibale-log.img` (A) | loader.efi(-DDIRECT_PHONE_PLAT) + `--usb` | **首选**：诊断——loader 驻留等 USB；USB 失败则日志落 boot_a | `fastboot boot`（1.26MB，LK 容量内；DTB 槽用 empty.dtb，真 DT 在 FD 内） |
 | `xnu-annibale-auto.img` (B) | loader.efi + kernel(旧 prebuilt) | 自动起 iOS 内核（盲跑），panic 日志落 boot_a；已被 C 取代，留作对照 | `fastboot flash boot_a` + `--set-active=a` + `reboot` |
-| `xnu-annibale-c.img` (C) 8,036,352 B | loader(-DDIRECT_PHONE_PLAT) + 自建 kernel(3c4c534，含 hv_haptic 修正 + buttons/battery/torch 三驱动) + root.apfs + `--rdfile userdata:2492203008:tail`，cmdline `debug=0x10e serial=3` | **主推**：图形锁屏冲刺（暂存步骤先过暂停门）。payload bytesum=566a1d37（boot_a 日志里的对账指纹） | `fastboot flash boot_a` + `--set-active=a` + `reboot`（见下方流程） |
+| `xnu-annibale-c.img` (C) 8,042,496 B | loader(-DDIRECT_PHONE_PLAT) + 自建 kernel(4f5ab24，含 hv 四件套+haptic ppid 修正+PCIe 勘察) + root.apfs + `--rdfile userdata:2492203008:tail`，cmdline `debug=0x10e serial=3` | **主推**：图形锁屏冲刺（暂存步骤先过暂停门）。payload bytesum=5678cb64（boot_a 日志里的对账指纹） | `fastboot flash boot_a` + `--set-active=a` + `reboot`（见下方流程） |
 
 FD 均含：XNUP 补丁 + boot_a 日志回退 + 合并 DTB（vendor_boot base ⊕ dtbo overlay）+ K90 面板 XML。
 
@@ -96,5 +96,6 @@ C 的图形里程碑达成后，逐个外设加旗标复测（payload `--cmdline
 - `buttons=1`：音量/电源键（已入库 redwood_buttons_hv.c，纯读零写入 PMIC）。音量上=PMI GPIO slave1 function 0x18d 低有效带上拉（DT #L9164/#L21098，**不是**任务书早先写的 TLMM GPIO6——若真机无事件先查这条）；电源/音量下=PMK8550 PON（KPDPWR/RESIN）。按键事件进 boot_a 日志 `buttons:` 行 + `/dev/redwood-input`。细分步 `buttons_hv_steps=1..5`。
 - `torch_secs=3`：手电盲测——亮 3 秒自己灭，肉眼即验收（redwood_torch_hv.c；先验 TYPE/SUBTYPE+无 fault 才写，每写必回读；`torch_ma=1..500` 调电流默认 125；实时 fault 直接拒亮不猜）。
 - `battery=1`：电量（redwood_battery_hv.c，纯读）——SDAM 校验 VALID=1 才发布，电量图标出数即验收；step2 全总线 TYPE/SUBTYPE 普查是**勘察红利**（FG=0x0d/SDAM=0x2e 命中自动采用，slave7 优先），boot_a 里 `battery:` 前缀可回收全部 PMIC 外设表。细分步 `battery_hv_steps=1..5`。
-- **真机一把过批次**：cmdline 一次带全 `touchscreen=2 hv_haptic=3 buttons=1 battery=1 torch_secs=3`，观察顺序 看屏→搓屏→手感→音量键→手电→电量图标，收尾 `adb pull /vendor/lib64/camera`（纯拷贝，不动块）。
+- `pcie=1..3`：Wi-Fi 卡的 PCIe 勘察（redwood_pcie.c，读为主：step2 借 iATU 窗口做 BAR sizing 会存全恢，link down 时拒绝动）。屏上无效果，验收=boot_a 拉出 `pcie:` 前缀行：LTSSM 状态/链路速度宽度/17cb:1107 认卡/BAR0/MHI 状态机。step1 的电源脚+GDSC 普查表是"上电拉 link"批次的输入。boot-arg 用 pcie= 是刻意避开老 redwood_wifi.c 的 wifi=。
+- **真机一把过批次**：cmdline 一次带全 `touchscreen=2 hv_haptic=3 buttons=1 battery=1 torch_secs=3 pcie=3`，观察顺序 看屏→搓屏→手感→音量键→手电→电量图标；日志面验收=回 fastboot `fetch` boot_a 解出 logdump（上面取证小节的方法），grep `buttons:`/`battery:`/`pcie:` 前缀行收普查数据（pcie 无屏上效果，别当失败），收尾 `adb pull /vendor/lib64/camera`（纯拷贝，不动块）。
 - 触摸/震动都惰性于默认 cmdline（不带旗标=零动作），QEMU 同理不需要它们。
