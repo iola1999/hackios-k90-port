@@ -97,7 +97,7 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 - `pipe_screen.get_compute_param` 移除，改 `screen->compute_caps` 值结构：`max_threads_per_group` 直读；**`subgroup_sizes` 语义变了**——25.0.7 freedreno 答字面 32，26.x 存"支持宽度集合的位掩码"（rusticl 取位号还原，freedreno 填 `threadsize_base |= 2×base`），取最低位（32|64→32）作为执行宽度；softpipe 全零时仍回退 1，与旧 decline 行为一致。
 - `unreachable()` 改名 `UNREACHABLE()`（util/macros.h），air_metal.c 补 include。
 - `nir_copy_prop`→`nir_opt_copy_prop`（air2nir.c，1 处）。
-- 上游删 `ir3_cmdline.c` 的连带面在测试侧：`discardcheck.py` 需要 `ir3-compiler` 工具（26.x 没有），已按"无离线编译器则该条 SKIPPED"适配（第 10 节）；`cpuref.py` 本就不碰 ir3，原句把两个 harness 一起归因于 ir3 是错的，纠账见 10.1——它的 host 前置是 metallib corpus（8.3），不是 ir3。同病未修的还有 `fbfetchcheck.py`/`vattrcheck.py`/`corpus.py --ir3`（10.3）。
+- 上游删 `ir3_cmdline.c` 的连带面在测试侧：`discardcheck.py` 需要 `ir3-compiler` 工具（26.x 没有），已按"无离线编译器则该条 SKIPPED"适配（第 10 节）；`cpuref.py` 本就不碰 ir3，原句把两个 harness 一起归因于 ir3 是错的，纠账见 10.1——它的 host 前置是 metallib corpus（8.3），不是 ir3。同病的 `fbfetchcheck.py`/`vattrcheck.py`/`corpus.py --ir3` 已照同款降级（草稿在 userland 工作树，10.3 末段）。
 
 ### 8.3 软管线冒烟（macOS 主机，`AIR_RUN_SOFTWARE=1`，air_run/air_metal_test 均为 26.2.5 产物）
 
@@ -173,7 +173,7 @@ host 侧原判定三段里，前两段（可翻译；NIR 带 `demote` 不带 `te
 
 ### 10.3 为什么 26.x 没有等价的离线编译入口
 
-上游在 986530d231（25.3+）删了 `ir3_cmdline.c`，26.x 没有留下替身：NIR→ir3 全在 libgallium 内部（`ir3_compiler_nir.c`），要 screen 与 compiler-options 上下文；`src/freedreno/` 的独立工具（`pgmdump2`、`computerator` 等）吃的是编好的 program 二进制，帮不上；turnip 不在 darwin 配置里。把 cmdline 复活等于给还在漂移的 a8xx 接口重写一个上游不收的工具，而指令形状本来就是设备侧问题：26.x 的 a8xx 编译器对 demote 发自己的 `ir3_DEMOTE` 指令（`ir3_compiler_nir.c`），不是 a6xx 编码器的 DEMOTE→KILL 映射，旧 harness"kill for both kinds"的结论只对 a6xx 成立，现已改写为"两族映射并存、7c+ Gen 3 取哪个由 `--emit`/`--check` 上机裁决"。同病（硬要 `$IR3`）还剩 `fbfetchcheck.py`、`vattrcheck.py`、`corpus.py --ir3` 三家，本次未动，可照 10.2 同款降级。
+上游在 986530d231（25.3+）删了 `ir3_cmdline.c`，26.x 没有留下替身：NIR→ir3 全在 libgallium 内部（`ir3_compiler_nir.c`），要 screen 与 compiler-options 上下文；`src/freedreno/` 的独立工具（`pgmdump2`、`computerator` 等）吃的是编好的 program 二进制，帮不上；turnip 不在 darwin 配置里。把 cmdline 复活等于给还在漂移的 a8xx 接口重写一个上游不收的工具，而指令形状本来就是设备侧问题：26.x 的 a8xx 编译器对 demote 发自己的 `ir3_DEMOTE` 指令（`ir3_compiler_nir.c`），不是 a6xx 编码器的 DEMOTE→KILL 映射，旧 harness"kill for both kinds"的结论只对 a6xx 成立，现已改写为"两族映射并存、7c+ Gen 3 取哪个由 `--emit`/`--check` 上机裁决"。同病（硬要 `$IR3`）的 `fbfetchcheck.py`、`vattrcheck.py`、`corpus.py --ir3` 三家已照 10.2 同款降级（草稿在 userland 工作树）：`$IR3` 存在时行为一字不改，缺失时 fbfetch 的 isamm 段与 vattr 的 VFD fetch-table 段打 SKIPPED 行计入通过、corpus 的 ir3 列整列去掉表格停在 translate，三家 stderr 各留一行说明，rc 均不拦停——check.sh 只取这三家的退出码，26.x host 上从此不再硬失败。实测（`build-darwin` 产物、`IR3` 指向不存在路径）：fbfetch `7 of 7`、vattr `16 of 16`（QuartzCore 缺库段照旧自报 NO REAL MODULE）、corpus 拿单个 `.bc` 走 `--ir3` 去列 rc=0。
 
 ### 10.4 SHA256SUMS 扩表
 
