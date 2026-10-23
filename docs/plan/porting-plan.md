@@ -78,8 +78,12 @@
   Wi-Fi：红杉 = WPSS-PIL+GLINK/QMI+ath11k(ahb)（勘误：无 MHI）；annibale WCN7850 =
   PCIe RC0@0x1c00000 + MHI + ath12k 蓝本，fork 内核 PCIe host 与 MHI host 两块全新增，
   4–8 周真机窗口起步/保守 1.5–3 个月（详见 wcn7850-plan.md）；
-  相机（camera_*.c 用户态 + redwood_camera.c）→ annibale CSI/IFE 连资源都未映射，
-  排在开机之后。root 传输变体 C（rdfile 读 userdata 尾，loader 72bbea4 +
+  相机 **调研完成（camera-plan.md）**：红杉不是半成品而是完整方案（redwood_camera.c
+  cam=1..5 裸寄存器 + mediaserverd 注入顶替 H10ISP + 软 ISP，预览/拍照/AF 真机回归过）；
+  annibale CAMSS 全套基址已从设备树拆齐（camcc 0xade0000、CSIPHY×6、CSID980、IFE×3、
+  CPAS 0xac13000、CCI×3；主摄 OV50E 走 CCI0/CSIPHY3），iOS 用户态零改动，门在
+  mediaserverd 不在 camerad。L1a TPG 通路 ~3 周/4–6 窗口；首要行动项=真机
+  `adb pull /vendor/lib64/camera`（sensormodule bin，拿不到就冻结 sensor 阶段）。root 传输变体 C（rdfile 读 userdata 尾，loader 72bbea4 +
   tools/stage-system.sh）编译就绪，等真机窗口。
 - 第一里程碑 = loader USB 日志 + verbose 启动文本；第二 = 锁屏（软渲染，无 GPU/Wi-Fi/音频）
 - `fastboot boot` 已实测：≤2MB 镜像可用（LK 侧容量上限），大镜像走 `_a` 槽 `fastboot flash boot_a`

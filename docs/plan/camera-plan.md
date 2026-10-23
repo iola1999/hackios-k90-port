@@ -1,6 +1,6 @@
 # camera-plan.md — annibale（REDMI K90 / SM8750 "sun"）相机路线
 
-状态：调研稿（离线，35 分钟时间盒）。前提 = iOS 已能开机（软渲染锁屏之后）；porting-plan.md 已把相机排在开机之后（[porting-plan.md#L81](../plan/porting-plan.md#L81)、#L91）。
+状态：调研稿（离线，35 分钟时间盒）。前提 = iOS 已能开机（软渲染锁屏之后）；porting-plan.md 已把相机排在开机之后（[porting-plan.md#L81](./porting-plan.md#L81)、#L91）。
 
 ## 0. 结论（TL;DR）
 

@@ -55,14 +55,18 @@ torvalds/linux master（gh api 实查，当前 v7.3）。Mesa/linux-firmware 已
   catalog `a8xx_gpus[]`：`0x44070001`(gen80100 fw，21MB GMEM，无 zap)、`0x44050a01`(gen80200 fw **+ gen80200_aqe.fw**，18MB GMEM，无 zapfw)、
   `0x44010000`(gen80300 fw，zap=gen80300_zap.mbn)。⚠️ 本机 DT `qcom,chipid=0x44050000`（"Adreno830"，compatible
   `qcom,adreno-gpu-gen8-0-0`）——**不在上游 chip_ids 列表**，需自证与 gen80200 家族（0x4405xx）的关系并自扩 catalog / 自备固件命名。
-- **Mesa/freedreno a8xx（2026-10-23 GitLab API 实查 main 分支）：Vulkan 有、GL 没有**。
-  turnip `tu_device.cc` 有原生 A8XX 分岔（`tu_device_entrypoints_a8xx` 等 4 处）；
-  gallium GL 全目录 grep A8XX **零命中**。上游 catalog 收有 a830，chipid 勘误补丁
-  （Rob Clark 48be91d1，随 25.3 分发）把我们这颗 **0x44050000** 修成
-  0xffff44050000（补 fuse 位）——归属坐实为上游认得的 A830。社区栈
-  whitebelyash turnip/gen8（tu_v20.2 起）实测 Adreno 830 Vulkan 可跑，部分已上游化。
-  **红杉栈是 gallium GL：A830 上 GL 服务二选一——押 turnip+GL 桥，或等 freedreno
-  GL gen8（2026-09 官方口径仍 WIP）**。
+- **Mesa/freedreno a8xx（2026-10-23 两轮 GitLab API 实查 main=27.0.0-devel）：Vulkan 成熟、GL 已起步但未证实可用**。
+  turnip（已迁 `src/freedreno/vulkan`，tu 统一 CHIP 模板）A8XX 分岔密集（`tu_device_entrypoints_a8xx`、
+  `CHIP >= A8XX` 的 viewport/blend/rast 发射），A8xx 修复提交一直到 2026-10-22 还在进——**生产可用级**。
+  上游 devinfo（`freedreno_devices.py`）收有 A8XX gen1/gen2 条目，chipid 勘误补丁（Rob Clark 48be91d1，随 25.3 分发）
+  把我们这颗 **0x44050000** 修成 0xffff44050000 "Adreno (TM) 830"（另有 830v1=0x44050001/KGSL 口径）——归属坐实。
+  社区栈 whitebelyash turnip/gen8（tu_v20.2 起）实测 Adreno 830 Vulkan 可跑，部分已上游化。
+  **gallium GL 并非"零"**（大写串 grep 的假阴性）：`fd6_hw.h` 已 include `a8xx_enums/perfcntrs/descriptors.xml.h`；
+  a6xx 路径已 CHIP 模板化并有 `CHIP >= A8XX` 运行时分支（2ee0a5e6 "Indirect buffer needs WFM on a8xx+" 2026-07-17、
+  779cdb8e "Fix query barriers for gen8+" 2026-07-15）；a8xx devinfo 带 gallium gmem/BV 参数（`gmem_vpc_bv_pos_buf_size`）
+  ——说明有人在 a8xx 上真跑 GL。但**无 deqp/CI 农场佐证、无"GL gen8 完成"官方声明**，可用性未证实。
+  **红杉栈（gallium GL）对应动作：先把 fork rebase 到 26/27 实测 GLES on a830（成本≈1 个离线轮），
+  不通再转 turnip+GL-over-Vulkan 桥（备选路线，风险从"外部未知"变"可控工时"）。**
 - **固件零风险（linux-firmware gitlab 镜像实查）**：`qcom/gen80000|80100|80200|81100`
   的 `_gmu.bin/_sqe.fw/_aqe.fw` 都在库上——**不需要真机 dump vendor 分区**，L1a
   的固件匹配风险降级（0x44050000 家族取 gen80200 三件套起步）。

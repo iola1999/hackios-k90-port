@@ -306,6 +306,33 @@ logo 残留）**；`non_secure_display_region`（动态 CMA 252MB，4G 下）；
 | SDHCI | `/soc/sdhci@8804000`（alias mmc1） | `qcom,sdhci-msm` | `0x8804000` | — | okay（SD 卡，非启动路径） |
 | HWSPINLOCK | `/soc/tcsr_mutex`（`tcsr_mutex`） | `qcom,tcsr-mutex` | 0x1fc0000 系 | — | okay |
 
+## 12. 相机：CAMSS（titan 家族，主摄 OV50E 定制）
+
+完整拆解与移植路线在 `docs/plan/camera-plan.md`；本表只收编硬件事实（源
+`/tmp/hw_check.dts`，行号见 camera-plan §2.2）。
+
+| 块 | 基址/大小 | 备注 |
+|---|---|---|
+| camcc | `0xade0000+0x20000` | `qcom,sun-camcc`,`syscon`；GDSC：titan_top +0x134c、tfe0/1/2 +0x1004/0x1084/0x10ec、ipe0 +0x17c、ofe +0xc8 |
+| cambistmclkcc / camcc_crmc | `0x1760000` / `0xadcd600` | bist/mclk 时钟与 CRMC syscon |
+| CSIPHY0–5 | `0xada9000` 起步进 `0x2000`（各 8K） | csiphy **v2.3.0**，C/D-PHY 通用 |
+| CSID0/1/2 | reg `0xad27000`/`0xad2a000`/`0xad2d000`（0x2b00） | `qcom,csid980`；节点名与 reg 差 0x1000，**以 reg 为准** |
+| CSID-lite0/1 | `0xad6d000` / `0xad72000`（0xa00） | `qcom,csid-lite980` |
+| IFE0/1/2 | `0xac86000`/`0xac96000`/`0xaca6000`（各 64K） | 时钟名 tfe_0..2；UBWC static cfg |
+| IFE-lite0/1 | `0xad6d000+0x2800` / `0xad72000+0x2800` | 与 csid-lite 同窗打包 |
+| CAM-CPAS | `0xac13000` | cam_cpas_top/camnoc_nrt/camnoc_rt/rpmh/cesta——**titan 访问前必须先起 CPAS/CAMNOC（红杉无此步）** |
+| CCI0/1/2 | `0xac7b000` / `0xac7c000` / `0xac7d000` | 主摄走 CCI0 master1 |
+| CAM SMMU | `qcom,cam_smmu` 多 context（ife/icp/jpeg/cdm/secure） | 红杉单 context 经验不通用 |
+| TPG13–15 | `0xad8b000`+（第二窗 `0xac04000`） | cam=3 等价演示路径依托 |
+| RT-CDM | `cam-cdm-intf` + rt-cdm2_2×5（pid 0x18..0x1c） | IFE980 编程走 RT-CDM，非纯直写 |
+
+sensor 挂线：wide 主摄=CCI0 m1/CSIPHY3/MCLK1(GPIO90)/RESET GPIO6，轨 VIO1.8/VDIG1.15/
+VANA2.8(`camera_wide_avdd_ldo`，GPIO127 开关)/VAF3.1/BOB2 2.7；tele=CCI1 m0/CSIPHY1；
+ultra=QUP SE8 I2C `0x880000`（0x7a）/CSIPHY2；front=SE9 `0x884000`（0x10）/CSIPHY4。
+供电轨都是 RPMH LDO（走 SPMI，非红杉 PM8008i 手撸 I2C）。主摄=光影猎人800
+（OV50E 小米定制，50MP/1/1.55"/OIS）；chip ID/上电序列在 vendor sensormodule bin，
+待真机 `adb pull /vendor/lib64/camera`。
+
 ## 附：与既有文档/代码的衔接核对
 
 1. `docs/analysis/annibale-uefi-build.md`：merged DTB 生成方式（v3.dtb + 自家 dtbo，fdtoverlay，

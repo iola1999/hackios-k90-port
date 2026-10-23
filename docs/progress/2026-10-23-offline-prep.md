@@ -67,6 +67,14 @@
     （web 工具恢复后 GitLab API 实查）：**turnip 有 A8XX、gallium GL 没有**；
     0x44050000 上游 catalog 认得（fuse 勘误补丁进 25.3）；gen80200 固件三件套
     （gmu/sqe/aqe）linux-firmware 直接可拿，L1a 不用等真机 dump。
+12. **相机移植调研完成**：`docs/plan/camera-plan.md`。红杉链路是完整方案（内核
+    cam=1..5 + mediaserverd 注入 + 软 ISP，非半成品）；annibale CAMSS 基址/供电/
+    I2C 从 /tmp/hw_check.dts 拆齐补录（hw-map 待同步）；L1a TPG→CSID-lite→IFE-lite
+    通路 ~3 周、盲写 70–80%。硬前提=真机拉 /vendor/lib64/camera 的 sensormodule
+    bin（当前 annibale-backup 无 vendor dump）。
+13. **gen80200 GPU 固件三件套入库**（userland 仓 `firmware-gen8/`，SHA256 钉死）——
+    GPU L1a 开工零真机依赖。至此"开机→图形→触摸→震动→联网→GPU→相机"七项的
+    离线可准备资源全部落档：前三项代码就绪，后四项规划+基址表+固件就绪。
 
 ## 等设备回到视野后（按序）
 
