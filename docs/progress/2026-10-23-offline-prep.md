@@ -27,6 +27,7 @@
 12. **相机移植调研完成**：`docs/plan/camera-plan.md`。redwood链路是完整方案（内核 cam=1..5 + mediaserverd 注入 + 软 ISP，非半成品）；annibale CAMSS 基址/供电/ I2C 从 /tmp/hw_check.dts 拆齐补录（hw-map 待同步）；L1a TPG→CSID-lite→IFE-lite 通路 ~3 周、盲写 70–80%。硬前提=真机拉 /vendor/lib64/camera 的 sensormodule bin（当前 annibale-backup 无 vendor dump）。
 13. **gen80200 GPU 固件三件套入库**（userland 仓 `firmware-gen8/`，SHA256 钉死）——GPU L1a 开工零真机依赖。至此"开机→图形→触摸→震动→联网→GPU→相机"七项的离线可准备资源全部落档：前三项代码就绪，后四项规划+基址表+固件就绪。
 14. **功能全景扫描 + 上游同步**：新增 `docs/analysis/2026-10-23-feature-scan.md`（红杉全家底×K90 对照表）。扩容决定：按键（音量上=TLMM GPIO6 实证）/电池（内核直读 FG）/手电三项进本期批次；音频不做。上游 oosexgang 两仓 main 零新提交；replydev 三个未合并 PR（构建失败传播/QEMU --foreground/老 prebuilt 修复）经用户裁决**不提前摘取**，已摘又回退。勘误：WCN7850 Wi-Fi 固件其实在 linux-firmware `ath12k/WCN7850/hw2.0/`（首查只翻了 qcom/ 目录），Wi-Fi 硬前提消解，全链路可离线盲写。
+15. **Agent team 开工 + Mesa rebase 完成（task-5）**：协作切换为 team 模式（drivers=三个小驱动、adreno=GPU L1a、mesa=rebase 试验，Lead 只做编译/回归/提交闸门）。mesa 队友结论（详见 `docs/analysis/mesa-rebase-2026-10.md`）：fork 补丁栈在 **26.2.5** 上 4 存活/1 可退役（ir3-shift-split，上游成因已消失）/3 需改写并固化进 `tools/mesa/rebase-26/0003` 适配层；darwin 原生 ninja 全绿出 libOSMesa.8.dylib（1300 个 gl* 导出），软管线冒烟通过。最大成本：**上游 25.1 删了 OSMesa**（027ccd963b），iOS 无 EGL 栈，短期靠反向恢复。a8xx 真实 devinfo 26.1.0 起（26.0.x 假 FD830 否决），2ee0a5e6/779cdb8e 两修复 cherry-pick 到 26.2.5 零冲突。`mk-mesa.sh` 已加 `REBASE=26` 基线开关（默认仍 25.0.7）。
 
 ## 等设备回到视野后（按序）
 
