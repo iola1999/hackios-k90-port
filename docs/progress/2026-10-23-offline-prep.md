@@ -63,8 +63,10 @@
     （288a9320，复用 a6xx GMU/HFI 框架）；SM8750 基址从设备树拆齐（3D 0x3d00000、
     GMU 0x3d37000、GPUCC 0x3d90000、SMMU 0x3da0000…），chipid 0x44050000 需自扩
     catalog。红杉全链路（上电阶梯→Mesa redwood-drm 桩→Mini IOSurface/FB→Metal
-    半成品）盘点完毕，L1/L2/L3 三级均不动 iOS 用户态。头号外部未知：Mesa 的
-    a8xx 是 GLES(freedreno) 还是只有 Vulkan(turnip)——下个离线日 GitLab 恢复后核实。
+    半成品）盘点完毕，L1/L2/L3 三级均不动 iOS 用户态。头号外部未知已当场办结
+    （web 工具恢复后 GitLab API 实查）：**turnip 有 A8XX、gallium GL 没有**；
+    0x44050000 上游 catalog 认得（fuse 勘误补丁进 25.3）；gen80200 固件三件套
+    （gmu/sqe/aqe）linux-firmware 直接可拿，L1a 不用等真机 dump。
 
 ## 等设备回到视野后（按序）
 

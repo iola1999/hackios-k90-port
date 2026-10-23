@@ -3,7 +3,8 @@
 状态：调研文档。porting-plan.md 里 "GPU 加速维持不做" 维持不变；本文回答"将来要做时，从哪切、要什么、坑在哪"。
 输入：redwood_adreno.c（4125 行）、RedwoodGPU.cpp（1295 行）、MiniIOSurface/MiniIOMobileFramebuffer、
 hackios-xnu-userland tools/mesa（air/freedreno 补丁）、/tmp/hw_check.dts（本机 DT 实拆）、
-torvalds/linux master（gh api 实查，当前 v7.3）。Mesa 上游在线核查受限（web 配额），遗留 TODO 标注。
+torvalds/linux master（gh api 实查，当前 v7.3）。Mesa/linux-firmware 已于
+2026-10-23 在线复核完毕（GitLab API），结论见 §2.1——原"最大外部未知"已收敛。
 
 ---
 
@@ -54,8 +55,17 @@ torvalds/linux master（gh api 实查，当前 v7.3）。Mesa 上游在线核查
   catalog `a8xx_gpus[]`：`0x44070001`(gen80100 fw，21MB GMEM，无 zap)、`0x44050a01`(gen80200 fw **+ gen80200_aqe.fw**，18MB GMEM，无 zapfw)、
   `0x44010000`(gen80300 fw，zap=gen80300_zap.mbn)。⚠️ 本机 DT `qcom,chipid=0x44050000`（"Adreno830"，compatible
   `qcom,adreno-gpu-gen8-0-0`）——**不在上游 chip_ids 列表**，需自证与 gen80200 家族（0x4405xx）的关系并自扩 catalog / 自备固件命名。
-- **Mesa/freedreno a8xx：TODO 在线核实**。GitLab raw 探测未能定位 a8xx 目录（gallium GL 已重构为通用 fd_*，a6xx/a7xx 目录消失）；
-  业界口径 turnip(Vulkan) 先于 GL。**红杉栈是 gallium GL——A830 上 GL 服务是否可行完全取决于 Mesa GL 有无 gen8，这是 L2/L3 最大外部未知**。
+- **Mesa/freedreno a8xx（2026-10-23 GitLab API 实查 main 分支）：Vulkan 有、GL 没有**。
+  turnip `tu_device.cc` 有原生 A8XX 分岔（`tu_device_entrypoints_a8xx` 等 4 处）；
+  gallium GL 全目录 grep A8XX **零命中**。上游 catalog 收有 a830，chipid 勘误补丁
+  （Rob Clark 48be91d1，随 25.3 分发）把我们这颗 **0x44050000** 修成
+  0xffff44050000（补 fuse 位）——归属坐实为上游认得的 A830。社区栈
+  whitebelyash turnip/gen8（tu_v20.2 起）实测 Adreno 830 Vulkan 可跑，部分已上游化。
+  **红杉栈是 gallium GL：A830 上 GL 服务二选一——押 turnip+GL 桥，或等 freedreno
+  GL gen8（2026-09 官方口径仍 WIP）**。
+- **固件零风险（linux-firmware gitlab 镜像实查）**：`qcom/gen80000|80100|80200|81100`
+  的 `_gmu.bin/_sqe.fw/_aqe.fw` 都在库上——**不需要真机 dump vendor 分区**，L1a
+  的固件匹配风险降级（0x44050000 家族取 gen80200 三件套起步）。
 
 ### 2.2 gen8 相对 a6xx（红杉代码能直接复用的边界之外）
 1. **Slice 架构**：GPU 内多 "slice"（mini-GPU）；寄存器访问要经 **CP_APERTURE_CNTL_HOST 选 pipe+slice**
@@ -101,25 +111,26 @@ torvalds/linux master（gh api 实查，当前 v7.3）。Mesa 上游在线核查
 | 级 | 内容 | 工作量 / 盲写比例 | 真机窗口 | 风险 |
 |---|---|---|---|---|
 | **L0** | 维持软渲染（现状）。GPU 不碰 | 0 | 0 | 无（perf 差是已知税） |
-| **L1a** | gen8 上电阶梯：平移红杉步进机（adreno=1..21 语义），地址表 §2.3，寄存器语义抄上游 a8xx_gpu.c/a6xx_gmu.c；先做到"GMU 跑起来 + GX 上电 + 读到 slice 数" | ~2–3 周编码，**盲写 ~30–40%**（有上游逐寄存器对照，但 GMU 固件加载/HFI 时序无第二来源；AQE 是新面孔） | **高**：必须逐步跑（TZ/静默复位文化照抄红杉：pause+loader 旁路日志）。估 3–5 个窗口 | 高：GMU 固件与 0x44050000 的匹配、zap/secure 状态、hypervisor 权限 |
+| **L1a** | gen8 上电阶梯：平移红杉步进机（adreno=1..21 语义），地址表 §2.3，寄存器语义抄上游 a8xx_gpu.c/a6xx_gmu.c；先做到"GMU 跑起来 + GX 上电 + 读到 slice 数" | ~2–3 周编码，**盲写 ~30–40%**（有上游逐寄存器对照，AQE 是新面孔但微码已在 linux-firmware，§2.1） | **高**：必须逐步跑（TZ/静默复位文化照抄红杉：pause+loader 旁路日志）。估 3–5 个窗口 | 中高：HFI 时序无第二来源、zap/secure 状态、hypervisor 权限（固件可得性已排除） |
 | **L1b** | 2D blit 合成：ctx0 页表（照抄红杉）+ CP 发 copy/清屏包 + MiniIMF.swap 换 GPU blit | ~1–2 周，盲写 ~40%（a6xx CP 包格式对 gen8 大体在，但 aperture/slice 前置让每个包都要复核；UBWC5 先绕开，用线性像素） | 中 | 中：写花屏可恢复 |
-| **L2** | GLES 服务：RedwoodGPU msm 协议层平移（改动小）+ Mesa fork rebase 到含 gen8 的 upstream | **取决于 Mesa a8xx GL 结论**（§2.1 TODO）：若只有 turnip，则要么自己把 gallium 拖过 gen8（月级、盲写高），要么改押 **Vulkan/turnip +_angle/MoltenGL式桥**（路线变更级决策） | 中 | **最高外部依赖**；建议先花 1 个离线日核实 |
-| **L3** | Metal 全速：air/AIR→NIR 不动，跟随 Mesa ir3 gen8；补 IOGPU-free 栈的缺课（红杉也未完成：456 语料里"真机跑通"README 口径 293） | 月级，跟随上游 | 中 | 深水区但**无 iOS 侧风险**；可长期演进 |
+| **L2** | GLES 服务：RedwoodGPU msm 协议层平移（改动小）+ **押 turnip(A8XX 上游有) 做底座 + GL-over-Vulkan 桥**（红杉 gallium GL 直译不可行，见 §2.1：Mesa GL 无 gen8） | **月级**，盲写高：要么自拖 gallium 过 gen8（无上游对照），要么 ANGLE/MoltenGL 式桥（GL→Vulkan→turnip）。外部未知已消除，剩下是工程量选型 | 中 | 路线重，但风险已从"外部未知"变"可控工时" |
+| **L3** | Metal 全速：air/AIR→NIR 不动，跟随 Mesa **turnip gen8 的 fdl/ISAZ**（非 ir3——gen8 shader ISA 走新后端）；补 IOGPU-free 栈的缺课（红杉也未完成：456 语料里"真机跑通"README 口径 293） | 月级，跟随上游 | 中 | 深水区但**无 iOS 侧风险**；可长期演进 |
 
-建议序：**L2 核实（离线、1 天）→ L1a → L1b**；L2/L3 在 Mesa 结论出来前不立项。
+建议序（Mesa 结论已定）：**L1a → L1b →（选型：GL 桥 vs 自拖 gallium）→ L2**；若只求 UI 流畅，L1b 2D 合成性价比最高，可长期停在 L1b 不上 L2。
 
 ## 5. 放弃 / 推迟准则
-- **立即推迟**：真机验证 L1a 步骤 14–17 连续 3 个窗口过不了（GMU 固件起不来 / 静默复位无解），且找不到第二固件来源
-  （gen80200_* 命名/版本对不上 0x44050000）→ GPU 回 L0，条目转"perf backlog"，与相机同级往后排。
-- **放弃 L2/L3（保 L1b）**：Mesa 上游 12 个月内没有可用的 a8xx **GL** 管线（只有 turnip）→ 不自己拖 gallium；2D 合成 + CPU GLES 兜底即可撑 UI。
+- **立即推迟**：真机验证 L1a 步骤 14–17 连续 3 个窗口过不了（GMU 固件起不来 / 静默复位无解；固件本身已在
+  linux-firmware 拿齐，若仍起不来就是 HFI 时序/权限问题，离线再抠边际收益低）→ GPU 回 L0，条目转"perf backlog"，与相机同级往后排。
+- **放弃 L2/L3（保 L1b）**：GL-over-Vulkan 桥做到 2 个月 CA 还喂不饱，或 Mesa GL gen8 迟迟不来且桥风险失控 → 2D 合成 + CPU GLES 兜底即可撑 UI。
 - **放弃整条 GPU 线**：locked/secure 状态下 TZ 拒绝我们碰 GX（红杉时代 `adreno=11/12` 一类探测步就是为此设计，
   先跑等价步）且无解刷方案 → 硬件 GPU 对本工程永久关闭。
 - **止损线**：任何一级连续 2 个真机窗口无前进记录，降级回上一级并写 postmortem 进 docs/analysis/。
 
 ## TODO（留给在线轮）
-1. Mesa a8xx GL/ir3/turnip 支持面 + 最低版本（查 `git log --oneline -- src/gallium/drivers/freedreno` @ gitlab；
-   本轮 GitLab raw/API/搜索配额全部不可用，只确认了 main 上 gallium a6xx/a7xx 目录已不在、通用 fd_* 结构——**必须在线复核，L2 立项前**）。
-2. `0x44050000` 的公开归属（gen80200? SM8750 kgsl 固件在 /vendor/firmware 的实际文件名——拉固件清单）。
+1. ~~Mesa a8xx GL/ir3/turnip 支持面~~ **已办结（2026-10-23，§2.1）**：turnip 有、GL 无。
+   余留：L2 选型调研（ANGLE-for-freedreno 桥 vs MoltenGL 式直译，红杉 EAGL 垫片改接 turnip 的改动面）。
+2. ~~0x44050000 归属~~ **已办结**：上游 catalog 认得（a830，fuse 位勘误 48be91d1）；固件 = linux-firmware
+   gen80200 三件套（gmu/sqe/aqe），下载即可，无需真机 dump。zap 是否需要仍看真机（上游 gen80200 无 zapfw）。
 3. HFI 版本号（gen8 用哪个 MSGQ/HFI ver）与 `qcom,gmu-freq-table` 语义（dts 里 0x1dcd6500/0x26be3680）。
 4. 上游 a8xx 合入的具体 tag 序列（当前已知 master v7.3 含）。
 5. `docs/metal.md`（redwoodmetal.m 引用的测量文档）在本仓缺失——从 hackios-xnu-userland 上游仓库补档。
