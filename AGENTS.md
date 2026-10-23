@@ -19,3 +19,4 @@ HackiOS（XNU + 未修改 iOS 16.5 用户态）移植到 REDMI K90（SM8750，�
 - 过程记录写 `docs/progress/`（按日期命名），规划写 `docs/plan/`，调研/实测数据写 `docs/analysis/`。
 - `annibale-backup/` 是分区备份数据说明，内容勿删。
 - 真机操作前后先看 `docs/plan/device-test-playbook.md` 的陷阱清单。
+- 进度与队列的唯一总账是 `docs/plan/2026-10-23-tracking.md`：保持简练（一项一行），细节写进各条目链接的专门文档，不要把展开内容堆回总账。
