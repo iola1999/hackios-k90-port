@@ -1,6 +1,6 @@
 # GPU 计划（SM8750 / Adreno 830 "sun"）— 离线调研 2026-10
 
-状态更新（2026-10-24）：用户已将交互卡顿和 GPU 加速列为当前重点。采样定位到 `softpipe` 软件着色器耗时；A830 的诊断阶段 1–15 已通过真机验证，包含 GMU 固件启动、HFI 2.7.1、频率／带宽表、CORE_FW_START 与最低档 DCVS 应答。Android 日志与厂商配置确认本机使用 `gen80000_*`，GMEM 为 12 MiB，先前按相似 chipid 选择 gen80200 的判断已修正。当前推进 GX、GPU 页表和命令处理器初始化，然后按 Metal→metal2vulkan→Turnip 路径接入硬件绘制。技术选择见[图形加速对照](../analysis/2026-10-24-metal-route.md)，分阶段结果见[GPU 初始化记录](../progress/2026-10-24-gpu-initialization.md)。下文的上游支持范围仍需按本机配置独立验证。
+状态更新（2026-10-24）：按用户最新要求整理后暂停。采样定位到 `softpipe` 软件着色器耗时；普通 GMU/HFI 初始化与最低档 DCVS 已实测。后续第 14 阶段改为 HWSCHED START，完成 7 项普通内存分配后因缺少 kind 5 安全资源实现停止，GPU 命令与渲染尚未执行。本机使用 `gen80000_*`、12 MiB GMEM。当前设备已恢复 iOS 16.5 软件桌面；用户允许升级至 iOS 17 或更新版本。最新状态见[HWSCHED 实测](../progress/2026-10-24-gpu-execution.md)，恢复顺序和版本选择见[暂停计划](2026-10-24-gpu-handoff.md)。下文保留平台调研，上游支持范围仍需按本机配置独立验证。
 
 ---
 
@@ -74,13 +74,14 @@
 |---|---|---|
 | GMU 初始化 | 电源、时钟、SMMU、gen80000 固件、HFI 与供电表 | 各阶段回读通过，固件正常应答，退出后停止访问内存 |
 | GPU 执行 | GX、GPU SMMU、zap 认证、SQE/AQE 与最小命令提交 | 离屏结果正确，fence 完成，异常可诊断和恢复 |
+| GLES 验证 | 复用当前 Mesa 26.2.5 与 RedwoodGPU 接口，增加 A830 用户态后端 | shader 和像素读回正确，再测当前桌面；为 Metal 提供已验证的内存和提交基础 |
 | Turnip 接入 | 复用现有 IOKit／缓冲接口，对照 NativeAdreno ABI 和 Mesa A830 参数 | 简单 Vulkan 任务在 K90 执行，结果与预期一致 |
-| Metal 接入 | 对照 NativeMetal 与现有 redwoodmetal，评估 metal2vulkan 和缓存 | iOS 16.5 的代表性 Metal 渲染通过，并分别测量首次编译与缓存后耗时 |
+| Metal 接入 | 对照 NativeMetal 与现有 redwoodmetal，评估 metal2vulkan 和缓存；优先审查参考目标 iPadOS 17.7.11 | 固定系统版本的代表性 Metal 渲染通过，并分别测量首次编译与缓存后耗时 |
 | 桌面验证 | 接入合成和输入交互，保留软件绘制配置用于对照 | 滑动、应用打开、时钟动画延迟可测，持续运行可恢复 |
 
 每阶段只增加已核对的硬件操作。真实固件、协议和地址映射先做主机边界测试，再进行真机验证。设备命令统一串行执行；其他任务可并行审阅独立模块。
 
-GPU 执行阶段优先采用 gen8_0_0 厂商配置选择的 HWSCHED。普通 HFI 的初始化与最低档 DCVS 已取得 ACK，完整提交仍待验证；后续 START 内存请求、GPU 映射、SQE/AQE、CP 和 zap 顺序按[命令执行启动调研](../analysis/2026-10-24-a830-command-startup.md)推进。
+GPU 执行阶段采用 gen8_0_0 厂商配置选择的 HWSCHED。恢复后先完成 kind 5 安全资源与 START，再验证 GPU 映射、SQE/AQE、CP 和 zap；每项完成条件见[恢复计划](2026-10-24-gpu-handoff.md)。调用顺序的来源见[命令执行启动调研](../analysis/2026-10-24-a830-command-startup.md)。
 
 ## 5. 失败后的处理
 

@@ -36,6 +36,7 @@ HackiOS（XNU + 未修改 iOS 16.5 用户态）移植到 REDMI K90（SM8750，�
 - 接手、排查、构建和真机操作前阅读 [项目排查与协作手册](docs/plan/debugging-and-collaboration.md)，按其中的前提、操作、成功条件和失败处理执行；近期实测见 [2026-10-23 调试案例](docs/analysis/2026-10-23-boot-debugging-sop.md)。旧文档与新结果有差异时核对源码、产物和实测时间，设备当前状态重新读取。
 - 当前真机启动与早期桌面结果见[运行记录](docs/progress/2026-10-23-runtime-debugging.md)；触摸报告模式、TLMM 地址、BQ 电量、充电状态与 CPU 拓扑的后续判断见[桌面交互案例](docs/analysis/2026-10-24-interactive-runtime.md)，该文档记录增量阅读截止位置。硬件调试文件的读取也可能访问寄存器，操作前核对范围及恢复方式。
 - 2026-10-24 已确认的触摸、按键、高性能核心与绘制采样见[输入和绘制记录](docs/progress/2026-10-24-input-and-rendering.md)；Metal、GLES 与 UniXNU 的路径选择见[图形加速对照](docs/analysis/2026-10-24-metal-route.md)；gen80000 固件选择、SMMU／HFI 修复和分阶段实测见[GPU 初始化记录](docs/progress/2026-10-24-gpu-initialization.md)；HWSCHED、GPU 映射、CP 与 zap 的下一阶段顺序见[命令执行启动调研](docs/analysis/2026-10-24-a830-command-startup.md)。
+- GPU 最新状态与阶段编号变化见[HWSCHED 实测及暂停交接](docs/progress/2026-10-24-gpu-execution.md)：START 停在 kind 5 安全资源请求，硬件加速尚未运行。系统版本已允许扩展到 iOS 17+；恢复顺序、版本取舍和验收条件见[图形加速恢复工作计划](docs/plan/2026-10-24-gpu-handoff.md)。
 - 经验文档优先记录排查方法、底层原理、判断依据和验收边界；已由代码或工具链解决的问题简短提及，具体命令集中在当前操作手册。
 - 从会话整理经验的可复用指令见 [经验整理 Prompt](docs/plan/experience-review-prompt.md)，整理方式调整后同步更新该文档。
 - 原始日志、截图、转储和本轮产物清单保存在 `.gitignore` 覆盖的本地调试目录，文字结论与必要的日志摘录写进 Markdown；提交前检查父仓库及各子模块的变更归属。

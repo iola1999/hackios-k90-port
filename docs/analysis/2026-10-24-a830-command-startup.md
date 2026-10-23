@@ -1,5 +1,7 @@
 # A830 命令执行启动调研
 
+后续实现与实测已记录在[HWSCHED 暂停交接](../progress/2026-10-24-gpu-execution.md)：当前第 14 阶段改为完整 START，完成 7 项普通内存分配后停在 kind 5 安全资源。下文的阶段结果保留原产物定义；GPU 配置、CP 和 zap 已实现并通过主机测试，真机尚未执行。
+
 本文记录 2026-10-24 的 GMU/HFI 验收边界，以及 SM8750 `gen8_0_0` 后续 GPU 初始化顺序。当前实验已通过阶段 1–14；随后阶段 15 的 125 MHz／BW2 DCVS 请求也获得 ACK，GX 状态仍为 `0x3`，运行期间通过 USB PSCI 重启并恢复 iOS 桌面，详见[最低档 DCVS 记录](../progress/2026-10-24-gpu-initialization.md#10-最低档-dcvs-与运行期间-usb-复位)。GPU 命令执行、绘制和加速仍待验证。后续优先采用厂商 HWSCHED 路径，阶段安排见 [GPU 计划](../plan/gpu-plan.md)。
 
 ## 1. 阶段 1–14 已确认的范围
@@ -84,7 +86,7 @@ powerup list 包含锁和计数头、静态寄存器对，以及带 pipe ID 的�
 ## 6. 尚未确认的条件
 
 - GPU SID/context 的实际可写范围、SQE/AQE 取指权限、APRIV 与 scratch 写回仍需真机验收；HWSCHED 同时可见于 GPU/GMU 的缓冲区需要分别映射和检查。
-- `gen8_start()` 的寄存器表、pipe/aperture、powerup list 和特性配置尚未移植。LPAC、preemption、warmboot 等功能的裁减条件需按调用关系核对。
+- `gen8_start()` 的寄存器表、pipe/aperture、powerup list 和最小特性配置已实现并通过主机检查，真机尚未到达该阶段。显式关闭 preemption 后固件仍请求安全资源；LPAC、warmboot 等裁减条件继续按调用关系与实测核对。
 - K90 对当前公开 zap 文件的签名接受情况尚未验证；固件同族和 ELF 结构检查只覆盖选型及格式。
 - host DDR 投票、GMU PLL 时钟及继承状态消除后是否仍可启动尚未验证。
 - [RSC sleep](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_gmu.c#L355-L389)要求 `FIRST_BOOT_DONE`；厂商在 GPU 启动全部完成后才设置该标志。已检查的 gen8 驱动没有 RSC/PDC sequence RAM 初始化代码，初始化由哪个前置阶段完成尚不明确。CORE_FW_START ACK 后直接请求 RSC sleep 的条件仍未确认，DCVS/OOB 后的退出必须单独验收。

@@ -43,6 +43,8 @@ NativeAdreno 当前针对 A740。K90 的 GPU 电源、固件、GMU/HFI、SMMU �
 
 ## 4. 下一阶段顺序
 
+2026-10-24 后续用户允许升级至 iOS 17 或更新版本，并同意整理后暂停。NativeMetal 固定快照的实际目标为 iPadOS 17.7.11，包含 `_MTLDevice` 实例大小检查；17.0 是构建部署目标。系统版本取舍和恢复工作顺序以[暂停计划](../plan/2026-10-24-gpu-handoff.md)为准，当前 iOS 16.5 保留为硬件与 GLES 验证环境。
+
 1. 完成 A830 底层初始化和恢复检查，再验证命令提交、fence、离屏绘制与读回。这些工作同时服务 GLES 和 Metal。
 2. 使用本机 iOS 16.5 的原始 QuartzCore AIR 验证 metal2vulkan、Turnip 编译、资源绑定和必要的 Metal API；保留具体成功项和失败项。
 3. 接入 IOSurface、同步和桌面显示，验证壁纸、半透明、时钟、滑动、应用切换及持续运行。

@@ -15,7 +15,7 @@
 | 候选 | 已有依据 | 升级后的工作 |
 |---|---|---|
 | 当前 iOS 16.5 | K90 已进入桌面；触摸、按键、双高性能核心已验证；Mesa 26.2.5 已构建 | 完成 A830 内核服务即可测试现有 GLES/OSMesa 路径；NativeMetal 的私有接口仍需适配 |
-| 参考目标 iPadOS 17.7.11 | UniXNU 的 sheng/A740 文档报告 Metal 桌面，NativeMetal 对应该系统布局 | 评估 K90 的 XNU、启动及显示/input 迁移；实现 A830 提交与 Darwin KMD 接口；验证 iPad 身份与手机界面需求 |
+| 参考目标 iPadOS 17.7.11 | UniXNU 的 sheng/A740 文档报告 Metal 桌面，NativeMetal 对应该系统布局 | 评估 K90 的 XNU、启动及显示与输入迁移；实现 A830 提交与 Darwin KMD 接口；验证 iPad 身份与手机界面需求 |
 | iOS 26/27 | 用户允许采用；本项目尚无对应镜像、内核或 GPU 运行验证 | 先审查 Mach-O 架构、指针认证相关要求、XNU/IOKit、dyld、系统镜像、Metal 私有接口及 AIR 兼容范围，再与 17.7.11 路径比较 |
 
 UniXNU 当前固定快照的 [sheng 配置](https://github.com/UniXNU/UniXNU/blob/1a01c2afa197d975d04da892325c56b6b14aaecb/docs/devices/sheng.md)使用 iPadOS 17.7.11。Turnip、Rust bridge、Metal 插件的构建目标均为 iOS 17.0；17.0 是 deployment target。NativeMetal 还在运行期检查 [`_MTLDevice` 的实例大小必须为 536](https://github.com/UniXNU/NativeMetal/blob/c6d29caad6d880cc8204ebe3bc34d77479a3255d/NativeBridgeMetalFrontend.mm#L1559-L1560)，注释明确对应 iPadOS 17.7.11。当前核对未取得所有 iOS 17+ 版本的兼容结果。
@@ -60,6 +60,6 @@ UniXNU 的 Turnip Darwin 补丁使用 `NativeAdrenoABI`，本项目使用 msm DR
 
 - 设备留在已验证可启动的 iOS 16.5 配置，当前为软件绘制。重新接手先读[真机手册](device-test-playbook.md)，查询 USB 与运行状态；不依赖暂停时的画面推断当前状态。
 - 当前源码通过主机检查和构建；`handoff-mach-gpu-pause` 尚未真机执行，安全分配仍缺失。已测产物与最新构建分别保存在实测记录和本地 manifest。
-- 原始日志、截图、源码副本与产物清单位于忽略目录 `docs/progress/evidence/2026-10-24-gpu-execution/`；没有提交或推送。共享工作树中其他任务的修改需要继续保留。
+- 原始日志、截图、源码副本与产物清单位于忽略目录 `docs/progress/evidence/2026-10-24-gpu-execution/`。交接时内核提交为 `57066c7`，父仓提交为 `89a93c3`，后续文档变更仍在工作树；推送状态未核对。共享工作树中其他任务的修改需要继续保留。
 - 恢复后由一个任务管理 USB 与共享内核构建；可并行安排安全内存实现审阅、用户态接口研究和系统版本兼容检查。各任务分别交付来源、改动与未验证条件，由设备负责人串行整合。
 - 本轮已经暂停，无后台 GPU 实验或后续自动执行安排。恢复指令可直接要求从 kind 5 安全资源开始，沿本页验收顺序推进。

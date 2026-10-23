@@ -81,7 +81,7 @@ fastboot -s xnuloader get_staged /tmp/hackios-return.log
 - `result: hung ...`：CPU 仍可能运行或停在异常位置，先重启 loader，再上传系统盘。
 - 重启命令后重新枚举且 `result: idle`：loader 已重新启动，先前 RAM 镜像需要重新上传。
 - `result: reset-failed`：PSCI 复位调用返回，直接读取日志中的返回值；loader 保留 USB 命令循环。
-- `adreno8=15` 的最低档 DCVS 实验要求 `adreno8_keep=1 adreno8_return=0`，采样后通过 loader USB reboot 冷重启，再上传系统盘。当前阶段保留映射和内存；普通退出与 panic 返回都受 `dcvs_requested` 限制。固件 ACK 成功或失败均需要冷重启，不能直接上传下一份内核继续运行。
+- 当前源码从 `adreno8=14` 开始执行 HWSCHED START，要求 `adreno8_keep=1 adreno8_return=0`；旧第 14 阶段只有 CORE_FW_START，产物与阶段对应关系见[实测交接](../progress/2026-10-24-gpu-execution.md)。采样后通过 loader USB reboot 冷重启，再上传系统盘。普通退出与 panic 返回都检查 `adreno8_reset_required` 和 `adreno8_memory_retained()`；ACK 成功、失败或分配中途失败均可能要求保留资源，不能直接上传下一份内核重用内存。`loader_return_after` 无法取消该保护。
 - `result: no-such-core ...`：先保存 loader 原始日志，核对目标 MPIDR 和 PSCI 返回值。该状态下的旧画面无法用于评估本轮性能。
 - USB 有枚举记录但命令无响应：可能是内核占用 loader 的 CPU、USB 传输等待或固件异常。记录命令、耗时、USB 枚举与画面，分别排查。
 - 返回 Android：先进入 LK，再执行 `fastboot -s "${ANDROID_SERIAL}" set_active b` 和 `fastboot -s "${ANDROID_SERIAL}" reboot`。loader 的 `reboot` 只执行冷重启，目标仍由当前槽位决定。
