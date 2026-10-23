@@ -26,6 +26,7 @@
 11. **GPU 移植调研完成**：`docs/plan/gpu-plan.md`。上游 Linux v7.3 已收 a8xx （288a9320，复用 a6xx GMU/HFI 框架）；SM8750 基址从设备树拆齐（3D 0x3d00000、GMU 0x3d37000、GPUCC 0x3d90000、SMMU 0x3da0000…），chipid 0x44050000 需自扩 catalog。redwood全链路（上电阶梯→Mesa redwood-drm 桩→Mini IOSurface/FB→Metal 半成品）盘点完毕，L1/L2/L3 三级均不动 iOS 用户态。外部未知经两轮实查收敛（web 恢复后 GitLab API；子 agent 复核修正了我一轮的过度结论——大写串 grep 假阴性）：**turnip 的 A8XX 生产可用级；gallium GL 并非零——fd6 已 CHIP 模板化、有 `CHIP >= A8XX` 运行时分支与专修提交，只缺 CI 背书**。L2 选型：先 fork rebase 26/27 直译实测（离线可做、与 L1a 并行），不通再退 turnip+GL 桥。0x44050000 上游 catalog 认得（fuse 勘误补丁进 25.3）；gen80200 固件三件套（gmu/sqe/aqe）linux-firmware 直接可拿，L1a 不用等真机 dump。附："Introduce A8x"（288a9320）核验在 v6.19 内、v6.18 不含；"gen8 弃 ir3"系误传，shader 后端仍是 ir3，差异由 CHIP 模板+devinfo 吸收。
 12. **相机移植调研完成**：`docs/plan/camera-plan.md`。redwood链路是完整方案（内核 cam=1..5 + mediaserverd 注入 + 软 ISP，非半成品）；annibale CAMSS 基址/供电/ I2C 从 /tmp/hw_check.dts 拆齐补录（hw-map 待同步）；L1a TPG→CSID-lite→IFE-lite 通路 ~3 周、盲写 70–80%。硬前提=真机拉 /vendor/lib64/camera 的 sensormodule bin（当前 annibale-backup 无 vendor dump）。
 13. **gen80200 GPU 固件三件套入库**（userland 仓 `firmware-gen8/`，SHA256 钉死）——GPU L1a 开工零真机依赖。至此"开机→图形→触摸→震动→联网→GPU→相机"七项的离线可准备资源全部落档：前三项代码就绪，后四项规划+基址表+固件就绪。
+14. **功能全景扫描 + 上游同步**：新增 `docs/analysis/2026-10-23-feature-scan.md`（红杉全家底×K90 对照表）。扩容决定：按键（音量上=TLMM GPIO6 实证）/电池（内核直读 FG）/手电三项进本期批次；音频不做。上游 oosexgang 两仓 main 零新提交；replydev 三个未合并 PR（构建失败传播/QEMU --foreground/老 prebuilt 修复）经用户裁决**不提前摘取**，已摘又回退。勘误：WCN7850 Wi-Fi 固件其实在 linux-firmware `ath12k/WCN7850/hw2.0/`（首查只翻了 qcom/ 目录），Wi-Fi 硬前提消解，全链路可离线盲写。
 
 ## 等设备回到视野后（按序）
 

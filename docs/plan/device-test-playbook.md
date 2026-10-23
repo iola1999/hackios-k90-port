@@ -93,4 +93,8 @@ C 的图形里程碑达成后，逐个外设加旗标复测（payload `--cmdline
 - `touchscreen=2`：annibale Goodix 触摸（cc9ff58 参数化）。锁屏上手指的滑动解锁就是验收；坏了指纹=日志落 boot_a 里 `goodix:` 前缀行。
 - `hv_haptic=3`：PMIC 震动自检——起内核后 30 ms 直驱一次马达，**手感就是验收** （屏幕/串口都看不到它）。没感觉再加 `haptic_amp=128` 试更大；仍无 → boot_a 读 `haptic:` 前缀（arbiter 表、revision、fault 都在里面）。
 - `hv_haptic=4`：iOS 反馈直通马达（/dev/redwood-haptic，DIRECT_PLAY 跟随响度）。桌面点击该有震感。上限 1 s/次，fault 自动弃疗。
+- `buttons=1`：音量/电源键（待离线移植；音量上=TLMM GPIO6 直读，电源/音量下=PMK8550 PON 纯读）。
+- `torch_secs=3`：手电盲测——亮 3 秒自己灭，肉眼即验收（待离线移植，PMI 闪光灯块）。
+- 电池（待定型：内核 SPMI 直读 PMIH010X FG）：验收=屏幕电量图标出数。
+- **真机一把过批次**：cmdline 一次带全 `touchscreen=2 hv_haptic=3 buttons=1 torch_secs=3`，观察顺序 看屏→搓屏→手感→音量键→手电→电量图标，收尾 `adb pull /vendor/lib64/camera`（纯拷贝，不动块）。
 - 触摸/震动都惰性于默认 cmdline（不带旗标=零动作），QEMU 同理不需要它们。

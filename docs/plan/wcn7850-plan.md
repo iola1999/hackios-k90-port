@@ -77,7 +77,7 @@ SMEM `0x80900000+2MB`（WPSS 条目 13）与其锁 `0x1f43000`、IPCC `0x408000`
 | 维度 | redwood WCN6750 | annibale WCN7850 |
 |---|---|---|
 | 总线 | 片内 ahb（PIL 起 WPSS DSP） | **PCIe RC0 端点** |
-| 固件加载 | TrustZone PIL（mdt/b0x） | **MHI SBL/EDL 下载**（DT 未列文件名；mainline linux-firmware 无 WCN7850 包，在 CAF/设备 vendor 分区） |
+| 固件加载 | TrustZone PIL（mdt/b0x） | **MHI SBL/EDL 下载**。固件勘误（2026-10-23 二查，见 docs/analysis/2026-10-23-feature-scan.md §3）：**linux-firmware 有 WCN7850 包**——`ath12k/WCN7850/hw2.0/{amss.bin,m3.bin,board-2.bin}`（在 ath12k/ 下不在 qcom/ 下，首查目录找错了）；SBL 固件名仍以真机/vendor 为准 |
 | 控制面传输 | SMEM/SMP2P/IPCC/GLINK→QRTR | **MHI 通道**（QRTR-over-MHI、QMI 直接跑 MHI buf ring） |
 | QMI/WLFW | 已打通 | 报文族相近（ath11k qmi → ath12k qmi 表不同），`redwood_qmi.c` 编解码器**可复用**，只换传输 |
 | 驱动 | ath11k(ahb) via LinuxKPI | **ath12k** `drivers/net/wireless/ath/ath12k/wifi7/`（mainline 已有 `hal_wcn7850.c`，MHI 总线） |
@@ -106,7 +106,7 @@ SMEM `0x80900000+2MB`（WPSS 条目 13）与其锁 `0x1f43000`、IPCC `0x408000`
 |---|---|---|---|---|
 | 0 | **PCIe link-up + 读 config space**（认出 0x17cb:0x1107）。gcc 双 gdsc + CRM + phy/elbi 上电、perst/clkreq GPIO、RC0 init、conf_apb 配置读。boot-arg `wifi_step=` 风格分步 `pcie=1..N` | 新 `redwood_pcie.c`（或 annibale_ 前缀） | 1–2 周 | 70% 可盲写（寄存器 Linux pci-msm/DT 全有）；**link-up 必须真机**（LK/UEFI 是否已占 RC0 要实测） |
 | 1 | **MHI host 最小子集**：BHI/BAR0 握手、SBL 加载、state change、MHI reset/EDL、开 QMI+QRTR 通道 | 新 `redwood_mhi.c`（对照 Linux drivers/bus/mhi） | 1–2 周 | 大部分可盲写；失败态（SBL 不响应、需要 EDL 强制下载）必须真机 |
-| 2 | **固件下载 + WLFW 握手**：SBL→下载 FW（文件名 TODO：真机 dump `/vendor/firmware_mnt/image` 与 CAF ath12k-dev 包核对）；QMI WLFW：`redwood_wlfw` 逻辑平移，`mk-wlfw.sh` 改抽 **ath12k** 的 qmi 表；传输层 = `redwood_qmi.c` 换挂 QRTR-over-MHI（新 `redwood_mhi_qrtr.c`） | 改 wlfw + 新 mhi_qrtr + mk- 脚本改向 | ~1 周 | 握手报文可盲写；FW 文件与行为要真机 |
+| 2 | **固件下载 + WLFW 握手**：SBL→下载 FW（主体固件已可从 linux-firmware `ath12k/WCN7850/hw2.0/` 离线取得；SBL 与板级 BDF 变体待真机核对）；QMI WLFW：`redwood_wlfw` 逻辑平移，`mk-wlfw.sh` 改抽 **ath12k** 的 qmi 表；传输层 = `redwood_qmi.c` 换挂 QRTR-over-MHI（新 `redwood_mhi_qrtr.c`） | 改 wlfw + 新 mhi_qrtr + mk- 脚本改向 | ~1 周 | 握手报文可盲写；FW 文件与行为要真机 |
 | 3 | **数据面**：Plan A = 手写"最小 WMI 集"（scan/join/收发，仿 wlfw 替身思路），HAL ring 直对 BAR0（REO/TCL/TxDMA + RX ring）；Plan B = `mk-ath12k.sh` 把 wifi7 ath12k + LinuxKPI 全量搬进来（仿 mk-ath11k.sh，mhi/pci bus）。**先 Plan A 出联网，Plan B 做完整化** | 新 `redwood_wmi.c`/ring 代码，或新 mk- 脚本 + lx 补丁 | 2–6 周 | 结构可盲写；ring/中断/DMA 时序**基本靠真机磨**——"月级"就出在这步 |
 | 4 | **en0 挂接**：redwood_net/apple80211/RedwoodWLAN 换 link 指到新 radio | 小改 | 天级 | 全盲写 |
 | 5 | （后置）BT：MHI HCI 或 SE14 UART 二选一（真机定）；BT 音频 | — | 周级 | — |
@@ -118,7 +118,7 @@ SMEM `0x80900000+2MB`（WPSS 条目 13）与其锁 `0x1f43000`、IPCC `0x408000`
 ## 5. 风险与放弃准则（"这轮不做 Wi-Fi"的触发条件）
 
 1. **PCIe 起不来**：连续 3 个真机窗口 link-up 失败（PERST/时钟/上电序排查完仍无 LTSSM detect）→ 放弃本轮。嫌疑点：LK/UEFI 是否已初始化 RC0 并被安全态锁住；pcie_sm 序列与 bootargs 常量对不上。
-2. **固件不可得**：WCN7850 FW 包拿不到（vendor 分区 AVB/加密、无 CAF 授权包）→ 无米下锅，直接放弃（这是硬前提，开工前先真机 dump 验证）。
+2. ~~固件不可得是硬前提~~ **已消解（2026-10-23）**：ath12k 主固件在 linux-firmware 拿得到；仅当板级 BDF 全部对不上且 vendor 分区加密读不出时才触发放弃。
 3. **MHI 下载成功但固件不 boot**（SBL 无 state change / QMI 服务不出）≥2 周 → 降级：本轮只做"能枚举到设备 + 读卡 ID"存档。
 4. **SMMU/IOVA 冲突**：stream 0x1400 context 建不起或与 DisplayDxe/保留区撞窗 → DMA 不可用 → 放弃数据面，保留结论。
 5. **数据面 timebox**：步 3 开工 2 周无第一笔 TX 完成 → 砍到"QMI 握手通"为止。
@@ -127,7 +127,7 @@ SMEM `0x80900000+2MB`（WPSS 条目 13）与其锁 `0x1f43000`、IPCC `0x408000`
 
 ## 6. TODO（留给真机/联网轮）
 
-- [ ] 真机 dump `/vendor/firmware_mnt/image`（找 kiwi/wcn785x/m301/SBL 命名）+ 核对 CAF ath12k-dev 的 FW 文件名（mainline linux-firmware 无 WCN7850 包，本轮 gh 抓取未果）
+- [x] ~~linux-firmware 无 WCN7850 包~~ 勘误：在 `ath12k/WCN7850/hw2.0/`（GitLab 镜像实查）。真机侧只剩：SBL 命名核对 + board-2.bin 板级变体验证 + `/vendor/firmware_mnt/image` 兜底 dump
 - [ ] LK/UEFI 阶段 RC0 状态（是否已被点着、pcie_sm 读回）
 - [ ] BT HCI 真实载体：MHI vs SE14 UART
 - [ ] ath12k WCN7850 的 BAR/ring 布局笔记（读 wifi7/hal_wcn7850.c 出一份寄存器清单）
