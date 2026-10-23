@@ -79,8 +79,8 @@ K90 真机工作仍处于早期启动验证阶段。当前最大的限制是缺�
 
 | 编号 | 状态 | 负责人/任务 | 说明 |
 |---|---|---|---|
-| F09 | 🔵处理中 | adreno / task-19 stepper 2 | 从 USB 自动路径移除 probe_boot_a() 写探针，只读诊断保留 |
-| F10 | 🔵处理中 | adreno / task-19 stepper 1 | 容量/溢出/目标区域全检提到任何清零与读盘之前，四输入验收 |
+| F09 | ✅完成（kernel efe0e55） | adreno / task-19 stepper 3 | 自动路径 inspect_storage() 只读零写；写探针收进显式 oem probe 且五步非破坏 保存→写→验→恢复→验（日志 /tmp/task19/probe-simulation.log）；boot_a 回退仅在显式 oem logwrite 运行期间生效（F09LW 标记段+flag 门），自动 flush 无 logdump 时走 console 回显、USB 面纯读，oem logwrite 已入 busy 拒收列表；host harness 五例全过（logdump 恒优先/无 flag=NULL/flag 期=boot_a/命令结束回 NULL），日志 /tmp/task19/logwrite-simulation.log。闸门（Lead）：双编译变体过、QEMU 420s SpringBoard×2 零 panic；新增 oem probe/oem logwrite 两命令，命令面见 playbook |
+| F10 | ✅完成（kernel efe0e55） | adreno / task-19 stepper 1 | 布局与全部容量/溢出/目标区域检查抽成 plan_layout()，run_kernel 仅在检查通过后才触内存与读盘；host 分支测试逐字提取 loader.c F10 标记段，7 例（含验收四输入：刚好/差一页/远小于/异常长度）拒绝路径零加载调用，日志 /tmp/task19/rdfile-order-simulation.log；loader 两编译变体零告警。闸门（Lead）：QEMU 420s 正常路径行为零变化，kernel efe0e55 入库 |
 | F01 | ✅已闭环（流程性） | Lead / 轮末重打 | 设备轮最终 c.img 重打本就按**实际 system 文件**重新生成 rdfile 参数并记录 kernel/loader/root/system 产物清单（既定流程），16 KiB 偏移随重打消失；loader 内自动长度/哈希对账的**代码加固** ⏸暂缓——重打纪律先收账，观察一轮再定是否值得改 loader |
 | F02 | 🔵处理中（观测先行） | drivers / task-17 stepper C | 先加一行原始 TCSR0 读值日志，设备轮真机回读实证 618/360/垃圾三态；评审建议的**可信身份源+fail-closed 重构** ⏸暂缓（复杂：需 SMEM/固件协议核实，先用真机读数收编报告质疑，再定重构是否必要） |
 | F03 | 🔵处理中 | adreno / task-20 | getvar 保留 stderr 与退出码，区分 LK/fastbootd/loader/失败/超时 |

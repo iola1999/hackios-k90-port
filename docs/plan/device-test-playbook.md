@@ -65,7 +65,9 @@ head -c 2048 /tmp/logdump.bin
 6. EDK2 BlockIo **写** UFS 当前不落地（五分区探针全灭；读正常）——"写分区再回 Android 取证"的手段暂不可用；可用间接指纹 = payload bytesum、镜像容量、GONE 时长。rootfs 路线 D 只依赖读，不受影响。
 7. 桌面 wch 串口（921600）是桌上另一台设备（desk-01 JSON）。手机真 console = GENI uart **0xa9c000 / 115200n8**（docs/analysis/annibale-hw-map.md），QUP 时钟默认 gating，未飞线前别在串口上耗时间。
 8. **面板点亮取决于进入方式**：`reboot`/开机进 slot_a → LK 跑 splash → 0xFC800000 区域被 DMA 驱动，loader 的 SCREEN fallback 把我们文字和内核 BootArgs.video 都落在真屏上；`fastboot boot` 不经 LK splash → 面板全黑（写 fb 无害）。想看画面必须用 `--set-active=a` + `reboot`。
-9. **loader.efi 有两种构建，谁用谁现编**：手机镜像必须 `EXTRA_CFLAGS=-DDIRECT_PHONE_PLAT bash xnuloader/build.sh`；QEMU 回归（run-ios.sh 直接用 xnuloader/loader.efi）必须用默认构建。手机版喂给 QEMU，内核 5.8s 卡在 pe_arm_init_debug 之后（GIC 基址对不上）；默认版喂给手机，平台按 framebuffer 基址匹配不到 annibale。烧机前和跑 QEMU 前各编一次。
+9. **loader.efi 有两种构建，谁用谁现编**：手机镜像必须 `EXTRA_CFLAGS=-DDIRECT_PHONE_PLAT bash xnuloader/build.sh`；QEMU 回归（run-ios.sh 直接用 xnuloader/loader.efi）必须用默认构建。手机版喂给 QEMU，内核 5.8s 卡在 pe_arm_init_debug 之后（GIC 基址对不上；2026-10-23 再次实测复现，症状=整场 run 内核日志恒 616 B、SpringBoard 0）；默认版喂给手机，平台按 framebuffer 基址匹配不到 annibale。烧机前和跑 QEMU 前各编一次。
+
+USB oem 诊断命令面（kernel efe0e55 起）：`oem memmap`（内存图入日志）、`oem probe`（唯一显式写存储检查，boot_a 首块保存→写→验→恢复→验，非破坏）、`oem logwrite`（唯一允许日志落 boot_a 的入口，运行期间开旗，保住变体 C 的 boot_a 首块）、`oem log`（取日志）、`oem stop`；内核运行期间以上全部 busy 拒收（`oem stop` 除外）。自动路径（含 `fastboot get_staged`）零写盘，无 logdump 分区时日志只回显 console。
 
 ## 变体 C（rdfile，图形锁屏冲刺）流程
 
