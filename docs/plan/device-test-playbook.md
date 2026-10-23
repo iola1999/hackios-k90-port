@@ -98,5 +98,9 @@ fastboot --set-active=a && fastboot reboot
 fastboot --set-active=b && fastboot reboot          # 任何时候回用户 Android
 ```
 注意：variant C 的暂存区随时可能被 slot b 的 f2fs 写花——**每次试 C 前重跑 stage**。
+窗口数学：变体 C 要 loader 找到 **≥3.35G 单块连续空闲**（resident 2.49G + 内核自身
+768M 预留 + 64M，choose_window 取最大自由块，MAX_MEM_SIZE 封顶 6G）。splash 循环不
+黑屏 = 大概率块不够 → 用 payload `physbase=<地址>` 强制指定（候选 0x100000000，
+前提是那块确实整段空闲；届时看屏指纹或修好的日志通道确认）。
 super 尾部空闲 extent 是更稳的落点（f2fs 不会碰），偏移要等设备的 loader
 `ufs=1` 日志 + tools/ufs-super.py 解析出 lp 空闲区后固化进 rdfile= 参数。
