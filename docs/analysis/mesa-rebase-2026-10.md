@@ -102,7 +102,7 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 ### 8.3 软管线冒烟（macOS 主机，`AIR_RUN_SOFTWARE=1`，air_run/air_metal_test 均为 26.2.5 产物）
 
 - `fragpos.ll`（自证像素坐标约定的片元着色器）：air_run 4×4 绘制回读像素 (0,0) = **(0.5, 0.5, 0, 1)**，左上原点+y 翻转视口正确。
-- `tools/air/texopcheck.py`：纹理取样 **27/27** 逐一精确命中。
+- `tools/air/texopcheck.py`：全量口径 **99 calls = 74 命中 / 18 WRONG / 7 refused**（27/27 是历史子集口径，脚本无子集开关，全量口径为准；修订于 10 月 23 日，过程见 docs/progress/2026-10-23-offline-prep.md 条目 21）。7 refused 与 air.md 记载的"softpipe 跑不了的 16 位结果 7 例（f2f32）"吻合；18 WRONG 全是 i16/v4i16 取样——softpipe 对窄于 32 位的类型没有裁决权，属判定面而非前端缺陷（设备 ir3 上才是真问题）。
 - `tools/air/argbufruncheck.sh`（走 libredwoodair 的 compute dispatch + 渲染双路径、参数缓冲上传、fence）：**20/20 通过**（air_metal_test 需 install_name_tool 把 `/redwood/lib/libredwoodair.dylib` 改指本地 dylib，纯主机链接路径问题）。
 - 未做：`ios165/rootfs` 的 456 模块 corpus 未在本机解包，corpus.py/intrincheck 语料项跑 0 例（脚本自报 "NOTHING WAS COMPARED"，非失败）；iOS 交叉与真机仍按第 6 节顺序待设备。
 
