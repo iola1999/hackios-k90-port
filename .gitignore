@@ -1,6 +1,7 @@
 # 备份/运行产物不进 git
 annibale-backup/
 .DS_Store
+__pycache__/
 *.log
 logs-fetch.log
 tools/qemu-efi/*.fd

@@ -21,12 +21,12 @@
 
 Android 可连接时，通过 `adb -s "${ANDROID_SERIAL}" reboot bootloader` 进入 LK。内核无响应先保存可读日志并检查软件停止与返回能力；软件恢复不可用，再请用户长按电源键和音量下进入 FASTBOOT。沿用用户已尝试过的动作和结果，减少重复操作。
 
-本次记录已安装 `hackios-xnu-kernel/out/handoff-loader-v3.img`，包含此前屏幕、GIC 与空上传修复。以下为安装该记录版本的命令，重装前核对本轮实际文件与 SHA-256。`out/` 中的文件是本地构建产物。
+本次已安装 `hackios-xnu-kernel/out/handoff-loader-v5.img`，包含 v4 的屏幕、GIC、空上传、MPIDR 映射与状态字符串修复，并将 annibale USB reboot 改为直接 PSCI 复位。空闲与 GMU/DCVS 内核运行期间的两次 USB 重启均约 17 秒重新连上 USB，哈希与范围见[GPU 初始化记录](../progress/2026-10-24-gpu-initialization.md)。以下为安装该记录版本的命令，重装前核对本轮实际文件与 SHA-256。`out/` 中的文件是本地构建产物。
 
 ```sh
 fastboot -s "${ANDROID_SERIAL}" getvar product
 fastboot -s "${ANDROID_SERIAL}" getvar current-slot
-fastboot -s "${ANDROID_SERIAL}" flash boot_a hackios-xnu-kernel/out/handoff-loader-v3.img
+fastboot -s "${ANDROID_SERIAL}" flash boot_a hackios-xnu-kernel/out/handoff-loader-v5.img
 fastboot -s "${ANDROID_SERIAL}" set_active a
 fastboot -s "${ANDROID_SERIAL}" reboot
 fastboot -s xnuloader getvar product
@@ -37,17 +37,17 @@ fastboot -s xnuloader getvar screen
 
 ## 4. 上传系统盘并运行内核
 
-以下命令从 `hackios-xnu-kernel/` 目录执行，复用本次已取得触点的双核配置。`out/handoff-mach-coordinates` 与 `out/handoff-ui-clean.apfs` 分别为该轮内核与小根盘，使用前按产物清单核对版本和哈希。系统盘只需在本次 loader 生命周期首次运行或更换镜像时上传。
+以下命令从 `hackios-xnu-kernel/` 目录执行，复用本次已取得触点的双核配置。`out/handoff-mach-affinity` 与 `out/handoff-ui-clean.apfs` 分别为该轮内核与小根盘，使用前按产物清单核对版本和哈希。系统盘只需在本次 loader 生命周期首次运行或更换镜像时上传。
 
 ```sh
 bash tools/stage-system.sh
-python3 xnuloader/mkpayload.py -o out/handoff-full.bin kernel=out/handoff-mach-coordinates ramdisk=out/handoff-ui-clean.apfs --cmdline "debug=0x10e cpus=2 bootcpu=1 epoch=$(date +%s) touchscreen=2 gl=1 battery=1"
+python3 xnuloader/mkpayload.py -o out/handoff-full.bin kernel=out/handoff-mach-affinity ramdisk=out/handoff-ui-clean.apfs --cmdline "debug=0x10e cpus=2 bootcpu=7 small_cores_after=0 epoch=$(date +%s) touchscreen=2 buttons=1 gl=1 battery=1"
 fastboot -s xnuloader stage out/handoff-full.bin
 fastboot -s xnuloader oem run
 fastboot -s xnuloader getvar result
 ```
 
-`bootcpu=1` 把内核放到 MPIDR `0x100` 的 CPU 上，loader 保留当前 CPU 处理 USB。该轮第二颗 CPU 为 `0x200`，按现有策略延迟 28 秒启动；等待后核对在线日志。切换高性能核心前先检查 loader 的 MPIDR 映射，旧映射下 `bootcpu=7` 已返回 `no-such-core 6 0`，详见桌面交互案例。
+`bootcpu=7` 使用 MPIDR `0x10100`，第二颗为 `0x10000`，loader 保留当前 CPU 处理 USB。该组合已确认两颗 CPU 在线。此命令要求 loader v4 或 v5 与 `handoff-mach-affinity` 配套，较早版本缺少完整 Aff2 处理。
 
 上述交互配置持续运行，使用 `fastboot -s xnuloader oem stop` 结束，再确认 `result` 已返回。限时测试可单独添加 `loader_return_after=N`，记录期限；该机制依赖对应初始化与回调，早期挂起仍可能无法返回。屏幕停在最后一帧先查询 `result`，避免重复调查已经退出的系统。
 
@@ -65,7 +65,7 @@ fastboot -s xnuloader get_staged /tmp/hackios-screen.raw
 
 `oem log` 和 `oem screenshot` 只准备数据，`get_staged` 才把数据传回主机。截图为原始帧缓冲，按 `getvar screen` 的宽、高和每行字节数解码。本机 fastboot CLI 使用 `get_staged`；线上的 USB 协议命令名为 `upload`。
 
-内核返回后，loader 已准备合并日志。先查询状态，确认返回后直接读取；本步骤之前不要再调用 `oem log` 或 `oem screenshot`，两者会替换暂存内容：
+内核返回后，loader 已准备合并日志。先查询状态，确认返回后直接读取；本步骤之前不要再调用 `oem log` 或 `oem screenshot`，两者会替换暂存内容。异常返回日志可能因缓冲上限截断，持续采集时同时保留返回前的实时日志和状态记录：
 
 ```sh
 fastboot -s xnuloader getvar result
@@ -79,7 +79,9 @@ fastboot -s xnuloader get_staged /tmp/hackios-return.log
 - `result: running`：内核仍在运行，读取 USB 日志判断进度。
 - `result: returned ...` 或 `checkpoint ...`：内核已返回，可取日志并上传下一份 kernel payload；RAM 中的系统盘可以继续使用。
 - `result: hung ...`：CPU 仍可能运行或停在异常位置，先重启 loader，再上传系统盘。
-- `result: idle` 且日志重新出现 `XNULOADER v3`：loader 已重新启动，先前 RAM 镜像需要重新上传。
+- 重启命令后重新枚举且 `result: idle`：loader 已重新启动，先前 RAM 镜像需要重新上传。
+- `result: reset-failed`：PSCI 复位调用返回，直接读取日志中的返回值；loader 保留 USB 命令循环。
+- `adreno8=15` 的最低档 DCVS 实验要求 `adreno8_keep=1 adreno8_return=0`，采样后通过 loader USB reboot 冷重启，再上传系统盘。当前阶段保留映射和内存；普通退出与 panic 返回都受 `dcvs_requested` 限制。固件 ACK 成功或失败均需要冷重启，不能直接上传下一份内核继续运行。
 - `result: no-such-core ...`：先保存 loader 原始日志，核对目标 MPIDR 和 PSCI 返回值。该状态下的旧画面无法用于评估本轮性能。
 - USB 有枚举记录但命令无响应：可能是内核占用 loader 的 CPU、USB 传输等待或固件异常。记录命令、耗时、USB 枚举与画面，分别排查。
 - 返回 Android：先进入 LK，再执行 `fastboot -s "${ANDROID_SERIAL}" set_active b` 和 `fastboot -s "${ANDROID_SERIAL}" reboot`。loader 的 `reboot` 只执行冷重启，目标仍由当前槽位决定。
