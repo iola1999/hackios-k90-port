@@ -58,8 +58,10 @@
   Display_Reserved 同址）填进 BootArgs.video（commit a6bdbab）——**开机到图形锁屏
   不需要 MDSS/DSI 驱动**；DisplayDxe 的 PanelName 悬念降级为"快进路径不再必需"。
   前提：用 `--set-active=a + reboot` 启动让 LK 点屏（playbook 陷阱 8）。
-  GPU 加速（Adreno 830/gen8）维持不做；redwood 的 a660 GPU 驱动（redwood_adreno.c，
-  含面板扫描）是将来 perf 的参考蓝本。
+  GPU 加速（Adreno 830/gen8）本期维持不做，但资源已备好：`gpu-plan.md`——上游
+  v7.3 已收 a8xx（288a9320），SM8750 全套基址已从设备树拆齐可抄，红杉蓝本
+  （redwood_adreno.c 22 步上电 + Mesa freedreno 桩 + Mini IOSurface/FB 替身 +
+  Metal 半成品）链路已盘点清楚；L1 2D/L2 GLES/L3 Metal 三级都不动 iOS 用户态。
 - **外设驱动盘点**（fork 的真机驱动全是 bsd/dev/redwood_*.c 裸寄存器 + boot-arg 开关，
   无 IOKit 框架）：触摸 `redwood_goodix.c` **已完成 annibale 参数化**（2026-10-23 离线轮，
   kernel cc9ff58）：开机参数 `touchscreen=2` 即换用 annibale 表——SE2 **0xa88000**（勘误：

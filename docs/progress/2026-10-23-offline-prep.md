@@ -59,6 +59,12 @@
 10. **Wi-Fi 移植调研完成**：`docs/plan/wcn7850-plan.md`。勘误红杉链路（PIL+GLINK/
     QMI，无 MHI）；annibale WCN7850 走 PCIe RC0@0x1c00000 + MHI，fork 内核两块
     全新增，估算 4–8 周真机窗口起步。硬前提：先 dump vendor 分区拿固件。
+11. **GPU 移植调研完成**：`docs/plan/gpu-plan.md`。上游 Linux v7.3 已收 a8xx
+    （288a9320，复用 a6xx GMU/HFI 框架）；SM8750 基址从设备树拆齐（3D 0x3d00000、
+    GMU 0x3d37000、GPUCC 0x3d90000、SMMU 0x3da0000…），chipid 0x44050000 需自扩
+    catalog。红杉全链路（上电阶梯→Mesa redwood-drm 桩→Mini IOSurface/FB→Metal
+    半成品）盘点完毕，L1/L2/L3 三级均不动 iOS 用户态。头号外部未知：Mesa 的
+    a8xx 是 GLES(freedreno) 还是只有 Vulkan(turnip)——下个离线日 GitLab 恢复后核实。
 
 ## 等设备回到视野后（按序）
 
