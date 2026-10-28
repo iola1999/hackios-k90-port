@@ -1,6 +1,29 @@
 # 2026-10-28 round F 归档说明
 
-回答[运行协议](../plan/k90auto-run-protocol.md) §5 要求的六项「这一轮跑的是什么」：内核、驱动、AIR 库、作业集合、手势脚本、探针版本。证据目录以 device 实际回报为准（预期 `docs/progress/evidence/k90auto/kernel-12377-attr26-roundf/`）。本文件由 desktop 抄录维护，数据来源是 device 的打包回报与收尾回报。round F 是 device 设计的注入加密集采样轮（task-23，device 设计、lead 批准并改两处，排在 round E 之后）：只动 jobs 层（注入序列与采样网格），内核、驱动、AIR、探针全部复用 round C／D 的载荷内容重打包——root.apfs 重打（`package.py`，display 暂存区）加 payload 重打（`make-payload.py`，device），manifest 里变的是 `jobs_sha256` 与 root／payload 的 sha。一轮内回答两个问题：静止段还有没有响应、settling 与提交停止的先后。`bbmetal-device/root.apfs` 被覆盖不影响 round C／D 的复用（它们的 payload bin 自包含）。roundb 载荷原样重跑（形态复现 1/1 变 2/2）排在本轮之后，选项保留（载荷 `out/handoff-12377-attr26-roundb.bin`，`ef3c82e1b58ea6db…`、25,437,128 B）。第一次跑轮历史（10-28，按 device 的 abort1 补报）：QUEUE start 17:51:53 后 job_kill 中止——触发是 device 条目数核对发现新 root.apfs 缺 `/bin/framewatch`，根因是 task-7 重排 staging 时丢文件加本轮漏设 `JOBS_DROP`（超出变量边界）；job_kill 后 python 子进程又活了约 4 分钟，坏 payload 实际 boot、内核无人监督运行约 31 分钟（17:54→18:25 手动 oem stop、41 s 后 hung-held），早先「SIGTERM 落在上传段、payload 未 boot」的初报以此为准取代。证据目录 `kernel-12377-attr26-roundf-abort1` 保留待审计、不删：run/ 下有 s000-s007 八份快照（17:54:00..17:56:20，20 s 间隔）、shot-01001.raw、commands.jsonl 323 行、system-upload.log，无 reboot.json；device 手动补完 teardown 存证三份（loader-held.log 1,311,925 B 满环、hung-held.log、hung-held-serial.log）。在体实证行（s007，原样）：`/redwood/bin/framewatch: No such file or directory` ×13，同时 lsprobe/rwtouch/tl 全正常——「看起来活着但采样全灭」是这次闸拦下的实际形态。恢复：18:26:26 fresh idle 三项验证通过（result idle + ramdisk-state idle 0 0 0）；第二次尝试曾被 run-auto 前置断言正确拒绝（loader not fresh idle；断言只拒不修），恢复后按三项核查（mtime／内核 sha／`2142061` 只动仓库）重新开始一轮；job bash-2872ed0177144dba 后经明确是第三次尝试、被 run-auto.py:61 拒绝、从未 boot、不算本轮窗口，**第四次为正式跑轮**（device 收尾口径）：job bash-2e58ea41ccbe491a，QUEUE start 行原文 `QUEUE start kernel-12377-attr26-roundf 18:38:19 payload 266313734450b5e2`，commands.jsonl 第一条命令 `getvar build-id`（rc=0、host_monotonic 1270403.939，jsonl 无墙钟字段、墙钟锚=文件 birth time 18:38:19、与 QUEUE 行逐秒一致），payload 身份五哈希与本骨架 §1／§2 期望值相同。恢复方案五步 lead 已批，配方对账与条目 diff 闸两条常设步骤已进[运行协议](../plan/k90auto-run-protocol.md)。详见总账 round F 行。
+回答[运行协议](../plan/k90auto-run-protocol.md) §5 要求的六项「这一轮跑的是什么」：内核、驱动、AIR 库、作业集合、手势脚本、探针版本。证据目录以 device 实际回报为准（预期 `docs/progress/evidence/k90auto/kernel-12377-attr26-roundf/`）。本文件由 desktop 抄录维护，数据来源是 device 的打包回报与收尾回报。
+
+本轮设计：
+
+- round F 是 device 设计的注入加密集采样轮（task-23，device 设计、lead 批准并改两处，排在 round E 之后）：只动 jobs 层（注入序列与采样网格），内核、驱动、AIR、探针全部复用 round C／D 的载荷内容重打包。
+- 重打包范围：root.apfs 重打（`package.py`，display 暂存区）加 payload 重打（`make-payload.py`，device）；manifest 里变的是 `jobs_sha256` 与 root／payload 的 sha。
+- 一轮内回答两个问题：静止段还有没有响应、settling 与提交停止的先后。
+- `bbmetal-device/root.apfs` 被覆盖不影响 round C／D 的复用（它们的 payload bin 自包含）。
+- roundb 载荷原样重跑（形态复现 1/1 变 2/2）排在本轮之后，选项保留（载荷 `out/handoff-12377-attr26-roundb.bin`，`ef3c82e1b58ea6db…`、25,437,128 B）。
+
+第一次跑轮历史（10-28，按 device 的 abort1 补报）：
+
+- 中止：QUEUE start 17:51:53 后 job_kill 中止。触发是 device 条目数核对发现新 root.apfs 缺 `/bin/framewatch`，根因是 task-7 重排 staging 时丢文件加本轮漏设 `JOBS_DROP`（超出变量边界）。
+- 中止之后：job_kill 后 python 子进程又活了约 4 分钟，坏 payload 实际 boot、内核无人监督运行约 31 分钟（17:54→18:25 手动 oem stop、41 s 后 hung-held）。早先「SIGTERM 落在上传段、payload 未 boot」的初报以此为准取代。
+- 证据目录 `kernel-12377-attr26-roundf-abort1` 保留待审计、不删：run/ 下有 s000-s007 八份快照（17:54:00..17:56:20，20 s 间隔）、shot-01001.raw、commands.jsonl 323 行、system-upload.log，无 reboot.json；device 手动补完 teardown 存证三份（loader-held.log 1,311,925 B 满环、hung-held.log、hung-held-serial.log）。
+- 在体实证行（s007，原样）：`/redwood/bin/framewatch: No such file or directory` ×13，同时 lsprobe/rwtouch/tl 全正常。「看起来活着但采样全灭」是这次闸拦下的实际形态。
+
+恢复与正式跑轮（device 收尾口径）：
+
+- 18:26:26 fresh idle 三项验证通过（result idle + ramdisk-state idle 0 0 0）。
+- 第二次尝试曾被 run-auto 前置断言正确拒绝（loader not fresh idle；断言只拒不修）；恢复后按三项核查（mtime／内核 sha／`2142061` 只动仓库）重新开始一轮。
+- job bash-2872ed0177144dba 后经明确是第三次尝试、被 `run-auto.py:61` 拒绝、从未 boot、不算本轮窗口。
+- 第四次为正式跑轮：job bash-2e58ea41ccbe491a，QUEUE start 行原文 `QUEUE start kernel-12377-attr26-roundf 18:38:19 payload 266313734450b5e2`，commands.jsonl 第一条命令 `getvar build-id`（rc=0、host_monotonic 1270403.939；jsonl 无墙钟字段，墙钟锚=文件 birth time 18:38:19，与 QUEUE 行逐秒一致）；payload 身份五哈希与本骨架 §1／§2 期望值相同。
+- 恢复方案五步 lead 已批，配方对账与条目 diff 闸两条常设步骤已进[运行协议](../plan/k90auto-run-protocol.md)。详见总账 round F 行。
 
 填写规则（沿用 round C／D 骨架）：
 
@@ -14,16 +37,113 @@
 - 驱动：期望 `9d66dd36…`；`pack.driver_sha256` 实测同期望（打包回报与 C／D 全同）；apfs 解出 `________`（收尾回报未单独报解出体核验）。pack 段 `expected_*` 是历史快照，读法按 round C 骨架 §2 注记。
 - AIR 库：期望 `d7b9ced5…`（带逐帧计时插桩，fps 与帧间隔引用带这个前提）；`pack.air_sha256` 实测同期望（打包回报与 C／D 全同）。
 - 作业集合：期望不变（`jobs_effective` 36 条、`jobs_dropped` 只有 `com.apple.appprotectiond.plist`；本轮只改 `/etc/rc.jobs` 内容、不动作业集合）；实测 36 条——条目 diff 闸 136=136、全字段差异恰好 `/etc/rc.jobs` 一处，`framewatch` 两边都在且与 C／D／E 实跑逐位相同（`8c8869b8…`）、`appprotectiond` 两边都不在。
-- 手势脚本：**本轮变量**（已定案，`rc.jobs.freezef` 新增于 `a51a085`，同笔修正了 `rc.jobs.freeze:14-18` 注释的设备钟混用）：`rc.jobs.freeze:13` 的 rwtouch 前段不动（swipe 约 91–93 s、home 约 100–103 s 与 round C／D 可比），尾部 `wait 50` 换成静止段探针序列，逐字原文 `/redwood/bin/rwtouch wait 90 swipe 0.5 0.985 0.5 0.3 250 wait 10 button home wait 45 button lock wait 15 button lock wait 15 button volup wait 15 swipe 0.5 0.02 0.5 0.5 400 wait 15 swipe 0.5 0.985 0.5 0.3 250 wait 15 tap 0.5 0.92 wait 20`（时刻表：home 约 100、lock 约 145 与 161、volup 约 176、顶部下拉约 191、底部上划约 206、tap 约 221；每个探针间隔 15 s、各有 still 计数复位／swap id 增长／3 s 网格截图 hash 与层级变化三种独立读数）；`:19` 第三 framewatch 实例保持原样，等 display 对 `framewatch.m:200-232` 参数处理的核查结论再修。`jobs_source.sha256` 期望 `e6ece11169f23c2d16650fdfa3a93dccbcdb0370cf8f6bb71825c05433035ac5`（`rc.jobs.freezef`，`a51a085`）、`jobs_sha256` 期望 `9a7be5c34f9c824b91163ff8d2f76d997dac8a4b7f42e9be8917b11d3f2615d0`（镜像内 43 行 = 前置 3 + 源 40）（device 重建后回报）；实测与期望一致：`jobs_source.sha256` = `e6ece111…`（`rc.jobs.freezef` 40 行）、`jobs_sha256` = `9a7be5c3…`（镜像内 43 行 = 前置 3 + 源 40）。
+- 手势脚本：**本轮变量**（已定案，`rc.jobs.freezef` 新增于 `a51a085`，同笔修正了 `rc.jobs.freeze:14-18` 注释的设备钟混用）。
+  - `rc.jobs.freeze:13` 的 rwtouch 前段不动（swipe 约 91–93 s、home 约 100–103 s 与 round C／D 可比），尾部 `wait 50` 换成静止段探针序列，逐字原文：
+
+```
+/redwood/bin/rwtouch wait 90 swipe 0.5 0.985 0.5 0.3 250 wait 10 button home wait 45 button lock wait 15 button lock wait 15 button volup wait 15 swipe 0.5 0.02 0.5 0.5 400 wait 15 swipe 0.5 0.985 0.5 0.3 250 wait 15 tap 0.5 0.92 wait 20
+```
+
+  - 时刻表：home 约 100、lock 约 145 与 161、volup 约 176、顶部下拉约 191、底部上划约 206、tap 约 221；每个探针间隔 15 s，各有 still 计数复位／swap id 增长／3 s 网格截图 hash 与层级变化三种独立读数。
+  - `:19` 第三 framewatch 实例保持原样，等 display 对 `framewatch.m:200-232` 参数处理的核查结论再修。
+  - `jobs_source.sha256` 期望 `e6ece11169f23c2d16650fdfa3a93dccbcdb0370cf8f6bb71825c05433035ac5`（`rc.jobs.freezef`，`a51a085`）、`jobs_sha256` 期望 `9a7be5c34f9c824b91163ff8d2f76d997dac8a4b7f42e9be8917b11d3f2615d0`（镜像内 43 行 = 前置 3 + 源 40）（device 重建后回报）。
+  - 实测与期望一致：`jobs_source.sha256` = `e6ece111…`（`rc.jobs.freezef` 40 行）、`jobs_sha256` = `9a7be5c3…`（镜像内 43 行 = 前置 3 + 源 40）。
 - 周期 dump 网格（**lead 标待定**）：device 提的是 `:12` 的 20 s 改 5 s（`--every 5 --count 60`，日志量约 4 倍），但环的挤出规则未判明（round C 的 s010 与 s020 都顶到 1,311,925 字节上限、行数差 169 而尾部又长约 159 行，被挤掉的是中间内容还是平均行长变了判不了），加约 1,800 行 dump 会挤掉等量的 `tl: v` 行——那正是 15 s 序列与提交停止时刻的依据。等 display 按实测环行为量化后定，约束是优先覆盖 80..130 s（settling 区间 (84,108] 与提交停止 96..126 都在其中），不需要覆盖到 321 s；候选机制两种：`--every 5` 配较小 count，或多实例单发（`--every T --count 1`，11 个实例 × 40 行 ≈ 440 行）。最终值：收尾回报未单报 `:12` 网格变更，本轮按 `rc.jobs.freezef` 原样跑（探针序列见上条，七探针读数见 §2）。
 - 探针版本：期望 lsprobe 源 digest `85311cac…`、二进制 `54697751…`（若注入改探针，以 device 回报为准）；实测同期望（打包回报与 C／D 全同）。
 
 ## 2. pack 核对与收尾读数
 
-- payload（期望值，device 重建后回报）：`payload_sha256` 期望 `266313734450b5e2247d097f7353c7e41a745597903e4834f98d100e35161e17`（`out/handoff-12377-attr26-roundf.bin`，25,437,256 B）；`pack.root_sha256` 期望 `dfbc7e486a449e686ebb08c943f014deb530eeca00dc5764ca87ec66ec02bd7b`（5,226,496 B，与 `e36caefb` 尺寸全同）；`pack.gpu_speed` 期望 3；kernel／system／driver／air／extra／gpu_speed／window 与 C／D 全同（extra 无 `fb_hz`）。第一次中止轮的 payload `2f359996…`（25,433,160 B）只存在于 abort1 目录的 manifest，**不要混入期望值**。实测与期望一致：`payload_sha256` = `266313734450b5e2…`（25,437,256 B）、`pack.root_sha256` = `dfbc7e486a44…`（5,226,496 B）；重打的 root.apfs 与打包记录哈希互证一致（device 收尾回报身份段）。
-- 收尾读数（device 收尾回报，分类读数）：B = 842500191（单锚 lsprobe t=60、±0.24 s，含 lsprobe 从进程启动起计 t 的系统偏移注记，C／D／E 同法）。权威启动三项见总账 round F 行。快照双源表 12 份：s000 18:40:27.155/18:40:27、s001 18:40:47.080/18:40:47、s002 18:41:06.995/18:41:07、s003 18:41:26.869/18:41:27、s004 18:41:46.690/18:41:47、s005 18:42:07.131/18:42:07、s006 18:42:27.154/18:42:27、s007 18:42:46.868/18:42:47、s008 18:43:07.081/18:43:07、s009 18:43:26.785/18:43:27、s010 18:43:46.898/18:43:47、s011 18:44:07.457/18:44:07（命令时刻由 commands.jsonl 的 host_monotonic 换算墙钟、锚=首条 18:38:19；mtime 为文件实测；间隔 19.8..20.4 s 无稀化、双源逐秒一致；s011 是执行体死亡前最后一份）。截图命令 88 次（18:42:07..18:44:21）、落盘 44 张（100.4..235.0 s）；commands.jsonl 末条 getvar result 18:44:22 = 执行体最后活动；手动环 manual-s012-deepstatic.log 19:02:14 抢拉、hung-held 两份 19:04 前后。run/ 61 项（12 份 s 日志、44 张 shot、commands.jsonl、system-upload.log、manual 一份、hung-held 两份），summary.py 的 merged_log 带 hung-held.log。`summary.py --verify`／`gestures.py`／`round-stats.py` 表行原样与 `reboot.json` 四字段收尾回报未单贴，证据目录可复算。
-- 关键新行：bad access 116 raw／16 唯一（3 条只在手动环：rel 263.3／423.6／743.8，间隔加倍、x0 退化 0x1）；sig11 死亡 17 次（16 次与故障 +0.00 s 同时刻，例外 pid155@59.8）；8 个代际爆发共 52 帧（id 1..65 缺 13）；首故障 rel 17.8；`tl: td` 行收尾回报未单报。**E 与 F 同故障判决**：lr E 12/12、F 16/16 全 ≡0xc mod 0x4000 且减 `0x27000c` 余 0，pc−slide 跨轮同 `0x2a53619c0`。覆盖限制同 round C（进程名限定 backboardd 与 SpringBoard，`sleh.c:2107-2108`）。
-- 静止段响应性判定（task-23 §5 预案）：任一探针之后出现 `still` 复位、swap 增长或截图变化即有响应，良性静止成立、验收线转向响应与性能；全部探针零响应且截图恒为 home，病态冻结坐实（原预案「15 s 序列与 chronod／widget 生命周期成为主线嫌疑，可加做减法轮（从 apfs 摘掉 widget 扩展或 chronod）」已按 lead 10-28 定案取代：chronod／widget 候选被 `nochronod` 与 `bbm29` 两轮实测排除，减法轮取消，候选进入排除后的排序，见总账 15 s 序列条）；lock 探针特例——锁屏后截图变黑或变锁屏层级但再不回来 = 锁定成功而解锁无响应，单独列为「输入通路部分活着」的证据。各探针三种读数：七探针里六窗零帧（帧／still／截图三读数一致）；唯一明确响应是 lock 探针——截图内容变化 3 次全在行 1185..1244（56 行 2.3% 全宽、约 1.1k 像素、黑底稀疏虚线、灰 148→214→237），146-148 那次与 lock@146 重合且零 CA 帧（SpringBoard 自身绘制路径的推断），按本条 lock 特例判定：**锁定成功而解锁无响应＝输入通路部分活着**；home@约101 后 0.4 s 的 10 帧爆发与重启节律重合、归属不定；still 自 183.1 无复位直到 N=1117@约1304（N 是迭代计数、欠计约 5 s）。跨轮对比：C／D 同带是壁纸斜条纹（30,192 像素、C∩D 逐位同），F 的虚线对它包含 0.000——虚线属循环形态一侧；带 PNG 九张在证据目录。预案判定：除 lock 外各探针零响应，病态冻结一侧成立，验收线转向响应与性能。
-- 密集采样专项读数：收尾回报未单报 dump 第二采样点是否补上；七探针读数见上条。
-- 形态判定：**循环**（循环家族，perf 读数规则 §15.2 的翻转分支触发）：late 42.0%（21/50）、8.33 ms 档 0（最小间隔 14.9 ms）、swaps waited／gave up 全窗口 0/0、15 s 序列缺席（洞 16.5／20.8／10.3／31.1／20.5／41.0／40.4）、shown−ready 中位 1.8 ms、帧三口径 52/52/50、thermal 3072 MHz 守 150 s peak 73.3 °C、registration 2 stuck、fence timeouts 0。bad access 按 round C 骨架 §7 三条判据：与 round E 同故障（判决见上条关键新行）。
-- 时间线核对：**第二次设备侧异常**——执行体 18:44:22 停写、harness 句柄无声消失、内核无人监督约 18 分钟、原因未定；恢复顺序＝先抢拉环再 oem stop（42 s hung-held）→存证→reboot→fresh idle 三项（顺序已进[排查手册 §5](../plan/debugging-and-collaboration.md)）；liveness-watch.sh（`9c31aee`）加 nohup 执行方式是下一轮硬门槛（自测报过 stalled 3859 s）。环复核两数：s010 1,311,925 B／11,820 行、s011 1,311,925／11,898、manual 1,311,925／13,530、hung-held 1,312,050／13,537——字节容量固定（固定头加 1 MiB 环）、行数随内容变（均值 87.7..110.9 B/行，round C 是 70.4）；+693 的行长模型本轮验不了（输出塌缩到循环形态），可验的两半＝容量不变与快照间隔 20 s 远小于环跨度（round-stats 量得 11,956 行／210 s／141 B 每行、环约持 130 s）。abort1 与正式目录的 s001 区分：正式目录 s001.log sha256 `d6ecb6986ba0239bce249182862758107b4f6cc91016e62ff1591abae852abc4`（好镜像，世代开头形状测量用这份），abort1 的 s001 是坏镜像数据（framewatch 只有 exec 失败行）不取。
+### 2.1 payload 与 pack 核对
+
+- payload 期望值（device 重建后回报）：`payload_sha256` `266313734450b5e2247d097f7353c7e41a745597903e4834f98d100e35161e17`（`out/handoff-12377-attr26-roundf.bin`，25,437,256 B）。
+- `pack.root_sha256` 期望 `dfbc7e486a449e686ebb08c943f014deb530eeca00dc5764ca87ec66ec02bd7b`（5,226,496 B，与 `e36caefb` 尺寸全同）；`pack.gpu_speed` 期望 3；kernel／system／driver／air／extra／gpu_speed／window 与 C／D 全同（extra 无 `fb_hz`）。
+- 第一次中止轮的 payload `2f359996…`（25,433,160 B）只存在于 abort1 目录的 manifest，**不要混入期望值**。
+- 实测与期望一致：`payload_sha256` = `266313734450b5e2…`（25,437,256 B）、`pack.root_sha256` = `dfbc7e486a44…`（5,226,496 B）；重打的 root.apfs 与打包记录哈希互证一致（device 收尾回报身份段）。
+
+### 2.2 收尾读数与快照双源表
+
+收尾读数（device 收尾回报，分类读数）：
+
+- B = 842500191（单锚 lsprobe t=60、±0.24 s，含 lsprobe 从进程启动起计 t 的系统偏移注记，C／D／E 同法）。权威启动三项见总账 round F 行。
+- 截图命令 88 次（18:42:07..18:44:21）、落盘 44 张（100.4..235.0 s）。
+- commands.jsonl 末条 `getvar` result 18:44:22，即执行体最后活动。
+- 手动环 manual-s012-deepstatic.log 19:02:14 抢拉，hung-held 两份 19:04 前后。
+- run/ 61 项（12 份 s 日志、44 张 shot、commands.jsonl、system-upload.log、manual 一份、hung-held 两份）；summary.py 的 merged_log 带 hung-held.log。
+- `summary.py --verify`／`gestures.py`／`round-stats.py` 表行原样与 `reboot.json` 四字段收尾回报未单贴，证据目录可复算。
+
+快照双源表 12 份（命令时刻由 commands.jsonl 的 host_monotonic 换算墙钟、锚=首条 18:38:19；mtime 为文件实测）：
+
+| 快照 | 命令时刻 | 文件 mtime |
+|---|---|---|
+| s000 | 18:40:27.155 | 18:40:27 |
+| s001 | 18:40:47.080 | 18:40:47 |
+| s002 | 18:41:06.995 | 18:41:07 |
+| s003 | 18:41:26.869 | 18:41:27 |
+| s004 | 18:41:46.690 | 18:41:47 |
+| s005 | 18:42:07.131 | 18:42:07 |
+| s006 | 18:42:27.154 | 18:42:27 |
+| s007 | 18:42:46.868 | 18:42:47 |
+| s008 | 18:43:07.081 | 18:43:07 |
+| s009 | 18:43:26.785 | 18:43:27 |
+| s010 | 18:43:46.898 | 18:43:47 |
+| s011 | 18:44:07.457 | 18:44:07 |
+
+间隔 19.8..20.4 s，无稀化，双源逐秒一致；s011 是执行体死亡前最后一份。
+
+### 2.3 关键新行
+
+- bad access 116 raw／16 唯一（3 条只在手动环：rel 263.3／423.6／743.8，间隔加倍、x0 退化 0x1）。
+- sig11 死亡 17 次（16 次与故障 +0.00 s 同时刻，例外 pid155@59.8）。
+- 8 个代际爆发共 52 帧（id 1..65 缺 13）；首故障 rel 17.8。
+- `tl: td` 行收尾回报未单报。
+- **E 与 F 同故障判决**：lr E 12/12、F 16/16 全 ≡0xc mod 0x4000 且减 `0x27000c` 余 0，pc−slide 跨轮同 `0x2a53619c0`。
+- 覆盖限制同 round C（进程名限定 backboardd 与 SpringBoard，`sleh.c:2107-2108`）。
+
+### 2.4 静止段响应性判定
+
+判定规则（task-23 §5 预案）：任一探针之后出现 `still` 复位、swap 增长或截图变化即有响应，良性静止成立、验收线转向响应与性能；全部探针零响应且截图恒为 home，病态冻结坐实。
+
+- 原预案「15 s 序列与 chronod／widget 生命周期成为主线嫌疑，可加做减法轮（从 apfs 摘掉 widget 扩展或 chronod）」已按 lead 10-28 定案取代：chronod／widget 候选被 `nochronod` 与 `bbm29` 两轮实测排除，减法轮取消，候选进入排除后的排序，见总账 15 s 序列条。
+- lock 探针特例：锁屏后截图变黑或变锁屏层级但再不回来，等于锁定成功而解锁无响应，单独列为「输入通路部分活着」的证据。
+
+各探针读数：
+
+- 三种读数口径：七探针里六窗零帧（帧／still／截图三读数一致）。
+- 唯一明确响应是 lock 探针：截图内容变化 3 次全在行 1185..1244（56 行 2.3% 全宽、约 1.1k 像素、黑底稀疏虚线、灰 148→214→237）；146-148 那次与 lock@146 重合且零 CA 帧（SpringBoard 自身绘制路径的推断）。按 lock 特例判定：**锁定成功而解锁无响应，输入通路部分活着**。
+- home@约 101 后 0.4 s 的 10 帧爆发与重启节律重合、归属不定。
+- still 自 183.1 无复位直到 N=1117@约 1304（N 是迭代计数、欠计约 5 s）。
+
+跨轮对比：C／D 同带是壁纸斜条纹（30,192 像素、C∩D 逐位同），F 的虚线对它包含 0.000，虚线属循环形态一侧；带 PNG 九张在证据目录。
+
+预案判定：除 lock 外各探针零响应，病态冻结一侧成立，验收线转向响应与性能。
+
+### 2.5 密集采样专项读数
+
+收尾回报未单报 dump 第二采样点是否补上；七探针读数见上条。
+
+### 2.6 形态判定
+
+- 形态：**循环**（循环家族，perf 读数规则 §15.2 的翻转分支触发）。
+- 读数：late 42.0%（21/50）、8.33 ms 档 0（最小间隔 14.9 ms）、swaps waited／gave up 全窗口 0/0、15 s 序列缺席（洞 16.5／20.8／10.3／31.1／20.5／41.0／40.4）、shown−ready 中位 1.8 ms、帧三口径 52/52/50、thermal 3072 MHz 守 150 s peak 73.3 °C、registration 2 stuck、fence timeouts 0。
+- bad access 按 round C 骨架 §7 三条判据：与 round E 同故障（判决见 §2.3）。
+
+### 2.7 时间线核对与环复核
+
+时间线核对：**第二次设备侧异常**。
+
+- 现象：执行体 18:44:22 停写、harness 句柄无声消失、内核无人监督约 18 分钟、原因未定。
+- 恢复顺序：先抢拉环，再 oem stop（42 s hung-held），然后存证，再 reboot，最后 fresh idle 三项（顺序已进[排查手册 §5](../plan/debugging-and-collaboration.md)）。
+- liveness-watch.sh（`9c31aee`）加 nohup 执行方式是下一轮硬门槛（自测报过 stalled 3859 s）。
+
+环复核两数：
+
+| 环 | 字节 | 行数 |
+|---|---|---|
+| s010 | 1,311,925 | 11,820 |
+| s011 | 1,311,925 | 11,898 |
+| manual | 1,311,925 | 13,530 |
+| hung-held | 1,312,050 | 13,537 |
+
+- 字节容量固定（固定头加 1 MiB 环），行数随内容变（均值 87.7..110.9 B/行，round C 是 70.4）。
+- +693 的行长模型本轮验不了（输出塌缩到循环形态）；可验的两半是容量不变与快照间隔 20 s 远小于环跨度（round-stats 量得 11,956 行／210 s／141 B 每行、环约持 130 s）。
+- abort1 与正式目录的 s001 区分：正式目录 s001.log sha256 `d6ecb6986ba0239bce249182862758107b4f6cc91016e62ff1591abae852abc4`（好镜像，世代开头形状测量用这份），abort1 的 s001 是坏镜像数据（framewatch 只有 exec 失败行）不取。

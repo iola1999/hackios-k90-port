@@ -1,6 +1,14 @@
 # 2026-10-28 round E 归档说明
 
-回答[运行协议](../plan/k90auto-run-protocol.md) §5 要求的六项「这一轮跑的是什么」：内核、驱动、AIR 库、作业集合、手势脚本、探针版本。证据目录 `docs/progress/evidence/k90auto/kernel-12377-attr26-rounde/`。本文件由 desktop 抄录维护，数据来源是 device 的打包回报与收尾回报，desktop 已按文末复算命令独立复算核对。round E 与 round C／D 的唯一差别是 boot-args 的 EXTRA 里加 `fb_hz=120`，其余逐字相同（lead 10-28 排定），对应 120 Hz 方向（task-20）。判别目标（task-22）：每帧 16.64 ms 里生产链（9.40 ms）之外那 ~7 ms 级未知是 CA 按模式速率的等待还是 CA 的渲染工作——`shown` 间隔掉到 8.33 ms 附近则是前者、`fb_hz` 就是通向 120 fps 的那一层；停在 16.64 ms 且帧落隔拍则是后者、必须先降每帧成本。**已跑完**（QUEUE start 16:46:06、done 16:56:22 exit 0，SAMPLED_SECONDS 420.1903293749783；task-22 已 complete）。**结果：形态翻转**——同一 payload 家族 60 Hz 冻结 2/2（round C／D），加 `fb_hz=120` 后进循环形态（roundb 家族）；bad access 首次带 `lr`，故障 pc 与 roundb 逐位同为 `_platform_memmove+0x9c0`，故障 dst 与驱动拷贝缓冲交集 9/10，device 的归属包已发 display。task-22 的判别本轮**有答案**（perf 10-28 独立复算更新——`3838948` 是 perf 读数规则 §14.15 与 task-16 §8.11 的总账更新；display 原判「round E 没有稳态、两个分支都填不了」偏保守、后采纳 perf 的分组并据此改 task-20 §5.1 填分支二；取代 device 收尾时「决定性读数被 rel 18.5 起的崩溃挡住」的判定）：节拍周期确实变成 8.333 ms、帧周期没有变，两种可能里第二种成立——CA 一侧那 8.24 ms 不随刷新率缩放，超过一个 8.333 ms 的槽，每帧错过一个节拍落到下一个上；详见 §2。
+回答[运行协议](../plan/k90auto-run-protocol.md) §5 要求的六项「这一轮跑的是什么」：内核、驱动、AIR 库、作业集合、手势脚本、探针版本。证据目录 `docs/progress/evidence/k90auto/kernel-12377-attr26-rounde/`。
+
+本文件由 desktop 抄录维护，数据来源是 device 的打包回报与收尾回报，desktop 已按文末复算命令独立复算核对。
+
+- 本轮身份：round E 与 round C／D 的唯一差别是 boot-args 的 EXTRA 里加 `fb_hz=120`，其余逐字相同（lead 10-28 排定），对应 120 Hz 方向（task-20）。
+- 判别目标（task-22）：每帧 16.64 ms 里生产链（9.40 ms）之外那 ~7 ms 级未知，是 CA 按模式速率的等待还是 CA 的渲染工作。`shown` 间隔掉到 8.33 ms 附近则是前者，`fb_hz` 就是通向 120 fps 的那一层；停在 16.64 ms 且帧落隔拍则是后者，必须先降每帧成本。
+- 执行结果：已跑完（QUEUE start 16:46:06、done 16:56:22 exit 0，SAMPLED_SECONDS 420.1903293749783；task-22 已 complete）。
+- 形态结果：翻转。同一 payload 家族 60 Hz 冻结 2/2（round C／D），加 `fb_hz=120` 后进循环形态（roundb 家族）；bad access 首次带 `lr`，故障 pc 与 roundb 逐位同为 `_platform_memmove+0x9c0`，故障 dst 与驱动拷贝缓冲交集 9/10，device 的归属包已发 display。
+- 判别结论：task-22 本轮有答案，节拍周期确实变成 8.333 ms、帧周期没有变，两种可能里第二种成立——CA 一侧那 8.24 ms 不随刷新率缩放，超过一个 8.333 ms 的槽，每帧错过一个节拍落到下一个上；详见 §2。答案来源与取代关系：perf 10-28 独立复算更新——`3838948` 是 perf 读数规则 §14.15 与 task-16 §8.11 的总账更新；display 原判「round E 没有稳态、两个分支都填不了」偏保守、后采纳 perf 的分组并据此改 task-20 §5.1 填分支二；本条取代 device 收尾时「决定性读数被 rel 18.5 起的崩溃挡住」的判定。
 
 填写规则（沿用 round C／D 骨架）：
 
@@ -9,29 +17,174 @@
 
 ## 1. 六项身份（实测，desktop 对 manifest 复核）
 
-- boot-args（**本轮唯一变量**）：`pack.extra_boot_args` 实测逐字 `gpu_log=1 metal=1 cpufreq=1 fb_threads=2 touch_lat=1 fb_hz=120`（=期望）；日志 cmdline 行原样：`cmdline: debug=0x8 battery_shared_pa=0x00000000cf9da000 debug=0x10e rootdev=md0 launchd_unsecure_cache=1 cpus=2 bootcpu=7 small_cores_after=0 epoch=1793177134 adreno8=23 adreno8_pause=0 adreno8_fine=0 adreno8_watch=0 adreno8_keep=1 adreno8_return=0 adreno8_speed=3 adreno8_secure_preflight=4 touchscreen=2 buttons=1 battery=1 gpu_log=1 metal=1 cpufreq=1 fb_threads=2 touch_lat=1 fb_hz=120`（含 `fb_hz=120` 与 `adreno8_speed=3`）。
+- boot-args（**本轮唯一变量**）：`pack.extra_boot_args` 实测逐字 `gpu_log=1 metal=1 cpufreq=1 fb_threads=2 touch_lat=1 fb_hz=120`（=期望）。
+- 日志 cmdline 行原样（含 `fb_hz=120` 与 `adreno8_speed=3`）：
+
+```
+cmdline: debug=0x8 battery_shared_pa=0x00000000cf9da000 debug=0x10e rootdev=md0 launchd_unsecure_cache=1 cpus=2 bootcpu=7 small_cores_after=0 epoch=1793177134 adreno8=23 adreno8_pause=0 adreno8_fine=0 adreno8_watch=0 adreno8_keep=1 adreno8_return=0 adreno8_speed=3 adreno8_secure_preflight=4 touchscreen=2 buttons=1 battery=1 gpu_log=1 metal=1 cpufreq=1 fb_threads=2 touch_lat=1 fb_hz=120
+```
+
 - 内核：`manifest.kernel` 实测 `cf1502f5632284af4ab11d182f62913663f7205ec4376f4abc0f274f834b2492`、20,210,232 字节，`build.sources` 记 `out/xnu12377 at 5c9f563`（=期望）。源码身份两组口径（[排查手册 §3](../plan/debugging-and-collaboration.md)）对本轮同样适用：manifest 只记 `out/xnu12377` 那一组。
 - 驱动：`pack.driver_sha256` 实测 `9d66dd367d09af4d9b526c73c8407627357d1e32d0cd392639bd5e2b35600f26`（=期望）；apfs 解出未单独回报，本轮复用同一份 root.apfs，由 `pack.root_sha256`、`reboot.json` 的 system_sha256 与 payload sha 三方一致承载。`pack.expected_driver_sha256` 仍是 roundb 期历史快照 `31f2d6b7…`（`make-payload.py:97` 整段复制，读法按 round C 骨架 §2 注记）。
-- AIR 库：`pack.air_sha256` 实测 `d7b9ced5a115c08ca17c23e7322a9505c2c6352b3c9660a0d51beece91102e5f`（=期望）；插桩在跑——device 报 `perf draw: timing on` 在，8 条 `MiniIOMobileFramebuffer:` 统计行本身就是插桩输出（desktop 复算取到），fps 与帧间隔引用带这个前提。
+- AIR 库：`pack.air_sha256` 实测 `d7b9ced5a115c08ca17c23e7322a9505c2c6352b3c9660a0d51beece91102e5f`（=期望）。插桩在跑：device 报 `perf draw: timing on` 在，8 条 `MiniIOMobileFramebuffer:` 统计行本身就是插桩输出（desktop 复算取到）；fps 与帧间隔引用带这个前提。
 - 作业集合：`pack.jobs_effective_count` 36、`pack.jobs_dropped` 只有 `com.apple.appprotectiond.plist`（=期望）。
 - 手势脚本：`pack.jobs_source` `tools/k90auto/jobs/rc.jobs.freeze`、sha256 `a4af9a9f1384fbac…` 且 `pack.jobs_sha256` `88326d5e58686dcf…`，两项同时成立（=期望）。
 - 探针版本：`pack.probe_sources` 的 `userland/src/lsprobe.m` digest 实测 `85311cacf6b53138…`（=期望）；二进制 `54697751…`（device 报身份六项与 C／D 全同）。
 
 ## 2. pack 核对与收尾读数
 
-- payload 与 pack：`payload.sha256` 实测 `a1604d306bb456ded30183c34f1254d68a88215c502885bc8d7e4eb6607baecd`（=打包回报）、`payload.path` `hackios-xnu-kernel/out/handoff-12377-attr26-rounde.bin`、25,437,256 B；`pack.root_sha256` `e36caefb…`（root.apfs 未重建，ramdisk 5,226,496 B）；`system` `d11083be02820507f5639e0a29c6f35256a48d1d4f3cf4cd265eb4b8e346efe4`（system26.apfs 4,925,816,832 B）；`pack.gpu_speed` 3；`pack.dirty_worktree` False、`pack.worktree_status` []；`build.supersedes` `81f54468…`。本轮 `manifest.json` 是新写（EXTRA 变了），sha256 `2c8c519d1bcbb06ea7f265bcad5b5b043b056c6b1e26e33ea59f2e84bed47b0a`（desktop 实测）。
-- `reboot.json`：off_seen true、mode loader、failed null、samples 21、seconds 17.767145999940112、reset true；payload_sha256 与 system_sha256 与 manifest 一致（desktop 实测互证）。
-- `summary.py --verify` 原样：`windows 8 merged / 8 in snapshots; frames 78 merged / 78 in snapshots`；`coverage: tl: 4510560226 to 4776929071 us, span 266 s, largest gap between tl: lines 79.9 s, 66 frames`（修复后工具直接采信）；`swap queue: over 8 window(s), 0 swaps waited for the frame before, 0 gave up, 44 came a refresh late themselves; 15 frames waited for the next refresh, 6845 us each`；`registration: 4 stuck judgement(s) on extensionkitservice, iconservicesagent, pkd -- the desktop's upstream degraded, so the rates describe only the part before`（与 C／D 同）；`thermal: 3072 MHz held for 150 s (5 of 13 windows, domain 1), hottest 72.1 C in the first window, dropped at window 6 of 13 (4 changes, hottest 45.7 C of a 72.1 C peak)`。窗口数 8/8 对 C／D 的 16/16：一半窗口没有可用帧率统计。
-- summary 表行原样：`run=kernel-12377-attr26-rounde commit=5c9f563 args=cpus=2 gpu_log=1 cpufreq=1 fb_threads=2 fb_hz=120 seconds=420 panic=0 fps=0.0 fps_mv=- static=- driver_us=0 beat_us=- onbeat=- gl_p50=0.0 gl_p90=0.0 under18=0% mid=0% long=0% long_count=0 hottest=72.1 lowest_share=90% ff_s=150 shots=96 bad_shots=0 crashes=29`（`fps=0.0`、`fps_mv=-`、`beat_us=-`、`onbeat=-` 因无窗口满足帧率统计条件——整轮黑屏崩溃档；`crashes=29` 是 `d027e92` 新口径；`ff_s=150` 对 C／D 的 390，满频时长减半、window 6 掉频，与崩溃形态一致；`beat_us`／`onbeat` 两列是 `26c157b` 新增）。
-- `gestures.py` 原样：`coverage: 183 s of frames, largest gap 60.7 s, 1 touch downs recognised, 0 of them Control Center pulls`；`swipe-left 1x: 3 intervals, p50 17.0 p95 34.6 max 34.6 ms; >18 33% >34.5 33%; 50.5 fps; touch to first frame p50 2199.4 ms; 0 gaps over 90 ms left out; no draw times (glslow=3000)`。device 实测时刻：home 按下 rel 101.0／释放 101.1，swipe 手指 90.6..90.9，首次 bad access rel 18.5。perf 注记：`touch to first frame p50 2199.4 ms` 与 roundb 的 2115.7 ms 基本相同，但本轮只有 1 个 touch down、0 次控制中心下拉，样本量是 1，**这个数在 round E 上不能用来判任何事**，引用必须带样本量。
-- `round-stats.py` 要点：12,715 distinct log lines；帧 id 1..91 唯一 78、断裂 8（工具标 `a restart each`）、78 swap handovers、last at 4696.7 s（设备钟；−B=4511.7 → rel 185.0）；swap gaps>1.5 s 共 8：16.2 ending 4529.7（启动洞）／10.6@4541.9／10.7@4552.7／9.5@4562.6／20.8@4583.5／20.8@4604.5／30.9@4635.4／60.7@4696.3——**代际倍增序列，roundb 同构，无 15 s 周期洞**（C／D／freeze 三轮的共同主线序列本轮不在）；touch posts 36 对 swaps 78（posts/swap 0.46）；截图 96 张、order black ×96、last shot black at 418.2 s（hash 唯一 3、变化点 126.8／188.4，黑屏内字节差异，device 报）；Code=4099 82 行（77 无名／3 `com.apple.appprotectiond.read`／2 `com.apple.accountsd.accountmanager`；round D 是 51 行）。
-- 关键新行：bad access raw 243（freeze_form.py 口径，含 `hung-held.log`；desktop 拆分核对：`s*.log` 229 + `hung-held.log` 14 = 243）／唯一 14 行，rel_first 18.5、rel_last 265.2；bbd `died on signal 11 code 11` 唯一 15 个 pid（desktop grep 复核一致）；exited raw 472／唯一类 2（含 `backboardd … exited code -1 reason 2`，device 报）；copied raw 1479（唯一 src 92／dst 14），长度族 32768×1335 主导＝roundb 签名；nils 0；sig5 三进程本轮未出现；`tl:` 行止于 rel 265.2、其后仅 framewatch still 行（计到 397.3 s）；cache slide 全轮单值 `0x80e4000`；dump 目标为代际 pid 94/125/132/144/174/207/229/237/245/257/267（11 个），每代主线程首行 `mach_msg2`（+0xcd4）或 `kevent_id`（+0xa54），**零 `psynch_cvwait` settling**（C／D 的判据本轮不成立）；noframes 触发唯一行 **2 条**（device 补充，desktop grep 与 freeze_form JSON 复核一致，JSON 26 条 = 2 唯一 × 13 快照）：`framewatch: no frames for 2 s at 4664906007, dump asked for SpringBoard pid 245`（rel 153.2）与 `framewatch: no frames for 2 s at 4699037426, dump asked for SpringBoard pid 257`（rel 187.3）——第二条在末次 swap（rel 185.0）之后，是第三实例对终末停帧的再次触发，与 still 末段计数起点（≈186.3，N=211@397.3）自洽；round D 也是 2 条唯一触发（@153.7 簇）、round C 是 155.6 单簇，三轮第三实例 still=2 s 触发行为一致。
-- fb_hz 三项特有读数（task-22）：①`swaps waited for the frame before`／`gave up` 全 8 窗口 0/0（无新阻塞，主要失败指标未触发）；②`shown` 间隔 8.33 ms 分档（fbhz.py 原样）：n=77、中位 33.36 ms、p95 20773.77 ms；n=1 档 9、n=2 档 17、n=3 档 1、n=4 档 20、n=5 档 1、n=6 档 20，长尾档 n=112/1141/1275/1282/1939/2493/2501/3703/7284 各 1。**判别结论（perf 10-28 独立复算更新——`3838948` 是 perf 的总账更新，display 原判偏保守、后采纳 perf 的分组；取代 device 收尾时「决定性读数被崩溃挡住」的判定）**：task-22 本轮有答案，答案来自 9 个进程世代各自的开头几帧——节拍周期确实变成了 8.333 ms：69 个相邻 id 的 `shown` 间隔里 8 个落在 7.67..9.21 ms（均值 8.16 = 0.98 个节拍），round C 的 3606 个间隔最小值 14.72 ms、16.67 ms 的节拍下出现不了 7.67 ms；帧周期没有变：16 个间隔均值 16.98 ms（2.04 个节拍）、13 个挤在 16.29..17.04，round C 健康中位 16.640 ms，剩下 41 个均值 41.62 ms 是 4 与 6 个节拍的混合，三组倍数 0.98／2.04／4.99 全落在整数节拍上。task-22 两种可能里第二种成立：CA 一侧那 8.24 ms 不随刷新率缩放，超过一个 8.333 ms 的槽，每帧错过一个节拍落到下一个上——`fb_hz=120` 单独改帧率不变，帧周期是 `ceil(非节拍时间 / 周期) × 周期`（`MiniIOMobileFramebuffer.cpp:923-924` 把上屏时刻吸附到节拍网格），非节拍时间约 9.6 ms 时 60 Hz 与 120 Hz 都是两个槽即 16.67 ms；缺的是长样本（够定分布），不缺读数（够定节拍周期与帧周期这两件事）。出处：读数规则 §14.15 与 task-16 §8.8／§8.11。分档计数两边不一致的注记（display）：其窄档 15.5..18.0 ms 数到 14 个间隔、perf 的 15.01..21.90 ms 数到 16 个，两者都对、档宽不同，以 perf 的分组为准，窄档不再单列。③节拍等待 shown−ready 中位 0.000 ms（round C 是 7.244 ms）、44/78 帧 late 走立即上屏分支，等过节拍的 15 帧每帧 6845 µs（每窗口 6385..7562，与 round C 的 7080 基本相同）。**`aim` 不是 `beat_us` 的预测值**（perf 10-28 更正，此前「aim 3.125 ms 样本不足未验证」的判定作废）：`:923-924` 先把 `next` 推到第一个不早于 `began` 的节拍上，等待时间由工作什么时候做完决定；`aim` 只是 `:925-929` 那个 1/8 步长逼近的目标，且 1/8 步长要连续多帧走这条分支才收敛，round E 每窗口只有 1..4 帧等节拍——样本不足不是 `beat_us` 没降到 3125 的原因。`onbeat=-` 与 `driver_us=0` 是同一件事：8 个窗口最大的一个 25 帧但只有 2 a second，都不满足 busy 门槛（≥20 帧且 ≥10 a second），与 roundb 一致；窗口级的值在 8 窗口表与 `--verify` 行里，不在 summary 行。8 条统计行 waited／gave up 全 0，late 计数逐窗口 0/20/4/9/0/6/1/4，驱动每帧 1256..1635 µs（原样行见 fbhz.py 输出，desktop 已复跑）。
-- 8 窗口去重表（perf 供，frames, a second, driver us, gpu us, onbeat, beat us, late）：`3,0,1475,41,1,6817,0`／`25,2,1635,57,4,6385,20`／`6,0,1256,62,1,7562,4`／`12,1,1256,72,2,6939,9`／`2,0,1267,43,1,7215,0`／`9,0,1269,60,2,6961,6`／`4,0,1262,51,2,6983,1`／`7,0,1264,71,2,6891,4`；帧数合计 68、onbeat 合计 15、late 合计 44，与 `--verify` 行一致；68 与 78 的差是口径不同——窗口统计数的是关闭过至少一次 draw 的 flush 条目，78 是交换次数。
-- lr 归属要点（细节在 device 发 display 的归属包，此处记结论输入）：`lr` 12 个唯一值、无 PAC 位、全部 ≡0xc mod 0x4000（单一调用点、镜像内偏移 ≡0xc mod 16K、各代基址不同）、全部 <0x180000000＝共享缓存外的注入 dylib 区；`x1`（=故障地址=src 实参）6 个垃圾值、含 ASCII 片段「ness.cli」「ntSystem」；`x2` 恒 0xc0(192)×13 + 0x163(355)×1；`x0`∩copied-dst = 9/10；故障 pc 与 roundb 逐位同为 `_platform_memmove+0x9c0`。
-- B 值：4511.7（lsprobe `t=60`／`t=300` 锚点差 239.9，对期望 240 s 在 ±0.5 s 内）；freeze_form.py 的 t0_us 4512927273（rel 1.2）。
-- 形态判定：**循环形态（roundb 家族）**——bad access 非零且首次带 `lr`、`died on signal 11 code 11` 15 pid、exited 类非零、帧 id 断裂 8（restart each）、截图 96 张全黑档、零 psynch settling、空档代际倍增。冻结判据（帧号连续、exited 0 条、提交永久停止）全部不成立。与 round C／D 对照：**同一 payload 家族，60 Hz 冻结 2/2，`fb_hz=120` 翻回 roundb 家族形态**。
+### 2.1 pack 与 reboot 核对
+
+| 字段 | 实测值 |
+|---|---|
+| `payload.sha256` | `a1604d306bb456ded30183c34f1254d68a88215c502885bc8d7e4eb6607baecd`（=打包回报） |
+| `payload.path` | `hackios-xnu-kernel/out/handoff-12377-attr26-rounde.bin`，25,437,256 B |
+| `pack.root_sha256` | `e36caefb…`（root.apfs 未重建，ramdisk 5,226,496 B） |
+| `system` | `d11083be02820507f5639e0a29c6f35256a48d1d4f3cf4cd265eb4b8e346efe4`（system26.apfs 4,925,816,832 B） |
+| `pack.gpu_speed` | 3 |
+| `pack.dirty_worktree` | False，`pack.worktree_status` `[]` |
+| `build.supersedes` | `81f54468…` |
+| `manifest.json` sha256 | `2c8c519d1bcbb06ea7f265bcad5b5b043b056c6b1e26e33ea59f2e84bed47b0a`（desktop 实测；本轮 EXTRA 变了，这个文件是新写的） |
+
+`reboot.json` 实测：off_seen true、mode loader、failed null、samples 21、seconds 17.767145999940112、reset true；payload_sha256 与 system_sha256 与 manifest 一致（desktop 实测互证）。
+
+### 2.2 summary 与 gestures 原样输出
+
+`summary.py --verify` 原样（修复后工具直接采信）：
+
+- 窗口与帧：`windows 8 merged / 8 in snapshots; frames 78 merged / 78 in snapshots`。
+- coverage：`coverage: tl: 4510560226 to 4776929071 us, span 266 s, largest gap between tl: lines 79.9 s, 66 frames`。
+- swap queue：`swap queue: over 8 window(s), 0 swaps waited for the frame before, 0 gave up, 44 came a refresh late themselves; 15 frames waited for the next refresh, 6845 us each`。
+- registration：`registration: 4 stuck judgement(s) on extensionkitservice, iconservicesagent, pkd -- the desktop's upstream degraded, so the rates describe only the part before`（与 C／D 同）。
+- thermal：`thermal: 3072 MHz held for 150 s (5 of 13 windows, domain 1), hottest 72.1 C in the first window, dropped at window 6 of 13 (4 changes, hottest 45.7 C of a 72.1 C peak)`。
+- 窗口数 8/8 对 C／D 的 16/16：一半窗口没有可用帧率统计。
+
+summary 表行原样：
+
+```
+run=kernel-12377-attr26-rounde commit=5c9f563 args=cpus=2 gpu_log=1 cpufreq=1 fb_threads=2 fb_hz=120 seconds=420 panic=0 fps=0.0 fps_mv=- static=- driver_us=0 beat_us=- onbeat=- gl_p50=0.0 gl_p90=0.0 under18=0% mid=0% long=0% long_count=0 hottest=72.1 lowest_share=90% ff_s=150 shots=96 bad_shots=0 crashes=29
+```
+
+- `fps=0.0`、`fps_mv=-`、`beat_us=-`、`onbeat=-` 因无窗口满足帧率统计条件——整轮黑屏崩溃档。
+- `crashes=29` 是 `d027e92` 新口径。
+- `ff_s=150` 对 C／D 的 390，满频时长减半、window 6 掉频，与崩溃形态一致。
+- `beat_us`／`onbeat` 两列是 `26c157b` 新增。
+
+`gestures.py` 原样：
+
+```
+coverage: 183 s of frames, largest gap 60.7 s, 1 touch downs recognised, 0 of them Control Center pulls
+swipe-left 1x: 3 intervals, p50 17.0 p95 34.6 max 34.6 ms; >18 33% >34.5 33%; 50.5 fps; touch to first frame p50 2199.4 ms; 0 gaps over 90 ms left out; no draw times (glslow=3000)
+```
+
+- device 实测时刻：home 按下 rel 101.0／释放 101.1，swipe 手指 90.6..90.9，首次 bad access rel 18.5。
+- perf 注记：`touch to first frame p50 2199.4 ms` 与 roundb 的 2115.7 ms 基本相同，但本轮只有 1 个 touch down、0 次控制中心下拉，样本量是 1，**这个数在 round E 上不能用来判任何事**，引用必须带样本量。
+
+### 2.3 round-stats 计数与新行
+
+`round-stats.py` 要点：
+
+- 日志：12,715 distinct log lines。
+- 帧：帧 id 1..91 唯一 78、断裂 8（工具标 `a restart each`）、78 swap handovers、last at 4696.7 s（设备钟；−B=4511.7 → rel 185.0）。
+- touch 与截图：touch posts 36 对 swaps 78（posts/swap 0.46）；截图 96 张、order black ×96、last shot black at 418.2 s（hash 唯一 3、变化点 126.8／188.4，黑屏内字节差异，device 报）。
+- Code=4099：82 行（77 无名／3 `com.apple.appprotectiond.read`／2 `com.apple.accountsd.accountmanager`；round D 是 51 行）。
+
+swap gaps 大于 1.5 s 共 8 个，全部按设备钟记：
+
+| 空档长度 s | 起点 s | 说明 |
+|---|---|---|
+| 16.2 | ending 4529.7 | 启动洞 |
+| 10.6 | 4541.9 | |
+| 10.7 | 4552.7 | |
+| 9.5 | 4562.6 | |
+| 20.8 | 4583.5 | |
+| 20.8 | 4604.5 | |
+| 30.9 | 4635.4 | |
+| 60.7 | 4696.3 | |
+
+这批空档是**代际倍增序列，roundb 同构，无 15 s 周期洞**；C／D／freeze 三轮的共同主线序列本轮不在。
+
+关键新行：
+
+- bad access raw 243（freeze_form.py 口径，含 `hung-held.log`；desktop 拆分核对：`s*.log` 229 + `hung-held.log` 14 = 243）／唯一 14 行，rel_first 18.5、rel_last 265.2。
+- bbd `died on signal 11 code 11` 唯一 15 个 pid（desktop grep 复核一致）。
+- exited raw 472／唯一类 2（含 `backboardd … exited code -1 reason 2`，device 报）。
+- copied raw 1479（唯一 src 92／dst 14），长度族 32768×1335 主导，即 roundb 签名；nils 0。
+- sig5 三进程本轮未出现。
+- `tl:` 行止于 rel 265.2、其后仅 framewatch still 行（计到 397.3 s）。
+- cache slide 全轮单值 `0x80e4000`。
+- dump 目标为代际 pid 94/125/132/144/174/207/229/237/245/257/267（11 个），每代主线程首行 `mach_msg2`（+0xcd4）或 `kevent_id`（+0xa54），**零 `psynch_cvwait` settling**（C／D 的判据本轮不成立）。
+- noframes 触发唯一行 **2 条**（device 补充，desktop grep 与 freeze_form JSON 复核一致，JSON 26 条 = 2 唯一 × 13 快照）：
+  - `framewatch: no frames for 2 s at 4664906007, dump asked for SpringBoard pid 245`（rel 153.2）。
+  - `framewatch: no frames for 2 s at 4699037426, dump asked for SpringBoard pid 257`（rel 187.3）。第二条在末次 swap（rel 185.0）之后，是第三实例对终末停帧的再次触发，与 still 末段计数起点（≈186.3，N=211@397.3）自洽。
+- 三轮第三实例 still=2 s 触发行为一致：round D 也是 2 条唯一触发（@153.7 簇）、round C 是 155.6 单簇。
+
+### 2.4 fb_hz 节拍与帧周期（task-22 判别）
+
+三项特有读数：
+
+- ①`swaps waited for the frame before`／`gave up` 全 8 窗口 0/0（无新阻塞，主要失败指标未触发）。
+- ②`shown` 间隔 8.33 ms 分档（fbhz.py 原样）：n=77、中位 33.36 ms、p95 20773.77 ms；n=1 档 9、n=2 档 17、n=3 档 1、n=4 档 20、n=5 档 1、n=6 档 20，长尾档 n=112/1141/1275/1282/1939/2493/2501/3703/7284 各 1。
+- ③节拍等待：`shown−ready` 中位 0.000 ms（round C 是 7.244 ms）、44/78 帧 late 走立即上屏分支，等过节拍的 15 帧每帧 6845 µs（每窗口 6385..7562，与 round C 的 7080 基本相同）。
+
+判别结论（perf 10-28 独立复算更新——`3838948` 是 perf 的总账更新，display 原判偏保守、后采纳 perf 的分组；取代 device 收尾时「决定性读数被崩溃挡住」的判定）：task-22 本轮有答案，答案来自 9 个进程世代各自的开头几帧。
+
+- 节拍周期确实变成了 8.333 ms：69 个相邻 id 的 `shown` 间隔里 8 个落在 7.67..9.21 ms（均值 8.16 = 0.98 个节拍）；round C 的 3606 个间隔最小值 14.72 ms，16.67 ms 的节拍下出现不了 7.67 ms。
+- 帧周期没有变：16 个间隔均值 16.98 ms（2.04 个节拍）、13 个挤在 16.29..17.04，round C 健康中位 16.640 ms；剩下 41 个均值 41.62 ms 是 4 与 6 个节拍的混合；三组倍数 0.98／2.04／4.99 全落在整数节拍上。
+- task-22 两种可能里第二种成立：CA 一侧那 8.24 ms 不随刷新率缩放，超过一个 8.333 ms 的槽，每帧错过一个节拍落到下一个上。`fb_hz=120` 单独改帧率不变，帧周期是 `ceil(非节拍时间 / 周期) × 周期`（`MiniIOMobileFramebuffer.cpp:923-924` 把上屏时刻吸附到节拍网格）；非节拍时间约 9.6 ms 时 60 Hz 与 120 Hz 都是两个槽即 16.67 ms。
+- 缺的是长样本（够定分布），不缺读数（够定节拍周期与帧周期这两件事）。出处：读数规则 §14.15 与 task-16 §8.8／§8.11。
+
+两条注记：
+
+- 分档计数两边不一致（display）：其窄档 15.5..18.0 ms 数到 14 个间隔、perf 的 15.01..21.90 ms 数到 16 个，两者都对、档宽不同；以 perf 的分组为准，窄档不再单列。
+- `aim` 不是 `beat_us` 的预测值（perf 10-28 更正，此前「aim 3.125 ms 样本不足未验证」的判定作废）：`:923-924` 先把 `next` 推到第一个不早于 `began` 的节拍上，等待时间由工作什么时候做完决定；`aim` 只是 `:925-929` 那个 1/8 步长逼近的目标，且 1/8 步长要连续多帧走这条分支才收敛，round E 每窗口只有 1..4 帧等节拍——样本不足不是 `beat_us` 没降到 3125 的原因。
+- `onbeat=-` 与 `driver_us=0` 是同一件事：8 个窗口最大的一个 25 帧但只有 2 a second，都不满足 busy 门槛（≥20 帧且 ≥10 a second），与 roundb 一致；窗口级的值在 8 窗口表与 `--verify` 行里，不在 summary 行。8 条统计行 waited／gave up 全 0，late 计数逐窗口 0/20/4/9/0/6/1/4，驱动每帧 1256..1635 µs（原样行见 fbhz.py 输出，desktop 已复跑）。
+
+### 2.5 8 窗口去重表
+
+perf 供，列为 frames、a second、driver us、gpu us、onbeat、beat us、late：
+
+| frames | a second | driver us | gpu us | onbeat | beat us | late |
+|---|---|---|---|---|---|---|
+| 3 | 0 | 1475 | 41 | 1 | 6817 | 0 |
+| 25 | 2 | 1635 | 57 | 4 | 6385 | 20 |
+| 6 | 0 | 1256 | 62 | 1 | 7562 | 4 |
+| 12 | 1 | 1256 | 72 | 2 | 6939 | 9 |
+| 2 | 0 | 1267 | 43 | 1 | 7215 | 0 |
+| 9 | 0 | 1269 | 60 | 2 | 6961 | 6 |
+| 4 | 0 | 1262 | 51 | 2 | 6983 | 1 |
+| 7 | 0 | 1264 | 71 | 2 | 6891 | 4 |
+
+帧数合计 68、onbeat 合计 15、late 合计 44，与 `--verify` 行一致；68 与 78 的差是口径不同——窗口统计数的是关闭过至少一次 draw 的 flush 条目，78 是交换次数。
+
+### 2.6 lr 归属与 B 值
+
+`lr` 归属要点（细节在 device 发 display 的归属包，此处记结论输入）：
+
+- `lr` 12 个唯一值、无 PAC 位、全部 ≡0xc mod 0x4000（单一调用点、镜像内偏移 ≡0xc mod 16K、各代基址不同）、全部 <0x180000000，即共享缓存外的注入 dylib 区。
+- `x1`（=故障地址=src 实参）6 个垃圾值、含 ASCII 片段「ness.cli」「ntSystem」。
+- `x2` 恒 0xc0(192)×13 + 0x163(355)×1。
+- `x0`∩copied-dst = 9/10；故障 pc 与 roundb 逐位同为 `_platform_memmove+0x9c0`。
+
+B 值：4511.7（lsprobe `t=60`／`t=300` 锚点差 239.9，对期望 240 s 在 ±0.5 s 内）；freeze_form.py 的 t0_us 4512927273（rel 1.2）。
+
+### 2.7 形态判定与证明力边界
+
+- 形态判定：**循环形态（roundb 家族）**——bad access 非零且首次带 `lr`、`died on signal 11 code 11` 15 pid、exited 类非零、帧 id 断裂 8（restart each）、截图 96 张全黑档、零 psynch settling、空档代际倍增。冻结判据（帧号连续、exited 0 条、提交永久停止）全部不成立。
+- 与 round C／D 对照：**同一 payload 家族，60 Hz 冻结 2/2，`fb_hz=120` 翻回 roundb 家族形态**。
 - task-20／面板形状判定：本轮无——崩溃从 rel 18.5 起挡住渲染段，面板三种形状的判定数据等 TE 读数轮。
 - 本轮证明力边界（task-22 已知风险，原文保留）：`fb_hz` 改的四处全在我们驱动里（`:916` 节拍、`:831` 统计阈值、`:1205` `armVSync()`、`:338` 报给用户态的模式速率），不碰面板时序；面板物理时序在 Android DTBO（`xiaomi p11` OLED、DSI 命令模式、三档 120／90／60 Hz）。本轮能证明的是我们的节拍与 CA 读到的模式速率变了，不能证明面板扫描率变了；面板实际速率由 TE 读数回答，那是后续单独一轮。若面板停在 60 Hz 而以 120 Hz 写，约一半帧从没被显示并可能撕裂，而日志里看不出来。
 - 时间线核对：device 收尾回报未涉及容器或构建窗口，核对项不适用。
-- 复算命令（device 给，CWD=仓库根，desktop 已全部复跑、关键读数一致）：`python3 tools/k90auto/summary.py --verify docs/progress/evidence/k90auto/kernel-12377-attr26-rounde`；`python3 tools/k90auto/summary.py …rounde`；`python3 tools/k90auto/gestures.py …rounde/run`；`python3 tools/round-stats.py …rounde`；`python3 docs/progress/evidence/k90auto/analysis-roundc/fbhz.py …rounde/run`；`python3 docs/progress/evidence/k90auto/analysis-roundc/freeze_form.py …rounde/run 4511.7`。机器可读输出存 `docs/progress/evidence/k90auto/analysis-roundc/freeze_form.out-rounde.json`（18,244 B）。
+
+### 2.8 复算命令
+
+device 给，CWD=仓库根，desktop 已全部复跑、关键读数一致：
+
+- `python3 tools/k90auto/summary.py --verify docs/progress/evidence/k90auto/kernel-12377-attr26-rounde`
+- `python3 tools/k90auto/summary.py …rounde`
+- `python3 tools/k90auto/gestures.py …rounde/run`
+- `python3 tools/round-stats.py …rounde`
+- `python3 docs/progress/evidence/k90auto/analysis-roundc/fbhz.py …rounde/run`
+- `python3 docs/progress/evidence/k90auto/analysis-roundc/freeze_form.py …rounde/run 4511.7`
+
+机器可读输出存 `docs/progress/evidence/k90auto/analysis-roundc/freeze_form.out-rounde.json`（18,244 B）。
