@@ -36,4 +36,4 @@ qemu/screendump.sh                   # 截图（经 monitor 4444）
 ### 下一步
 
 - M2（真机）：`docs/analysis/uefi-sm8750.md` 的排序执行——Mu-Silicium PakalaPkg 基座出 annibale pkg；gbl-chainload-myron 作快速验证入口。
-- 顺手可做：`ios165` 素材与 apfs 产物已就绪，任何真机内核改动都可直接复用这条构建线。
+- 同时可做：`ios165` 素材与 apfs 产物已就绪，任何真机内核改动都可直接复用这条构建线。

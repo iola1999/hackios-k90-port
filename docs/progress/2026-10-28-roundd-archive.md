@@ -1,26 +1,35 @@
 # 2026-10-28 round D 归档说明
 
-回答[运行协议](../plan/k90auto-run-protocol.md) §5 要求的六项「这一轮跑的是什么」：内核、驱动、AIR 库、作业集合、手势脚本、探针版本。证据目录是 `docs/progress/evidence/k90auto/kernel-12377-attr26-roundd/`。本文件由 desktop 抄录维护，数据来源是 device 的打包回报与收尾回报。round D 是 round C 载荷的零改动重跑（lead 10-28 放行，task-21，device 执行）：同一份 payload `ebdca4adfc9fb5f4…`（25,437,256 B，device 校验通过后原样复用）、同一份内核 `cf1502f5632284af…`、同一份 apfs（root `e36caefb…`）、同一份 jobs（`a4af9a9f…`+`88326d5e…` 两项），roundd 的 manifest 从 roundc 逐字节复制（`91859058…`）。目的：分开「翻转来自内核」与「翻转来自轮次间变化」；两种结果都有用——又是冻结就与 round C 构成 2/2，是循环就说明形态轮间可变、交接文档把两种形态当成由驱动决定的稳定形态这个框架不成立，且 `lr`／`x0`／`x1`／`x2` 第一次有数据。
+回答[运行协议](../plan/k90auto-run-protocol.md) §5 要求的六项「这一轮跑的是什么」：内核、驱动、AIR 库、作业集合、手势脚本、探针版本。证据目录是 `docs/progress/evidence/k90auto/kernel-12377-attr26-roundd/`。本文件由 desktop 抄录维护，数据来源是 device 的打包回报与收尾回报（已按 10-28 收尾回报填写）。round D 是 round C 载荷的零改动重跑（lead 10-28 放行，task-21，device 执行，QUEUE start 15:23:04）：同一份 payload `ebdca4adfc9fb5f4…`（25,437,256 B，device 校验通过后原样复用）、同一份内核 `cf1502f5632284af…`、同一份 apfs（root `e36caefb…`）、同一份 jobs（`a4af9a9f…`+`88326d5e…` 两项），roundd 的 manifest 从 roundc 逐字节复制（`91859058…`，desktop 复跑 shasum 实测 `918590582a7e7865…` 一致）。目的：分开「翻转来自内核」与「翻转来自轮次间变化」。**实测结果：冻结形态与 round C 构成 2/2 复现**（形态判据见 §2）。
 
-填写规则：
+填写规则（沿用）：
 
-- device 宣布收尾之前不读轮次目录；读了必须标 partial 与截至的快照号（协议 §5）。打包字段在 device 打包回报后填，收尾读数在 device 收尾回报后填。
 - 身份期望全部等于 round C 原值，逐项对照 [round C 归档说明](2026-10-28-roundc-archive.md) 的对应节；任何一项与期望不符：停下报 lead。
 - bad access 与 `tl: td` 的判读口径、`lr` 三步归属、`is_saved_state64` 排除项、帧数三口径与 crashes 列新旧口径，沿用 round C 骨架 §7 的原文，本文件不重抄。
 
-## 1. 六项身份（device 回报后抄实测）
+## 1. 六项身份（零改动轮，全部 = round C 原值）
 
-- 内核：期望 `cf1502f5632284af4ab11d182f62913663f7205ec4376f4abc0f274f834b2492`、20,210,232 字节、源码提交 `5c9f563`；`manifest.kernel` 实测 `________`。
-- 驱动：期望 `9d66dd36…`；`pack.driver_sha256` `________`；apfs 解出 `________`。pack 段的 `expected_*` 字段是 roundb 期历史快照（`make-payload.py:97` `pack = dict(pack_record)` 逐字复制），读法按 round C 骨架 §2 的注记。
-- AIR 库：期望 `d7b9ced5…`（带逐帧计时插桩，fps 与帧间隔引用带这个前提，见 round C 骨架 §3）；`pack.air_sha256` `________`。
-- 作业集合：期望 `jobs_effective` 36 条、`jobs_dropped` 只有 `com.apple.appprotectiond.plist`；实测 `________`。
-- 手势脚本：期望 `rc.jobs.freeze` 原样（`jobs_source.sha256` `a4af9a9f…` 且 `jobs_sha256` `88326d5e…`，两项同时成立才算）；实测 `________`。
-- 探针版本：期望 lsprobe 源 digest `85311cac…`、二进制 `54697751…`；实测 `________`。
+- 总口径：roundd 的 `manifest.json` 从 roundc 逐字节复制（sha256 `918590582a7e7865…`，desktop 实测），本节 pack 字段全部与 round C 原值逐项相同；零改动身份另由 `reboot.json`／日志里的 payload_sha256 `ebdca4adfc9f…`、system_sha256 `d11083be0282…` 与 round C 一致成立（device 收尾回报）。
+- 内核：`cf1502f5632284af…`、20,210,232 字节、源码提交 `5c9f563`（=期望；summary 表行 `commit=5c9f563` 同值互证）。
+- 驱动：`pack.driver_sha256` `9d66dd36…`（=期望，manifest 复制）；apfs 解出未单独回报——本轮复用同一份 root.apfs，由 payload 与 system_sha256 两哈希一致承载。pack 段 `expected_*` 是 roundb 期历史快照（`make-payload.py:97` 逐字复制），读法按 round C 骨架 §2 注记。
+- AIR 库：`pack.air_sha256` `d7b9ced5…`（=期望）；插桩仍在跑：`perf draw: timing on` 唯一 1 行（s020 raw 5），fps 与帧间隔引用带这个前提。
+- 作业集合：`jobs_effective` 36 条、`jobs_dropped` 只有 `com.apple.appprotectiond.plist`（=期望）。
+- 手势脚本：`jobs_source` `tools/k90auto/jobs/rc.jobs.freeze`、sha256 `a4af9a9f…`，且 `jobs_sha256` `88326d5e…`，两项同时成立（=期望）。
+- 探针版本：lsprobe 源 digest `85311cac…`、二进制 `54697751…`（=期望）。
 
 ## 2. pack 核对与收尾读数
 
-- payload：期望 `ebdca4adfc9fb5f4…`（零改动重跑，出现重建 payload 即停下报 lead）；`pack.root_sha256` `________`（期望 `e36caefb…`）、`pack.gpu_speed` `________`（期望 3）。
-- 收尾读数（device 宣布收尾后抄）：`summary.py --verify` `________`；`gestures.py` `________`；`round-stats.py` 三段 `________`；`reboot.json` 四字段 `________`；summary 表行原样 `________`。
-- 关键新行：bad access 行与 `tl: td` 行 `________`；覆盖限制同 round C——打印进入条件限定 backboardd 与 SpringBoard（`sleh.c:2107-2108`），0 条读作「这两个进程零故障」。
-- 形态判定（本轮目的）：冻结（帧号连续、`exited code` 0 条、提交最终永久停止）还是循环（多代 bbd 段错误、按 `exited code` 的 pid 集合分代）`________`；bad access 若有数据，按 round C 骨架 §7 的三条判据与 `lr` 三步归属填 `________`。
-- 时间线核对（本轮如再有容器或构建窗口，按 round C 骨架 §7 的办法核对并写出换算）`________`。
+- payload：`pack.root_sha256` `e36caefb…`、`pack.gpu_speed` 3（=期望，manifest 复制）；无重建 payload。
+- `summary.py --verify`：windows 16 merged / 16 in snapshots、frames 3620 merged / 3620 in snapshots；`coverage:` tl: 237103808 to 4944436886 us, span 4707 s, largest gap between tl: lines 4289.2 s, 3617 frames——这是 perf 修复前的原样输出，span 4707 s 与 gap 4289.2 s 两个字段是解析伪影：旧正则 `^tl: .*?(\d{9,})` 全行扫第一个九位以上数字串，round D 有两个纯十进制数字的十六进制 pc（`0x237103808` 与 `0x237104120`）命中 61 行 `tl: td`，最小值变成 237103808 即 237.1 s 而真实最小值是 4526262120 即 4526.3 s；round C 命中 0 行，因为它每个 pc 都带十六进制字母。修复（`26c157b`，coverage 行按 `tl:` 行类型取时间戳）后复跑是 span 418 s、largest gap 10.0 s，与 round C 相同；引用以修正后的值为准，复跑原样见下条「修复后复跑」。`registration:` 4 stuck judgement(s) on extensionkitservice, iconservicesagent, pkd（desktop 上游 degraded，比率只描述之前的部分）；`thermal:` 3072 MHz held for 390 s (13 of 13 windows, domain 1), hottest 72.5 C in the first window, still there in the last of 13 windows (peak 76.0 C)；`ff_s=390`。
+- `gestures.py`：coverage 95 s of frames, largest gap 15.9 s, 1 touch downs recognised, 0 of them Control Center pulls；swipe-left 1x: no animation to measure, each window held one frame（单页桌面翻不动、弹回，与 round C 同）。
+- `round-stats.py` 要点：3620 distinct frame ids 1..3620、3620 swap handovers、id gaps 0；swap gaps>1.5s 共 6：15.9 ending 4545.1／3.0 ending 4560.9／4575.9／4590.9／4605.9／2.9 ending 4622.2（设备钟 µs；减锚点 B=4527.6 得轮内相对秒 17.5／33.3／48.3／63.3／78.3／94.6，末次 swap rel 96.4）；screenshots 101 张 home screen ×101、last shot 419.4 s；Code=4099 51 行（28 无名／21 appprotectiond／2 accountsd）；watchdog violations 17 行／10 扩展；host deaths：corpse slots full at 5（BarcodeScannerWi×2／CalculatorWidget／LauncherControlE）、died 27 行。
+- `reboot.json` 四字段：off_seen true、mode loader（直接回 loader，未走 recover-loader，与 round C 的 mode=android 不同）、failed null、samples 21；seconds 16.88、reset true、payload_sha256 `ebdca4adfc9f…`、system_sha256 `d11083be0282…`（与 round C 一致）、status `result: idle`、product `product: xnuloader`。
+- summary 表行原样：`run=kernel-12377-attr26-roundd commit=5c9f563 args=cpus=2 gpu_log=1 cpufreq=1 fb_threads=2 seconds=420 panic=0 fps=47.0 fps_mv=59.9 static=22% driver_us=1992 gl_p50=0.0 gl_p90=0.0 under18=100% mid=0% long=0% long_count=3 hottest=76.0 lowest_share=14% ff_s=390 shots=101 bad_shots=0 crashes=0`（fps 引用带 §1 插桩前提；`crashes=0` 是 `d027e92` 之后的新口径——数内核报的进程退出行，本轮双进程 `exited code` 确实 0 条，两者互证）。
+- 帧数三口径：merged 3620／in-snapshots 3620（`summary.py --verify`）；unique `tl: v` 3620（`gestures.py` 与 device 脚本一致）；coverage 行 3617——伪影只影响该行的 span 与 gap 字段（4707 s／4289.2 s），帧数 3617 修复前后相同；perf 修复（`26c157b`，coverage 行按 `tl:` 行类型取时间戳）后本口径恢复可用，见下条复跑。
+- 帧间隔复核（device 的 fbhz.py，该工具对 round C 验证过、与 display 的独立判读逐项一致：shown 中位 16.64／p95 17.13 ms、节拍等待 7.244、生产链 9.394、done-shown 1.767 ms）：round D 唯一 `tl: v` 3620、ids 1..3620 零断裂复核无误，上面三口径无需更正；round D 的 shown 间隔中位 16.64 ms／p95 17.12 ms 与 round C 一致——两轮 `fb_hz` 都是默认 60，这个值构成 round E（`fb_hz=120`）的对照基线。
+- 修复后复跑（desktop，perf `26c157b` 之后）：`summary.py --verify` 退出码 0，coverage 行 `tl: 4526262120 to 4944436886 us, span 418 s, largest gap between tl: lines 10.0 s, 3617 frames`——span 与 device 自算的约 418 s 一致，伪影消除；windows 与 frames 对计数不变（16/16、3620/3620）。该提交另加 `swap queue:` 行，本轮读数原样：`swap queue: over 16 window(s), 0 swaps waited for the frame before, 0 gave up, 4 came a refresh late themselves; 3604 frames waited for the next refresh, 7068 us each`——`swaps waited`／`gave up` 均 0 与 device 的 fbhz 判读一致；节拍等待 7068 µs 是 round D 值（round C 的 fbhz 值是 7.244 ms，两轮同为默认 60 Hz，量级一致）。这两个数从此由 `summary.py --verify` 直接输出，round E 的 task-22 三项特有读数里两项不用再手算。
+- 关键新行：bad access 行 0 条（21 份快照 + `hung-held.log` 全查；覆盖限制两维度同 round C——时间并集约 rel −1..418 s，进程名限定 backboardd 与 SpringBoard，「零 bad access」只指这两个进程零故障）；`tl: td` exec 行实测：slide `0x41f4000`、exec SB `0x1010e4000`、bbd `0x100f14000`。framewatch 三实例启动文本原样：`s001.log:2803 framewatch: watching kern.redwood.frames from 0, still after 5 s, at most 0 dumps`；`s001.log:2887 framewatch: periodic dumps every 20 s, 15 of them, 2 names`；第三实例 round D 为 `from 3620`（s008.log 对应位置；round C 同行是 `from 3611`、`s008.log:18970`），第三行在 rel ~153.6 出现，早于触发簇恰 2 s = 它的 still 阈值；触发唯一行 2 条（desktop grep 复核）：`framewatch: no frames for 2 s at 4681265407, dump asked for backboardd pid 38` 与 `framewatch: no frames for 2 s at 4681265541, dump asked for SpringBoard pid 30`，都在 rel 153.7 簇内（此前写「触发簇 155.6/153.7」把 round C 的值混了进来——155.6 是 round C 的触发簇，据 device 10-28 澄清并 grep 三轮复核更正；C 与 D 各 2 条唯一行、各在自己一轮的单簇里，三轮第三实例 still=2 s 触发行为一致）。周期 dump 采样点数与 round C 相同（周期 15 + 事件 1 = 每 pid 16 代），原样报。
+- 形态判定：**冻结形态，与 round C 2/2 复现**——`exited code` 0 条；帧 id 1..3620 零断裂、3620 次交换、空档后永久停止；主线程 settling：tid 221 自 rel (84.2,105.9] 起 state 1、等待对象 `0xfffffff75ddc1b00`、pc +0x65e8 = `psynch_cvwait`(305) 恒定至 306.7、14 代。bad access 零数据，三条自我否证判据与 `lr` 归属同 round C 仍未获验证（原因是零故障）。
+- died 与拷贝路径读数：died 27 raw／14 类（round C 28／14）；widget code1001 16 唯一行（rel 27.5..146.1）；sig5-code5 三进程×3 代再现、rel 130.0 同秒集中（round C 166.8），上下文同 round C（chronod controls.store 4099 reload 失败 + XPC 中断 + 二代扩展 DYLD unnest），无单行共同触发者，原样报。copied 262 raw／22 唯一（16384×216、49152×34、32768／62464／65536／15360 各 3），rel 17.1..96.0；49152 首现 rel 91.7（round C 94.2，都在 swipe 时刻附近）。nils driver 1081344×3 + 1163264×12，rel 17.8／52.8。still 序列：boot 段 N=6 @rel 7.9；冻结段 N 至 320 @rel 418.2（起点 98.2 ≈ 停止 96.4 + 阈值 2）。
+- 时间线核对：device 收尾回报未涉及容器或构建窗口，核对项不适用。
+- 15 s 周期序列（本轮最重要产出，四轮空档原始数据与对齐关系记总账「15 s 周期序列」行，细节随 task-19 终版）：round D 周期洞起点 30.3、间隔恒 15.0 s、长度恒约 3.0 s，前 4 个周期恢复，第 5 个网格点 90.3 起进入终末段，停 96.4。
