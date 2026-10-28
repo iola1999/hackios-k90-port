@@ -1,5 +1,5 @@
 #!/bin/bash
-# 存活轮询：起跑后监控 commands.jsonl 的 mtime 推进，停滞即写告警文件。
+# 存活轮询：一轮开始后监控 commands.jsonl 的 mtime 推进，停滞即写告警文件。
 # 用法: liveness-watch.sh RUN_DIR [STALL_SECONDS] [INTERVAL_SECONDS]
 #   RUN_DIR 是 round 的 run/ 目录（含 commands.jsonl）。
 # 告警写到 RUN_DIR 的上一级目录：LIVENESS-ALERT（内容为一行时刻与停滞秒数）与

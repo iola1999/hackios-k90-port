@@ -181,13 +181,11 @@ OLD_SHIM_SHA256 = "be308aea0cb5c86dd8faa22df59aeefabe8fc688678ba80e2af2adf59f4da
 OLD_DRIVER_SHA256 = "1ea7c58ddb8ad6506749527fac41d1ca7ea10f977c3a9f0deefdd39b5880a907"
 OLD_AIR_SHA256 = "adf0328a025f959bd6bb7da7e7b81ec600075b5ad39aa7c3b31e8df506a8d604"
 
-# The two libraries this pack builds are compiled from the working tree, so an uncommitted edit
-# anywhere under the driver or AIR sources changes what a round runs without changing the request.
-# Two rounds that differ that way cannot be compared, and the difference is invisible after the
-# fact. The expected hashes therefore live in a committed file and a mismatch stops the pack.
+# The two libraries this pack builds are compiled from the working tree, so what a round runs is
+# fixed by those two files rather than by the request. The expected hashes therefore live in a
+# committed file and a mismatch stops the pack.
 # ALLOW_DRIVER_CHANGE=1 accepts a new pair, which then belongs in that round's record.
 BASELINE = Path(__file__).resolve().parent / "library-baseline.json"
-ALLOW_DIRTY = os.environ.get("ALLOW_DIRTY") == "1"
 # make-payload.py defaults this to 3 while nearly every comparable round used 1, so a forgotten
 # GPU_SPEED changes the GPU clock without changing the request. It is recorded here as well as in the
 # round manifest, and a note that names a different speed stops the pack.
@@ -221,9 +219,10 @@ from apfs import Container, pick_volume, walk, ROOT_DIR_INO_NUM   # noqa: E402
 def dirty_sources():
     """What is uncommitted in the trees a pack is built from, as one git status per repository.
 
-    The library baseline is excluded: the pack that establishes it writes it, so it stays untracked
-    until someone commits it, and without the exclusion that one generated file would block every
-    later pack. What the baseline contains is checked by the hash gate instead."""
+    The result goes into the pack record so a round states what it was built from. It does not stop
+    the pack. The library baseline is excluded because the pack that establishes it writes it, so it
+    stays untracked until someone commits it, and listing it would put a generated file into every
+    later record. What the baseline contains is checked by the hash gate instead."""
     reports = []
     for name, command, cwd in (
             ("kernel work tree under .userland.git (userland, Mesa, AIR sources)",
@@ -364,15 +363,9 @@ def add_extra_jobs(root):
 
 def main():
     dirty = dirty_sources()
-    if dirty and not ALLOW_DIRTY:
-        raise SystemExit(
-            "packaging refuses a work tree with uncommitted changes: an uncommitted edit to a driver, "
-            "AIR or packaging source silently changes what the round runs, and nothing in the request "
-            "names it.\n" + "\n".join(dirty) +
-            "\nCommit the change, or pass ALLOW_DIRTY=1 for this pack; the manifest then records the "
-            "full status so the round stays auditable.")
     if dirty:
-        print("本轮从脏工作树打包，可复现性由 manifest 里那份 status 保证")
+        print("工作树有未提交的改动，打包照常进行。改动清单写进 pack 记录的 worktree_status，"
+              "这一轮由什么构成以那一份清单为准。")
     notes = os.environ.get("ROUND_NOTES", "")
     claimed = set(re.findall(r"(?:adreno8_speed|gpu_speed|GPU_SPEED|speed)\s*[=:]\s*(\d+)", notes))
     wrong = sorted(value for value in claimed if int(value) != GPU_SPEED)

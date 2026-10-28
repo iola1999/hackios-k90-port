@@ -100,7 +100,7 @@
 
 公开源码仍无法解释本机行为，先提出一个具体问题，再决定是否检查实际加载的二进制。核对设备与主机文件哈希，利用符号定向查看相关布局、调用顺序和条件分支，可以区分参考版本差异与当前实现遗漏。本次用户补充 idalib 可用后，调查用本机模块核对 HFI 和启动准备，发现了布局与资源准备缺项。反编译结论只覆盖该二进制及已检查路径，动态配置和硬件响应仍需实测；无依据的其他差异继续保留为待验证，逐项照搬会增加实验变量和失败路径。
 
-逆向闭源二进制用宿主机上的 idalib MCP（IDA 无头接口，提供反汇编、反编译、xref、符号查询）。两条使用约束：对大文件建实例不开自动分析，`idb_open` 传 `run_auto_analysis: false`，必要时加 `build_caches: false`，改用针对具体地址的查询（`disasm`／`decompile`／`xrefs_to`／`get_bytes`）——iOS 26 的 dyld 共享缓存本地有 85 个文件、4.9 GB（最大单文件 235 MB），全量自动分析的内存与时间代价与本机的 256 GiB 内存不成比例，而绝大多数问题只需要几个具体地址；用完 `idb_close` 且 `save` 传 false，传 true 会在被分析文件旁边写 `.i64`，脏掉 `ios26/rootfs` 或共享缓存目录。
+逆向闭源二进制用宿主机上的 idalib MCP（IDA 无头接口，提供反汇编、反编译、xref、符号查询）。两条使用约束：对大文件建实例不开启自动分析，`idb_open` 传 `run_auto_analysis: false`，必要时加 `build_caches: false`，改用针对具体地址的查询（`disasm`／`decompile`／`xrefs_to`／`get_bytes`）——iOS 26 的 dyld 共享缓存本地有 85 个文件、4.9 GB（最大单文件 235 MB），全量自动分析的内存与时间代价与本机的 256 GiB 内存不成比例，而绝大多数问题只需要几个具体地址；用完 `idb_close` 且 `save` 传 false，传 true 会在被分析文件旁边写 `.i64`，脏掉 `ios26/rootfs` 或共享缓存目录。
 
 哪些问题非走共享缓存不可由一条事实决定：`libsystem_platform.dylib`、`QuartzCore`、`CoreAnimation`、`BackBoardServices`、`FrontBoardServices`、`Metal` 在 `ios26/rootfs` 下都没有磁盘 Mach-O（framework 目录里只有 plist／loctable／png），代码全在共享缓存 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/` 里，任何要看这些库实现的问题都绕不开共享缓存。`tools/symbolize.py` 走的是我们自己 dylib 的符号表，这个场景用不上。
 
@@ -167,6 +167,8 @@ GPU 命令不继续执行，故障寄存器又为零，继续围绕「有没有�
 内核的 `memorystatus_perform_idle_demotion() timed out stuck process N [name]` 不能当成「某进程出问题」的判据。它的含义是「这个进程跨过两个 aging 期限仍未 idle」，服务端空闲时本来就会走到这里。2026-10-28 统计了 58 个证据目录，被判卡的只有五个名字（`AudioConverterService`、`pkd`、`iconservicesagent`、`extensionkitservice`、`installd`），而当时最干净的一轮（11,015 帧、无停帧）这五个里出现了三个。用这一行判断进程是否真卡住，会把正常态误判成故障；要用效果判断，例如记录有没有写出来、容器有没有建立、报错计数有没有归零。判据没坏这件事也由同一份统计支持：若判据随手标卡，`lsd`、`SpringBoard` 这类进程也会出现。
 
 对账产物与构建输入时，判据是给每个镜像条目记「进入通道」（base apfs 自带／staging 树／PROBE 自建／PAYLOAD_PROGRAMS／EXTRA_JOBS），无通道的才算真丢失风险，并且配方本身要落进一个可执行记录。2026-10-28 的实例（round F 第一次跑轮中止）：没有任何文件丢失，丢的是配方记忆——roundb 的完整环境变量没有落进任何可执行记录，device 从 pack 记录逐字段反推配方时漏了两个（`PAYLOAD_PROGRAMS` 与 `JOBS_DROP`）；`framewatch` 历来经 `PAYLOAD_PROGRAMS` 进镜像（`package.py:53-56` 定义、`:452-454` 断言存在并 copy2 进 dest/bin、`:522-526` 计入 added 集合），`lsprobe` 历来经 `PROBE=1` 自建（`:64`／`:402`／`:495`），base 镜像与 staging 的 `/bin` 本来都不含这两个文件（base 镜像 `33ed5fc9` 的 `/bin` 34 条、staging 与 base 集合逐名一致、`package.py:422-425` 的 dest 树每次打包从 `BASE/root` 重新 copytree）。查法：pack 记录 `changes` 里每个 `null→sha` 的 added 条目必须归到一个通道，归不到的就是配方缺口；两层配方对账与全条目 diff 在[运行协议](k90auto-run-protocol.md)。早先的判据「这个文件有没有第二条来路」建立在「`framewatch` 来路只有 staging」的误判上，随根因撤销（device `3278bf9`）。
+
+一行日志输出要先读产生它的那段代码，才轮得到推断它的含义：判的是哪个时刻、读的是哪个量，都在代码里。2026-10-28 的第六个实例（lead 自查）：按 `NOT_RUNNING hung-held` 的字面推断「开始一轮时设备状态是 hung-held、上一轮收尾没做主机冷复位」，作为事实发给 device 与 desktop 让两边按它写归档——display 读了 `run-auto.py` 之后不成立：`state()`（`:94-97`）读的就是 `getvar result` 一个量，`:152-158` 只在它不等于 `running` 时打印，`hung-held` 是 loader 在打印那一刻的字面应答；`:71` 与 `:176` 记着它由内核静默满 50 秒触发，而 `:127` 的开始断言在 21:07:44 通过了，证明那一刻 `result` 是 `idle`、开始一轮时设备状态是干净的。同日的配对正例（display）：改 `staging-entry-channels.md` 的引用之前先自己核了 `package.py` 的行号（`ALLOW_DRIVER_CHANGE` 在 `:213`、`dirty_sources()` 在 `:219`），没有按 lead 的转述改——转述里的行号是错的。规则是既有的那一条：成员报出的结论里带「所以」「说明」的段是推断，转述要标明是推断，不在推断上面建判据或派下游动作；这次的形状是读了一行日志输出就推断它的语义、没有读产生它的代码。配套加一条：**一个判断在发出之后被撤回时，要立刻点名已经按它写下的每一处产物，不能只发更正**——这次更正到达时 desktop 已按旧口径填完了归档骨架的两段，撤回方同时通知了全部下游所以更正送达了，但送达时产物已经写完；点名产物清单让下游能逐处核对改净，而不是各自凭记忆找。
 
 ## 5. 用状态和资源归属理解设备行为
 
@@ -239,6 +241,10 @@ RAM 系统盘可以在同一驻留 loader 生命周期中复用。整机重启�
 设备轮中途失联时，先抢拉日志环，再发 stop（lead 2026-10-28 定的常设规程，修复轮开始前生效）：判据是环随时可能被新输出覆盖、也可能随 stop 丢失，抢拉动作排在任何 stop 命令之前。round F 的第二次异常是它的验证：harness 作业无声死亡、采样止于 238 s，device 先手动抢拉了 manual-s012-deepstatic.log 再做 teardown，环跨度因此覆盖了近全轮。
 
 跑轮开始后每 60 s 核一次 `commands.jsonl` 的 mtime 推进（lead 2026-10-28 定的常设规程，修复轮开始前生效）：mtime 停滞即视为失联，走上一条的恢复规程（先抢拉环、再 stop、teardown 到 fresh idle 三项验证）。round F 的 harness 作业无声死亡时没有这个核查，死亡要到收尾才会被发现。
+
+自己设的检查不能挡住一轮真机测试（lead 2026-10-28 定的常设规程）：自己加的检查——闸、断言、核验脚本——挡住一轮真机测试时，直接用该检查的放行开关或删掉检查，在那一轮的归档说明里记一行（挡住了什么、用什么放行、检查的原意是什么），不停下来等，也不升级到 lead。当天实例：`package.py` 的工作树检查把修复轮挡在一个文档任务后面，放行开关 `ALLOW_DIRTY=1` 一直存在，处置却是把关键路径排到文档任务后面；随后按用户要求把该检查删除——未提交改动只打印一行提示并写进 pack 记录的 `worktree_status`、打包照常进行，保留的是产物哈希基线检查（`library-baseline.json` 的 `driver_sha256` 与 `air_sha256`，本轮用 `UPDATE_BASELINE=1` 更新）。设备时间比这类检查的价值高，检查要说明的事情转为事后记录（这一轮由什么构成读 `worktree_status` 那份清单）。
+
+一轮失败且失败签名对这一代载荷是新的时候，先报失败与重试计划，再决定要不要消耗下一次启动（lead 2026-10-28 定的常设规程）：判「签名是不是新的」用在历史轮次里搜同一签名的方法——搜到先例就是既有类、按先例类重试有依据，搜不到就是新的、必须先报再动。当天实例（device 自报的过程错误，按它的原文记、不作时序辩解）：第一次 `QUEUE stop` 在 21:09:4x，它 21:10 到 21:12 认出 panic 签名与先例类（在历史轮次里搜到 bbmetal11-panic 与 bbmetal12 两轮先例），21:13 前后重打，21:14:41 开始第二次，lead 的停止消息在它开始之后到达——按先例类重试有依据，缺的是报出来这一步。
 
 ## 6. 存储安全取决于所有权和时间
 

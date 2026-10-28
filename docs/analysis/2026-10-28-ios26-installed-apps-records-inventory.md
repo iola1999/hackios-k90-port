@@ -18,7 +18,7 @@
 
 `ios165/rootfs/Applications` 有 142 个 app bundle，每个带完整 `Info.plist`（`CFBundleIdentifier`、`CFBundleExecutable`、`SBAppTags` 等）。SpringBoard 在拿不到 `IconState.plist` 时按 LaunchServices 枚举到的应用生成默认布局，这是 iOS 的既定行为：`IconState.plist` 存的是**用户排列**，缺它就退回默认排列，并不阻止图标显示。系统应用的容器由 `containermanagerd` 在应用首次运行时按需创建，不依赖 `MobileInstallation` 里的记录。
 
-这解释了 16.5 的现象，也把「26 为什么不同」这个问题挪到了别处：不是安装记录的有无，而是 26 上某些服务在拿不到容器或拿不到 persona 时的行为不同。
+这解释了 16.5 的现象，也把「26 为什么不同」这个问题挪到了别处：差别在 26 上某些服务拿不到容器或 persona 时的行为，安装记录的有无解释不了它。
 
 ## 3. 逐项对照
 
@@ -58,4 +58,4 @@
 
 - 造数据的脚本提交到 `tools/k90auto/`，`ROUND_NOTES` 与归档说明写清「本轮新增安装记录与容器数据」，不放任何真实个人信息（`AGENTS.md` §3）。
 - 写 `MobileInstallation` 之前先确认它的写者是谁：若 `installd` 开机时会用库里的记录覆盖目录，手造的记录会在下一轮消失，白做；若它会清理没有记录的容器，手造容器也会被删。
-- 这一条会改变载荷哈希，`library-baseline.json` 与新加的干净闸都会各自拦一次，属预期。
+- 这一条会改变载荷哈希，`library-baseline.json` 的基线检查会拦一次，属预期。

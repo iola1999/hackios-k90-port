@@ -1,9 +1,9 @@
 {
   "driver_sha256": "9d66dd367d09af4d9b526c73c8407627357d1e32d0cd392639bd5e2b35600f26",
-  "air_sha256": "d7b9ced5a115c08ca17c23e7322a9505c2c6352b3c9660a0d51beece91102e5f",
+  "air_sha256": "1be6ebf7b41e5964b293fba8beaaa8cf70f2f0f098f82ad99af35ba0540b4bb9",
   "source_sha256": {
     "userland/src/sb_metal_experiment.m": "987f9154f441db2b9cc5e5f4ff649839d86bebacea1ef52f2527b95dc455cff2",
-    "userland/src/redwoodmetal.m": "40066a5dea3b0fb2f91eee252569d1084cfc7884025487101299d7f9ad5e675b",
+    "userland/src/redwoodmetal.m": "015aad3285ae1d6987c0ccc5825beea566c5b6e971c6054ea323902d47f1d1cc",
     "userland/src/redwooddrawable.m": "0a994aff638ec66e775d74cc54613665adab63a28b3aebcba43c4a93dc08fcec",
     "userland/src/redwoodmetal_blit.inc": "add5b13f9dc48b1fab019ecafd85180cd8004887859d8dadeb47627242e59a00",
     "userland/src/sb_metal_registration_sequence.inc": "de79f8ab7741192e4e2c05d2a97ec289c8af628bb98eb4ef33e90c8fa3a6a03e",
