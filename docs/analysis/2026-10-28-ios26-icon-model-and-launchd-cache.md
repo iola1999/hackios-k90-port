@@ -6,10 +6,10 @@
 
 四件事分开记，因为它们的证据强度不同。
 
-- ✅ **守护进程数量不是桌面内容的决定项。** 同一份根盘（`33ed5fc9`）、同一份 `system26.apfs`（`d11083be`）、同样 27 条任务的 2026-10-27 12:40 那轮，桌面是 15 个应用、2 个带名字的小组件、4 个 Dock、Search 胶囊。这一条把「只跑 30 条所以撑不起依赖网」关掉。
-- ✅ **启动参数丢了 launchd 缓存，这是确定的回归。** `bbmetal18` 起的每一轮，日志里都没有 `Using unsecure cache` 与 `Cache sent to launchd successfully`，`launchd_cache_loader` 的 `Skipping boot-task` 一轮出现 1000 次；`§38`／`§39` 那两轮三行齐全。
-- 🔍 **缓存缺失能解释扩展那一半，图标数 15→2 那一半尚未归因。** 扩展：没有 `AppExtensions` 就没有 `.appex` 宿主进程，chronod 只能报 `Extension not found`，小组件停在 `Waiting…`，壁纸的 posterkit provider 走同一条路。应用数：待验。
-- 🔍 **16.5 那边是数量级的差别，但那条差别在 26 上不是必要条件。** 16.5 那份能出 15 个图标的载荷是 `REST=1` 建的，`/redwood/LaunchDaemons` 里有 388 个 plist，`com.apple.mobile.installd` 是由 Mach 查找按需拉起的。
+- **守护进程数量不是桌面内容的决定项。** 同一份根盘（`33ed5fc9`）、同一份 `system26.apfs`（`d11083be`）、同样 27 条任务的 2026-10-27 12:40 那轮，桌面是 15 个应用、2 个带名字的小组件、4 个 Dock、Search 胶囊。这一条把「只跑 30 条所以撑不起依赖网」关掉。
+- **启动参数丢了 launchd 缓存，这是确定的回归。** `bbmetal18` 起的每一轮，日志里都没有 `Using unsecure cache` 与 `Cache sent to launchd successfully`，`launchd_cache_loader` 的 `Skipping boot-task` 一轮出现 1000 次；`§38`／`§39` 那两轮三行齐全。
+- **缓存缺失能解释扩展那一半，图标数 15→2 那一半尚未归因。** 扩展：没有 `AppExtensions` 就没有 `.appex` 宿主进程，chronod 只能报 `Extension not found`，小组件停在 `Waiting…`，壁纸的 posterkit provider 走同一条路。应用数：待验。
+- **16.5 那边是数量级的差别，但那条差别在 26 上不是必要条件。** 16.5 那份能出 15 个图标的载荷是 `REST=1` 建的，`/redwood/LaunchDaemons` 里有 388 个 plist，`com.apple.mobile.installd` 是由 Mach 查找按需拉起的。
 
 ## 2. 差集：16.5 的 388 条与 26 的 31 条
 

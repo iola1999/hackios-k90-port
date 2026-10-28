@@ -31,7 +31,7 @@
 | GIC | `arm,gic-v3` @0x16000000，redist @0x16080000，+ITS | loader 平台表直接可填；XNU 现成支持 |
 | GPU | **Adreno 830**（`qcom,adreno-gpu-gen8-0-1`），固件 `gen80000_gmu.bin/sqe.fw/aqe.fw/zap.mbn` 在机 | freedreno/Mesa 25.0.7 无 a8xx → 第一阶段不启用 GPU |
 | Wi-Fi/BT | PCIe `17cb:1107` = WCN785x（FastConnect 7900，Wi-Fi 7） | 需要 **ath12k** 移植（现有是 ath11k）+ PCIe gen4 PHY |
-| 触摸屏 | **Goodix @ SPI**（dtb `xiaomi,touch-spi` + `goodix,*`，irq/reset GPIO 有节点） | 与 redwood Goodix-GT9916 驱动同族，可改造复用 ✅ |
+| 触摸屏 | **Goodix @ SPI**（dtb `xiaomi,touch-spi` + `goodix,*`，irq/reset GPIO 有节点） | 与 redwood Goodix-GT9916 驱动同族，可改造复用 |
 | 屏 | DSI 1156×2510 @120Hz（SDE，Android 渲染分辨率，禁伪装后不变；社区树载**物理面板 1200×2608@480dpi**——比值为渲染缩放，面板驱动以真实时序为准） | UEFI 需驱动此面板出 GOP（最大难点） |
 | 存储 | UFS 4.1（`1d84000.ufshc` 同基址，LUN0 238GB） | `redwood_ufshc.c` 同源可改 |
 | RAM | 16 GB | 2.5GB 镜像灌 RAM 无压力 |

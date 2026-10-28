@@ -27,7 +27,7 @@
 
 ### UEFI 调研（M2 提前启动，子代理全量报告已入库）
 - 复核：`getprop ro.soc.model` = **SM8750** 确认（排除 SM8850 疑云）；本机社区别名 **myron** （repo 内代号 annibale）。
-- 核心发现：**Mu-Silicium 主线已支持 SM8750**（PakalaPkg，OnePlus 13 显示/存储/Linux boot ✅）= 与 hackios 上游同栈；本机自制 EFI 入口已被 gbl-chainload-myron（EFISP+ABL 链入）打通。
+- 核心发现：**Mu-Silicium 主线已支持 SM8750**（PakalaPkg，OnePlus 13 显示/存储/Linux boot 已支持）= 与 hackios 上游同栈；本机自制 EFI 入口已被 gbl-chainload-myron（EFISP+ABL 链入）打通。
 - 路线定稿：① Mu-Silicium 基座出 annibale pkg（主）；② 原厂 UEFI 内存 patch（快验入口）；③ 跟 SunUEFI 社区（piano 同 SoC 旁证）；④ edk2-msm 从零（放弃，其 SM8750=零）。
 - 详见 docs/analysis/uefi-sm8750.md（全部链接与 M2 待办）。
 

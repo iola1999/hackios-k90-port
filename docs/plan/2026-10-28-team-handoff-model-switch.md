@@ -26,7 +26,7 @@
 - `tl: s` 仅 99 条、971.0→1235.9 秒，前 120 秒占 90 条；`tl: p` 36 条、1060.3→1070.8 秒（第一次拖动落在提交窗内，但该轮无性能判读价值）。
 - SpringBoard 14 代 pid（30、103、131、142、161、175、189、205、214、228、241、246、260、267），backboardd 15 代（38、84、99、124、140、153、167、187、197、212、221、235、243、257、265），每代活几秒到十几秒。死亡形态固定：backboardd 先死 `11/11`（段错误），0.2～0.7 秒后 SpringBoard 死 `9/0`（被 SIGKILL），每对间隔约 10 秒，后段拉长到 20/40/80 秒。两者各有 15 条 `exited code -1`。
 - `framewatch: resumed at … after 9/10 s` 16 条（`userland/src/framewatch.m:257`）是误读：新 backboardd 起来后 `kern.redwood.frames` 从 0 重新计数，framewatch 判成「恢复」。停机段实为 14 段（9 段约 10 秒，另有 16.4/20.3/40.3/80.3 秒）。
-- `rwa buffer: copied` 109 条唯一行（原始 1,775 条），尺寸分布 32768 字节占 89%（1,579 条），同一 `(contents, length)` 对出现两次的次数为 0（无重复拷贝）。`nil buffer` 1 条（1.3 MB，大于 65536 字节阈值（源码常量 `redwoodmetal.m:2408` 的 `NOCOPY_LIMIT = 0x10000`；原记 16 KiB，沿用了 `:2405` 注释里的错数，见[判读口径 §3.6](../analysis/2026-10-28-roundc-reading-criteria.md)），按设计返回 nil）。pipeline 失败 0。
+- `rwa buffer: copied` 109 条唯一行（原始 1,775 条），尺寸分布 32768 字节占 89%（1,579 条），同一 `(contents, length)` 对出现两次的次数为 0（无重复拷贝）。`nil buffer` 1 条（1.3 MB，大于 65536 字节阈值（源码常量 `redwoodmetal.m:2408` 的 `NOCOPY_LIMIT = 0x10000`；原记 16 KiB，沿用了 `:2405` 注释里的错数，见[读数规则 §3.6](../analysis/2026-10-28-roundc-reading-criteria.md)），按设计返回 nil）。pipeline 失败 0。
 - bad access 原始行 212 条（跨快照未去重，去重口径待 round-stats），pc 两种：`0x2b0fb59c0` 204 条、`0x2b0fb5ad4` 8 条（相距 0x10c，大概率同一函数）；进程名全部 `backboardd`；故障地址样本含 ASCII 字符串字节（`0x2e697269732e656c`、`0x63756f5474656b63`，形如反向域名字符串片段被当指针解引用）与 `0x1` 这类小整数。
 
 ## 3. 最高优先线索：bad access pc 的镜像归属
@@ -46,7 +46,7 @@ roundb 的 slide 为 `0xb05000`（display 按 `mach_msg2_trap` 偏移反推）�
 |---|---|---|
 | 内核 | `9a7a118a1545…`（20,210,112 字节） | freeze 轮与 roundb 同内核；含 `tl: td slide` 行 |
 | 驱动（旧基线） | `31f2d6b7` | freeze 形态所在版本 |
-| 驱动（拷贝路径） | `9d66dd36`（源码提交 `963fbbd`） | roundb 版本；≤65536 字节拷贝并托管 deallocator（`NOCOPY_LIMIT = 0x10000`；原记 16 KiB，沿用了 `redwoodmetal.m:2405` 注释里的错数，见[判读口径 §3.6](../analysis/2026-10-28-roundc-reading-criteria.md)），大于阈值仍返回 nil |
+| 驱动（拷贝路径） | `9d66dd36`（源码提交 `963fbbd`） | roundb 版本；≤65536 字节拷贝并托管 deallocator（`NOCOPY_LIMIT = 0x10000`；原记 16 KiB，沿用了 `redwoodmetal.m:2405` 注释里的错数，见[读数规则 §3.6](../analysis/2026-10-28-roundc-reading-criteria.md)），大于阈值仍返回 nil |
 | AIR 库 | `d7b9ced5` | freeze 与 roundb 同库，单一变量保证 |
 | AIR 库（新，未上车） | `86f379dc`，源码 digest `ae0dc59b…` | 含 `prog_calls`/`prog_lookups`/`prog_builds` 三字段，等性能轮 |
 | jobs | `rc.jobs.freeze` sha `a4af9a9f`（此前 `845fd77e`） | 现含第三个 framewatch（阈值 2 秒、6 次、靠前行推到约 150 秒起） |
@@ -74,7 +74,7 @@ roundb 的 slide 为 `0xb05000`（display 按 `mach_msg2_trap` 偏移反推）�
 
 - display：容器诊断输出（P3）；内核 exec 基址行与 bad access region 名（P1，代码未写）；widget 宿主 9/1001 时刻表（P5）。
 - device：bad access 与重起时刻对齐（P1 离线部分）；round C 打包与崩溃收集 jobs（P4）。设备 idle。
-- perf：round C 三计数的判读口径设计；`crashlog`/`touchdiag`/`freeze` 洞内告警已补完（21 个三秒空洞全 0）。
+- perf：round C 三计数的读数规则设计；`crashlog`/`touchdiag`/`freeze` 洞内告警已补完（21 个三秒空洞全 0）。
 - desktop：总账一行一项维护；`poster_stores` 新读数、`encode` 23 倍核对、`pipes/tex/blits` 打点、壁纸配置来源定性（均等下一轮搭车）。
 
 ## 8. 外部审阅文档的裁定

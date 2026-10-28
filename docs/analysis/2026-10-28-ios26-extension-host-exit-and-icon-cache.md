@@ -51,7 +51,7 @@ lsprobe t=60 workspace=258 workspace_extensions=296
 
 宿主崩溃时没有 stderr：扩展宿主没有 `StandardOutPath`，控制台一行都没有。`com.apple.ReportCrash` 已在 `tools/k90auto/jobs/`（Apple 原 plist，`MachServices` 里 `com.apple.ReportCrash` 带 `ExceptionServer` 子类型，因此按需处理、不覆盖 `RunAtLoad`）。它不在清单里时，corpse 通知没有人接，`/private/var/mobile/Library/Logs/CrashReporter` 一直是空的；加上它之后，崩溃原因从不可查变成可查。
 
-✅ 已验证（`persona4` 轮）：`containers_plugin=866`、`containers_mobile=240`、`workspace=258`、`workspace_extensions=296`、`iconstate=1`。**容器与登记都不缺，宿主起来就死的原因不在容器这一层。**
+已验证（`persona4` 轮）：`containers_plugin=866`、`containers_mobile=240`、`workspace=258`、`workspace_extensions=296`、`iconstate=1`。**容器与登记都不缺，宿主起来就死的原因不在容器这一层。**
 
 同一轮另有一条：`mobileinstallation_dir=` 从 `-1` 变成 `0`（目录在了、`installd` 还没写），`mobilelibrary=` 里出现 `MobileInstallation/0` 与 `SpringBoard/3`。
 
@@ -91,7 +91,7 @@ lsprobe t=60 workspace=258 workspace_extensions=296
 
 写失败本身也不解释 15 秒周期。perf 核了五个 3.0 秒空档（288.5／303.6／318.6／333.6／348.6 秒）前后三秒的 `writeImageAtIndex`：前三个分别 12／24／39 次，后两个 **0** 次，最后一次写失败在 317.8 秒。所以写失败只对应前三次空档，第四、五次没有它。`chronod` 的图标写在这之后就停了，而空档按 15 秒周期继续。那条周期另有来源，没有定下来。
 
-🔍 `FigXPC >> signalled err=-16155` 在 `bbm29` 出现 649 次（跨快照求和的原始计数），没有归因。
+待查：`FigXPC >> signalled err=-16155` 在 `bbm29` 出现 649 次（跨快照求和的原始计数），没有归因。
 
 能不能让图标缓存避开 HEVC：没有找到开关。而且 `/private/var` 是开机重建的内存盘，图标库即使写成功也活不过一次重启，预置一份缓存只在当次开机有效，而库是按图标内容哈希与设备特征建的，外来的库会被重新生成。结论是这条路不值得投入。
 

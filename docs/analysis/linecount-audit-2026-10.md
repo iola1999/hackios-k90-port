@@ -4,14 +4,14 @@
 
 ## 1. 结论速览
 
-- 设备批次 boot-arg 触及面（touchscreen=2、hv_haptic=3、buttons、battery、torch_secs、pcie 路）中，越线文件只有两个：**redwood_goodix.c 1640**（touchscreen=2 生产路）与 **annibale_haptic.c 815**（新文件，越 15 行）。buttons/battery/torch/pcie 各路文件（redwood_buttons 588、annibale_buttons 621、redwood_battery 198、annibale_battery 640、annibale_torch 687、mhi_pcie 603）全部合规。
+- 设备轮排期 boot-arg 触及面（touchscreen=2、hv_haptic=3、buttons、battery、torch_secs、pcie 路）中，越线文件只有两个：**redwood_goodix.c 1640**（touchscreen=2 生产路）与 **annibale_haptic.c 815**（新文件，越 15 行）。buttons/battery/torch/pcie 各路文件（redwood_buttons 588、annibale_buttons 621、redwood_battery 198、annibale_battery 640、annibale_torch 687、mhi_pcie 603）全部合规。
 - **loader.c 是存量里工程风险最高的一块**：设备轮每次开机都跑它、c.img 同批重打也在动它，拆分必须等设备轮之后。
 - 红杉专属驱动（wifi/camera/adreno/adsp/mic/sound/speaker/haptic/ufshc）已被 task-12 保险丝（`redwood_soc_is_sm8750()`，kernel 265d336）兜底：K90 上入口即 skip，拆分对设备轮风险很小，但属大 diff，建议设备轮后集中排。注意（独立评估 F02/F08 收紧）：保险丝依赖的 TCSR0 寄存器解释尚未实证，task-17 stepper C 的首次调用回读日志是收账点；收账前此类条目的风险按"低（依赖待验证的机型保护）"读，不读成零风险——真实风险按调用关系和产物变化判断，拆分本身不改变运行面。
 - 私有头先例：内核侧已有 `xnu/files/bsd/sys/redwood_qrtr.h`、`redwood_lx.h` 这类跨文件内部头；下表"共享私有头"一律照此放置，不新增构建机制。拆分任务落地时同步进 `xnu/files/bsd/conf/files` 清单（走 patches/series 的 04 片），闸门照旧 kbuild+QEMU。
 
 ## 2. 审计表 — 自有代码（>1000 行，逐文件判定）
 
-| 文件 | 行数 | 性质 | 建议拆法（层缝，含私有头） | 设备批次风险 | 时机建议 |
+| 文件 | 行数 | 性质 | 建议拆法（层缝，含私有头） | 设备轮排期风险 | 时机建议 |
 |---|---|---|---|---|---|
 | xnu/files/bsd/dev/redwood_wifi.c | 4397 | 自有 | 按 step 层拆：`redwood_wifi_private.h`（共享的 say/rd/wr/block 声明）+ say_log.c（say/announce/sleep）、regs_smem.c（rd/wr/smem/smp2p 读层）、power_rpmh.c（cmd_db/rpmh/spmi/rails/pins）、q6_boot.c（固件加载/SCM/image/our_item/start）、glink_qrtr.c（glink 环+会话，qrtr 已在 sys/redwood_qrtr.h）、steps_init.c（step_* 驱动 + init/quiesce 保留）≈6 片各 ~700 行 | 无（红杉专属，保险丝兜底） | 设备轮后；单文件工作量最大，建议独立一天 |
 | xnu/files/bsd/dev/redwood_camera.c | 4269 | 自有 | sensors[]/电源表进 `camera_sensors.h`（表+宏），cci_i2c.c（GPIO I2C 手拍层）、csiphy.c、titan.c（ISP 寄存器+捕获）、camera_private.h（level/fake/keep 等共享态）、init+thread 留主干 ≈4-5 片 | 无（红杉专属，保险丝兜底；cam_fake 例外路不碰硬件） | 设备轮后 |
@@ -35,7 +35,7 @@
 | xnu/files/bsd/dev/redwood_speaker.c | 1217 | 自有 | qup_i2c.c（QUP SE3 手拍 I2C）、aw88261.c（amp 寄存器）、probe_steps.c | 无（红杉专属，保险丝兜底） | 设备轮后 |
 | xnu/files/bsd/dev/redwood_haptic.c | 1009 | 自有 | 波形/参数表进 `redwood_haptic_waves.h`（纯数据），状态机留主干 ≈700+300 | 无（红杉专属，保险丝兜底；K90 走 annibale_haptic） | 设备轮后 |
 | xnu/files/bsd/dev/redwood_qmi.c | 957 | 自有（sys/redwood_qmi.h 的实现） | 越线 157 行：编码表接口与事务/指示两部分拆；或接受小越线，待 ath11k QMI 大改时按"大改须合规"一并拆 | 无（支撑库） | 设备轮后，或等大改触发 |
-| xnu/files/bsd/dev/annibale_haptic.c | 815 | **新文件越线 15 行，处置必填** | 波形/时序参数表抽 `annibale_haptic_data.h`（纯数据头，风格照红杉波形表先例），hv_haptic 状态机与 SPMI 层留 .c → .c 落回 ~600 行；diff 纯搬迁、可 QEMU+真机日志复验 | **有**（hv_haptic=3 是设备批次） | **设备轮前可做**：纯数据表搬迁零行为变化，是全部 22 个文件里唯一"越线且值得轮前动"的；或随该文件下一次行为改动一起做——由 Lead 裁决 |
+| xnu/files/bsd/dev/annibale_haptic.c | 815 | **新文件越线 15 行，处置必填** | 波形/时序参数表抽 `annibale_haptic_data.h`（纯数据头，风格照红杉波形表先例），hv_haptic 状态机与 SPMI 层留 .c → .c 落回 ~600 行；diff 纯搬迁、可 QEMU+真机日志复验 | **有**（hv_haptic=3 在设备轮排期里） | **设备轮前可做**：纯数据表搬迁零行为变化，是全部 22 个文件里唯一"越线且值得轮前动"的；或随该文件下一次行为改动一起做——由 Lead 裁决 |
 
 ## 3. 生成表与上游（分类标注，不细审）
 

@@ -29,7 +29,7 @@ RUN pip3 install --break-system-packages -q \
 # （实测：arm64 容器跑 x86_64 ELF 报 "Dynamic loader not found"，装 libc6:amd64 即通）。
 # meson 用 mk-mesa.sh 自己 venv 里的钉版（26.x 要求 >= 1.4，noble apt 只有 1.3）。
 # theos 钉 commit，iOSToolchain 与 SDK 钉产物 sha256（ld64 / install_name_tool / SDKSettings.plist），
-# 上游漂移就让镜像构建失败，而不是让产物悄悄漂移。
+# 上游变化就让镜像构建失败；产物不会悄悄变化。
 RUN dpkg --add-architecture amd64 \
  && sed -i '/^URIs: http:\/\/mirrors.ustc.edu.cn\/ubuntu-ports\/$/a Architectures: arm64' /etc/apt/sources.list.d/ubuntu.sources \
  && printf 'Types: deb\nURIs: http://mirrors.ustc.edu.cn/ubuntu\nSuites: noble noble-updates\nComponents: main\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n' \

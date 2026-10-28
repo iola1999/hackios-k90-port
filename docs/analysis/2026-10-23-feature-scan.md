@@ -1,6 +1,6 @@
 # 功能全景扫描：红杉家底 × annibale 可行性 × 上游近况（2026-10-23 离线轮）
 
-结论先行：**按键、电池、手电三项建议加入本期真机批次**（都吃已建成的 SPMI v7 主端，边际成本低）；Wi-Fi 固件的"必须真机 dump"前提作废（linux-firmware 已有）；音频维持不碰（结构全变，月级）。
+结论先行：**按键、电池、手电三项建议加入本期真机测试排期**（都吃已建成的 SPMI v7 主端，边际成本低）；Wi-Fi 固件的"必须真机 dump"前提作废（linux-firmware 已有）；音频维持不碰（结构全变，月级）。
 
 ## 1. 红杉真机驱动全家底（`xnu/files/bsd/dev/redwood_*.c`）与 K90 对照
 
@@ -20,7 +20,7 @@
 | apfs_check/sparse/image/sta/guard/lx/input | root 与输入基础设施 | 随 rdfile 变体 C 自然复用 |
 | virtio_blk/input/net/sound | QEMU 专用 | QEMU 回归已依赖，保持 |
 
-## 2. 真机批次建议（写进 playbook 的终点清单）
+## 2. 真机测试排期建议（写进 playbook 的终点清单）
 
 一次开机带全旗标：`touchscreen=2 hv_haptic=3 buttons=1 torch=1`（battery 走内核直读则同带 `battery=1`；名字以最终实现为准）。观察顺序：看屏 → 搓屏 → 手感震动 → 音量键行为 → 手电（`torch_secs=3` 盲测）→ 电量图标。收尾纯拷贝 `adb pull /vendor/lib64/camera`（相机前置资源）。全程零持久化，2.4G 暂存仍单独经用户确认。
 

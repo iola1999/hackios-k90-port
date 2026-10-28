@@ -56,7 +56,7 @@ K90 的五轮都短得多。`bbmetal21` 的 launchd 在 23:03:48.9 起，`chrono
 
 小组件这一项也没有变化：两块白块有了名字，内部没有内容。第三轮实测里 `Extension not found` 与 `Unknown extension process` 都归零、`chronod` 读到真实扩展名（`AdaptiveMusicWidget`、`CalendarWidget`、`FindMyWidgetItems`），但 420 秒内没有宿主进程被拉起。所以扩展身份查找这一段通了，扩展进程拉起这一段还没有观察到。
 
-结论分两行写：壁纸 ❌ 桌面背景仍是纯黑，缓存补齐没有带来壁纸；小组件 ❌ 名字出现了、白块内部仍无内容，缺口在扩展进程拉起。
+结论分两行写：壁纸未达成：桌面背景仍是纯黑，缓存补齐没有带来壁纸；小组件未达成：名字出现了、白块内部仍无内容，缺口在扩展进程拉起。
 
 ## 8. PosterBoard 是被拉起的，缺口在记录与渲染
 

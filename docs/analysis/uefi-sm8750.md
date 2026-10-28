@@ -10,11 +10,11 @@
 
 ## 2. Mu-Silicium：8 Elite 已进 main（对我们最重要）
 
-- [PakalaPkg](https://github.com/Project-Silicium/Mu-Silicium/tree/main/Silicon/Qualcomm/PakalaPkg) = SM8750 支持：OnePlus 13 (dodge) 显示/存储/USB/Linux boot ✅，13s (pagani) Active （[Status.md](https://github.com/Project-Silicium/Mu-Silicium/blob/main/Status.md)）。
+- [PakalaPkg](https://github.com/Project-Silicium/Mu-Silicium/tree/main/Silicon/Qualcomm/PakalaPkg) = SM8750 支持：OnePlus 13 (dodge) 显示/存储/USB/Linux boot 已支持，13s (pagani) Active （[Status.md](https://github.com/Project-Silicium/Mu-Silicium/blob/main/Status.md)）。
 - KaanapaliPkg（SM8850，OnePlus 15）也已 Active——8 Elite 世代架构经验已沉淀。
 - **但小米 pkg 全是老机型**（polaris=SDM845 … onyx=8s Gen4），org 内无 "redwood"、无任何小米 8 Elite 设备 → annibale/myron 需自己出 pkg。
 - 移植方法学现成：[Silicium Porting 指南](https://github.com/Project-Silicium/Guides/tree/main/Silicium/Porting/Snapdragon)；原厂 DXE 提取复用体系：[Project-Silicium/Device-Binaries](https://github.com/Project-Silicium/Device-Binaries) （含 dodge=SM8750 的 xbl DXE + 面板 XML；解包用 [xbltools](https://github.com/linux-msm/xbltools)）。
-- ⚠️ 已知维护风险：XBL 协议地址随 HyperOS 固件版本变化需逐版重扫（[PR #1937](https://github.com/Project-Silicium/Mu-Silicium/pull/1937) 先例）。
+- 已知维护风险：XBL 协议地址随 HyperOS 固件版本变化需逐版重扫（[PR #1937](https://github.com/Project-Silicium/Mu-Silicium/pull/1937) 先例）。
 
 ## 3. 姊妹机型入口已被打通：gbl-chainload-myron
 

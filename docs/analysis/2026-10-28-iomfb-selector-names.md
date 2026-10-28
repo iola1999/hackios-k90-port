@@ -142,7 +142,7 @@ S1 给出的 `kern_SetBlock(a1=fb, a2=blockType, a3=data, a4=dataSize, a5=extraU
 
 ## 10. 实现建议
 
-四条建议按优先级排，代码改动归 task-24，排在 round F 之后的批次里，因为它改内核身份、要重新构建，不能与任何一轮同时进行。
+四条建议按优先级排，代码改动归 task-24，排在 round F 之后的排期里，因为它改内核身份、要重新构建，不能与任何一轮同时进行。
 
 1. 74 改成写满 2 个 scalar，count 与 selected index 都给 0，并把注释里的输出描述改成「2 scalar out 加 64 字节 struct」。
 2. enum 补 78 `kFBMethodSetBlock`，名字用 S1、S2、S3 三方一致的 SetBlock，case 实现收下 scalar 与 struct 返回成功。
@@ -151,4 +151,4 @@ S1 给出的 `kern_SetBlock(a1=fb, a2=blockType, a3=data, a4=dataSize, a5=extraU
 
 改的是两份拷贝：权威副本 `hackios-xnu-kernel/xnu/files/iokit/Kernel/MiniIOMobileFramebuffer.cpp`，构建树那一份 `hackios-xnu-kernel/out/xnu12377/iokit/Kernel/MiniIOMobileFramebuffer.cpp`。`xnu26/apply.sh` 开头有守卫，目录已存在就退出，所以树铺出来之后没有任何脚本再同步它，两个方向都靠人，改完要 `cmp` 一致再构建。
 
-新增打印沿用现有的两个节流机制：`:1255-1265` 的 `fbtrace` 每选择器只记前 3 次调用并带调用进程名，`:1385-1387` 的「not implemented」由 `gFBLogged` 每启动一次。判读时引判读口径 §14.7：`not implemented` 这个子串跨三个驱动族且字段进制不同，framebuffer 的 15 个选择器是十进制、surface 的 5 个是十进制、keystore 的 2 个是十六进制，一把过滤会解析错。
+新增打印沿用现有的两个节流机制：`:1255-1265` 的 `fbtrace` 每选择器只记前 3 次调用并带调用进程名，`:1385-1387` 的「not implemented」由 `gFBLogged` 每启动一次。判读时引读数规则 §14.7：`not implemented` 这个子串跨三个驱动族且字段进制不同，framebuffer 的 15 个选择器是十进制、surface 的 5 个是十进制、keystore 的 2 个是十六进制，一把过滤会解析错。

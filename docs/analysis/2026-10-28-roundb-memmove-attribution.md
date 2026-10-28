@@ -228,7 +228,7 @@ libsystem_kernel+0xcd8  mov x16, #-0x30     ; -48 = macx_swapon
 
 7 个低 12 位互不相同，而 dylib 的加载地址是页对齐的，所以给定一个运行时 `lr`，7 个候选里只有一个能让 `lr − 预期值` 页对齐，那一个就是调用点，差值就是 `libredwoodair.dylib` 的加载地址。这一步不需要内核另外打 AIR 库的基址。
 
-`lr` 落在 `libredwoodair.dylib` 之外时按判读口径文档 §3.7 的三步走；落在 `libredwoodmetal.dylib` 与 6.2 的导入表冲突，出现就说明「`_platform_memcpy` 与 `_platform_memmove` 是两个独立实现」这条要重查，而 6.1 已经查出子任务对 `+0x6af4` 的定性是错的，所以这个分支值得当真。
+`lr` 落在 `libredwoodair.dylib` 之外时按读数规则文档 §3.7 的三步走；落在 `libredwoodmetal.dylib` 与 6.2 的导入表冲突，出现就说明「`_platform_memcpy` 与 `_platform_memmove` 是两个独立实现」这条要重查，而 6.1 已经查出子任务对 `+0x6af4` 的定性是错的，所以这个分支值得当真。
 
 
 ## 7. 故障地址分类与事件口径
@@ -245,7 +245,7 @@ libsystem_kernel+0xcd8  mov x16, #-0x30     ; -48 = macx_swapon
 
 15 个事件 pid 是 `{38, 84, 99, 124, 140, 153, 167, 187, 197, 212, 221, 235, 243, 257, 265}`，与该轮 `redwood: backboardd pid N exited code -1 reason 2` 的 15 个 pid **完全相同**。两个独立来源（故障后紧跟的死亡行、进程退出行）给出同一个 15 代集合，事件口径因此站得住：每一代 backboardd 崩一次，一次故障对应一次死亡。
 
-这个 15 与另一处出现的 15 无关，写结论时不要对上。`hackios-xnu-kernel/userland/src/redwoodmetal_blit.inc:35-38` 的注释写着「A selector nobody answers aborts the process, and backboardd died fifteen times in one run on -generateMipmapsForTexture: before anything was drawn」，那是没人应答的 selector 导致 `abort()`，信号 6，发生在绘制之前，且已经由该文件里的转发实现修掉；roundb 这 15 起是 `died on signal 11 code 11`，信号 11，发生在已经画出内容之后。两个数相同，成因、信号、发生时机都不同。本文与判读口径文档里凡出现 15 的地方都带着 `signal 11 code 11` 或 `reason 2`，两份文档对 `signal 6`、`abort`、`generateMipmaps`、`selector` 四个词的检索都是零命中。
+这个 15 与另一处出现的 15 无关，写结论时不要对上。`hackios-xnu-kernel/userland/src/redwoodmetal_blit.inc:35-38` 的注释写着「A selector nobody answers aborts the process, and backboardd died fifteen times in one run on -generateMipmapsForTexture: before anything was drawn」，那是没人应答的 selector 导致 `abort()`，信号 6，发生在绘制之前，且已经由该文件里的转发实现修掉；roundb 这 15 起是 `died on signal 11 code 11`，信号 11，发生在已经画出内容之后。两个数相同，成因、信号、发生时机都不同。本文与读数规则文档里凡出现 15 的地方都带着 `signal 11 code 11` 或 `reason 2`，两份文档对 `signal 6`、`abort`、`generateMipmaps`、`selector` 四个词的检索都是零命中。
 
 11 个唯一故障地址按形式分类，事件口径的分布与子任务一致（小整数 2、ASCII 4、打包整数样 9、正常堆地址 0）：
 
@@ -294,7 +294,7 @@ libsystem_kernel+0xcd8  mov x16, #-0x30     ; -48 = macx_swapon
 
 ## 9. 共享缓存里的字符串命中
 
-**部分成立，两项判不了。** 缓存位置与身份先更正：lead 早先说的「本地没有解出的缓存文件、缓存只在 `userland/system26.apfs` 里」不成立，实际位置是 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/`，85 个文件、4.87 GiB、UUID `46E741B7-0E75-3F19-A308-0464F4140B00` 与主缓存头部 `+0x58` 的 16 字节一致。这一条已经写进判读口径文档的旧版本当作「未搜范围」，要改。
+**部分成立，两项判不了。** 缓存位置与身份先更正：lead 早先说的「本地没有解出的缓存文件、缓存只在 `userland/system26.apfs` 里」不成立，实际位置是 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/`，85 个文件、4.87 GiB、UUID `46E741B7-0E75-3F19-A308-0464F4140B00` 与主缓存头部 `+0x58` 的 16 字节一致。这一条已经写进读数规则文档的旧版本当作「未搜范围」，要改。
 
 用 python 流式 `bytes.find` 扫全部 85 个文件，块 8 MiB、块间保留 `len(pattern) − 1` 字节重叠：
 
@@ -308,7 +308,7 @@ libsystem_kernel+0xcd8  mov x16, #-0x30     ; -48 = macx_swapon
 
 `le.media` 差 2 条的原因未查，可能是分块边界处理或统计对象不同（字节出现次数与「命中」的定义）。这个差不影响任何结论：缓存里存在这些串这件事，1958 与 567 都远超 0。「1510 个不同串」与「约 250 个镜像」需要先从命中位置抽出完整字符串再按镜像归属，本文没有做这一步，标判不了。
 
-对判读口径的影响：`backboardd` 的地址空间里有共享缓存，缓存里 `le.siri.` 有 1958 处，所以故障地址里那段 ASCII 的来源不能只按 SpringBoard 主二进制的内嵌 plist 解释，候选至少包含缓存内约 250 个镜像（这个数本文未复现）。判读口径文档 §5.1 的「未搜范围是 dyld 共享缓存」那句要删掉，换成已搜与命中数。
+对读数规则的影响：`backboardd` 的地址空间里有共享缓存，缓存里 `le.siri.` 有 1958 处，所以故障地址里那段 ASCII 的来源不能只按 SpringBoard 主二进制的内嵌 plist 解释，候选至少包含缓存内约 250 个镜像（这个数本文未复现）。读数规则文档 §5.1 的「未搜范围是 dyld 共享缓存」那句要删掉，换成已搜与命中数。
 
 ## 10. 复核结果汇总
 
@@ -334,7 +334,7 @@ libsystem_kernel+0xcd8  mov x16, #-0x30     ; -48 = macx_swapon
 - **P2 的方向要改，改到调用方。** 故障发生在系统库的 `memmove` 里，`src` 实参本身是个非法值（15 起里 4 起是字符串字节、9 起是打包整数样、2 起是小整数），所以问题在「谁把这样的值当 `src` 传给了 `memmove`」，落在调用方而不在拷贝实现。调用方候选按第 6 节分成两半：驱动排除（不导入 `_memmove`，且长度区间不相交），AIR 库不排除（导入 `_memmove`，7 个调用点）。下一步不是在源码里猜，是等 round C 的 `lr`，用第 6.4 节那套页对齐反解直接定到 7 个里的哪一个。CA 侧（共享缓存里的调用方）是第二类候选，`lr − slide` 落进缓存区间时按 `imagesText` 查表命名。
 - **round D 的「内核加不节流故障计数器」必要性下降。** 邻接法已经能把事件数精确恢复到 15 起，且与 `exited code` 的 15 代集合独立吻合，那个计数器只剩交叉验证价值，不值得为它单独重建内核。共享缓存起止的设备侧直接读数那一条仍然值得排：本文的三个边界数是从本地缓存文件解出来的，设备侧没有对应读数，而 slide 每轮都变；离线这条路已经走通，所以它的价值从「没有它就判不了」降成「不必依赖本地这份缓存」。
 
-判读口径文档已按本文改的六处：§1 的内核身份与两个库的 `nm -u` 结论、§2 的格式串与 19 个字段加三条自我否证判据、§3.2／§3.3 的候选集合分成 pc 与 lr 两组并加缓存查表那一步、§3.5 的三口径并列、§3.7 的 `lr` 归属三步、§4 的 slide 与缓存边界、§5.1 的缓存已搜与命中数、§9.4 的插桩状态、§12 里不节流计数器那一行的必要性。
+读数规则文档已按本文改的六处：§1 的内核身份与两个库的 `nm -u` 结论、§2 的格式串与 19 个字段加三条自我否证判据、§3.2／§3.3 的候选集合分成 pc 与 lr 两组并加缓存查表那一步、§3.5 的三口径并列、§3.7 的 `lr` 归属三步、§4 的 slide 与缓存边界、§5.1 的缓存已搜与命中数、§9.4 的插桩状态、§12 里不节流计数器那一行的必要性。
 
 ## 12. roundb 的帧数据是在插桩开着的条件下采的
 
@@ -344,4 +344,4 @@ libsystem_kernel+0xcd8  mov x16, #-0x30     ; -48 = macx_swapon
 
 所以本文第 7、8 两节的所有计数都在插桩开着的条件下取得，第 8 节那个「217 条的上一行是 `tl: w`、209 条的上两行是 `copied`」的相邻关系里，夹在中间的日志流本身比无插桩时更密。这不改变任何计数的正确性（计数按行数和行序数，与插桩无关），但改变一件事：`copied` 与 bad access 之间那 4 行窗口里能容纳的其它打印变多了，所以「随后 4 行内」这个窗口在插桩关掉之后会对应更长的时间跨度，两个条件下的 11.8% 不可直接比。
 
-26 线有意携带这份插桩，16.5 那条参照线不得携带，规则在 `hackios-xnu-userland/tools/mesa/NOTE.md`：`tools/mesa/*.patch` 会被 16.5 的 `mk-mesa.sh:106` 用通配符自动收下，而所有性能对比都以 16.5 为参照。两条规则各自成立，不要互相引用。判读口径文档 §9.4 记了验收轮必须关掉插桩这一条。
+26 线有意携带这份插桩，16.5 那条参照线不得携带，规则在 `hackios-xnu-userland/tools/mesa/NOTE.md`：`tools/mesa/*.patch` 会被 16.5 的 `mk-mesa.sh:106` 用通配符自动收下，而所有性能对比都以 16.5 为参照。两条规则各自成立，不要互相引用。读数规则文档 §9.4 记了验收轮必须关掉插桩这一条。

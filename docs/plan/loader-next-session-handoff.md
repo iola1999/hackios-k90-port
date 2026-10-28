@@ -109,7 +109,7 @@ BootShim 保留运行时源目标重叠和加法溢出检查，所有危险重�
 
 [构建与验收归档](../progress/evidence/early-fd-shim-snapshot-20261024T145846Z/EARLY-APPROVAL.md)记录产物路径。先核实际文件哈希再复用，不默认重新构建。旧 176 字节 BootShim 和旧候选 C 不用于验证新契约。
 
-已独立确认 BDS 从 `0xF0000004` 读取 Header.Size、上限为 `0x036FFFF8`，失败或返回后进入 DAIF 屏蔽与自循环；SEC 实际生成资源 HOB 和 Reserved allocation HOB。原始 pre/post 清单独立解析得到 139592→144507 项，55 项变化为 52 个 Git index、两个授权 shim 产物和根目录元数据，新增 4915 项均在 Build/Conf，删除 0 项。既有源输入无变化。index 字段变化原因未核，父目录挂载在构建时的完整内容缺少同期记录，相关限定保留。
+已独立确认 BDS 从 `0xF0000004` 读取 Header.Size、上限为 `0x036FFFF8`，失败或返回后进入 DAIF 屏蔽与自循环；SEC 实际生成资源 HOB 和 Reserved allocation HOB。原始 pre/post 清单独立解析得到 139592→144507 项，55 项变化为 52 个 Git index、两个授权 shim 产物和根目录元数据，新增 4915 项均在 Build/Conf，删除 0 项。既有源输入无变化。index 字段变化原因未经核对，父目录挂载在构建时的完整内容缺少同期记录，相关限定保留。
 
 ## 8. 修复后的完成步骤
 

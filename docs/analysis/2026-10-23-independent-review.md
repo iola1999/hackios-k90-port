@@ -39,22 +39,22 @@ K90 真机工作仍处于早期启动验证阶段。当前最大的限制是缺�
 
 | 实验 | 结果 | 能确认的范围 |
 |---|---|---|
-| 固定提交的默认 loader 重新编译，配合已提交内核和现有系统镜像运行 QEMU | ✅ 进程运行约 452.84 秒后返回 0；180、300、400 秒采集画面；300 秒截图可见完整 SpringBoard 桌面，日志记录 `kernel returned` | QEMU 启动、软件显示和返回 loader 的路径可运行；日志中未发现 `panic(cpu` |
-| 手机 loader 使用 `-DDIRECT_PHONE_PLAT` 重新编译 | ✅ 编译成功，产物 70,144 字节 | 手机配置可以编译；执行情况仍需真机确认 |
-| 从 Apple 的 `xnu-8796.121.2` 重放 `xnu/apply.sh` | ✅ 73 片补丁全部应用；109 个新增文件与快照逐字节一致 | 补丁拆分后的源码重建路径可用；本轮没有重新编译整个 XNU |
-| 主机 AIR 二进制与源码核对 | ✅ 构建树中的 17 个 AIR 源文件与 userland 快照一致 | 后续主机测试使用了与本轮源文件相符的已有构建产物 |
-| `loweringcheck.py` | ✅ 20/20；其中 18 个与 LLVM 比较，2 个按预期拒绝 | 已覆盖的转换语义成立 |
-| `argbufruncheck.sh` | ✅ 修复实验副本的 macOS 签名后，20 项检查全部通过 | 参数缓冲相关的主机运行检查通过 |
-| 四个系统 metallib 的 `corpus.py` | ✅ 456/456 可读取；321/456 可转换 | 271 个 fragment、47 个 kernel、3 个 vertex 全部转换；135 个 visible library 模块未直接转换，不能仅按总百分比判定缺陷 |
-| 三组缺少 ir3 的检查 | ⚠️ fbfetch 7/7、vattr 16/16、discard 2/2，退出码均为 0，部分检查显示 SKIPPED | NIR 或接口检查仍在执行，GPU 指令检查存在空缺 |
-| `texopcheck.py` 的语料对照实验 | ❌ 无 rootfs 时为 27/27、退出 0；提供现有 rootfs 后为 99 项、74 符合、18 WRONG、7 refused、退出 1 | 测试集合受语料目录影响；当前完整纹理测试未通过 |
-| GL 六个产物的 SHA-256 | ✅ 6/6 与清单一致 | 当前 `userland/obj/` 的六个文件身份可核对；运行语义仍需对应测试 |
-| loader 构建失败注入 | ❌ 子步骤返回 42，总构建入口返回 0 | 构建失败传播存在缺陷，见 F04 |
-| `check.sh` 管道失败注入 | ❌ 模拟 CPU 比较返回 42，`cpu_rc` 仍为 0 | 测试总入口可能遗漏失败，见 F05 |
-| 现有 C 镜像解包与 system 镜像长度对照 | ❌ 相差 16,384 字节；按现有 tail 算法会跳过 APFS 开头 | 下一次按当前文件组合执行会读错镜像位置，见 F01 |
-| 暂存脚本默认拒绝与 `--yes` 分支模拟 | ✅ 默认返回 1；⚠️ `--yes` 直接生成 userdata 裸写命令 | 默认确认要求有效；确认之后仍缺少块占用和镜像一致性校验 |
-| 原始分区探针函数配合内存 BlockIo | ❌ 自动执行五次首块覆盖，未恢复原内容 | 确认正常 USB 入口中的存储副作用；真实设备写入是否成功未在本轮验证 |
-| 原始 rdfile 调用分支配合加载记录函数 | ❌ 连续内存不足时先调用加载，随后才拒绝 | 确认范围检查顺序错误；本轮未执行真实越界写入 |
+| 固定提交的默认 loader 重新编译，配合已提交内核和现有系统镜像运行 QEMU | 通过：进程运行约 452.84 秒后返回 0；180、300、400 秒采集画面；300 秒截图可见完整 SpringBoard 桌面，日志记录 `kernel returned` | QEMU 启动、软件显示和返回 loader 的路径可运行；日志中未发现 `panic(cpu` |
+| 手机 loader 使用 `-DDIRECT_PHONE_PLAT` 重新编译 | 通过：编译成功，产物 70,144 字节 | 手机配置可以编译；执行情况仍需真机确认 |
+| 从 Apple 的 `xnu-8796.121.2` 重放 `xnu/apply.sh` | 通过：73 片补丁全部应用；109 个新增文件与快照逐字节一致 | 补丁拆分后的源码重建路径可用；本轮没有重新编译整个 XNU |
+| 主机 AIR 二进制与源码核对 | 通过：构建树中的 17 个 AIR 源文件与 userland 快照一致 | 后续主机测试使用了与本轮源文件相符的已有构建产物 |
+| `loweringcheck.py` | 通过：20/20；其中 18 个与 LLVM 比较，2 个按预期拒绝 | 已覆盖的转换语义成立 |
+| `argbufruncheck.sh` | 通过：修复实验副本的 macOS 签名后，20 项检查全部通过 | 参数缓冲相关的主机运行检查通过 |
+| 四个系统 metallib 的 `corpus.py` | 通过：456/456 可读取；321/456 可转换 | 271 个 fragment、47 个 kernel、3 个 vertex 全部转换；135 个 visible library 模块未直接转换，不能仅按总百分比判定缺陷 |
+| 三组缺少 ir3 的检查 | 注意：fbfetch 7/7、vattr 16/16、discard 2/2，退出码均为 0，部分检查显示 SKIPPED | NIR 或接口检查仍在执行，GPU 指令检查存在空缺 |
+| `texopcheck.py` 的语料对照实验 | 未通过：无 rootfs 时为 27/27、退出 0；提供现有 rootfs 后为 99 项、74 符合、18 WRONG、7 refused、退出 1 | 测试集合受语料目录影响；当前完整纹理测试未通过 |
+| GL 六个产物的 SHA-256 | 通过：6/6 与清单一致 | 当前 `userland/obj/` 的六个文件身份可核对；运行语义仍需对应测试 |
+| loader 构建失败注入 | 未通过：子步骤返回 42，总构建入口返回 0 | 构建失败传播存在缺陷，见 F04 |
+| `check.sh` 管道失败注入 | 未通过：模拟 CPU 比较返回 42，`cpu_rc` 仍为 0 | 测试总入口可能遗漏失败，见 F05 |
+| 现有 C 镜像解包与 system 镜像长度对照 | 未通过：相差 16,384 字节；按现有 tail 算法会跳过 APFS 开头 | 下一次按当前文件组合执行会读错镜像位置，见 F01 |
+| 暂存脚本默认拒绝与 `--yes` 分支模拟 | 通过：默认返回 1；注意：`--yes` 直接生成 userdata 裸写命令 | 默认确认要求有效；确认之后仍缺少块占用和镜像一致性校验 |
+| 原始分区探针函数配合内存 BlockIo | 未通过：自动执行五次首块覆盖，未恢复原内容 | 确认正常 USB 入口中的存储副作用；真实设备写入是否成功未在本轮验证 |
+| 原始 rdfile 调用分支配合加载记录函数 | 未通过：连续内存不足时先调用加载，随后才拒绝 | 确认范围检查顺序错误；本轮未执行真实越界写入 |
 
 实验过程中遇到的两个环境问题已经单独排除：修改实验副本的动态库路径后，macOS 因签名失效终止程序，重新对副本签名后参数缓冲测试通过；QEMU 的 PPM 输出每行带对齐填充，直接交给普通转换工具会出现画面错位，按仓库截图脚本已有的行长度处理后画面正常。两项均未列为仓库缺陷。
 
@@ -75,20 +75,20 @@ K90 真机工作仍处于早期启动验证阶段。当前最大的限制是缺�
 
 ### 处置状态表（Lead 裁决，2026-10-27 起持续更新；成员只改自己名下行，改前先重读本文）
 
-图例：✅已闭环 · 🔵处理中（负责人/任务/stepper）· ⏸暂缓（复杂或收益不足，附理由）· ⚖按设计（现行机制即结论）
+图例：已闭环 · 处理中（负责人/任务/stepper）· 暂缓（复杂或收益不足，附理由）· 按设计（现行机制即结论）
 
 | 编号 | 状态 | 负责人/任务 | 说明 |
 |---|---|---|---|
-| F09 | ✅完成（kernel efe0e55） | adreno / task-19 stepper 3 | 自动路径 inspect_storage() 只读零写；写探针收进显式 oem probe 且五步非破坏 保存→写→验→恢复→验（日志 /tmp/task19/probe-simulation.log）；boot_a 回退仅在显式 oem logwrite 运行期间生效（F09LW 标记段+flag 门），自动 flush 无 logdump 时走 console 回显、USB 面纯读，oem logwrite 已入 busy 拒收列表；host harness 五例全过（logdump 恒优先/无 flag=NULL/flag 期=boot_a/命令结束回 NULL），日志 /tmp/task19/logwrite-simulation.log。闸门（Lead）：双编译变体过、QEMU 420s SpringBoard×2 零 panic；新增 oem probe/oem logwrite 两命令，命令面见 playbook |
-| F10 | ✅完成（kernel efe0e55） | adreno / task-19 stepper 1 | 布局与全部容量/溢出/目标区域检查抽成 plan_layout()，run_kernel 仅在检查通过后才触内存与读盘；host 分支测试逐字提取 loader.c F10 标记段，7 例（含验收四输入：刚好/差一页/远小于/异常长度）拒绝路径零加载调用，日志 /tmp/task19/rdfile-order-simulation.log；loader 两编译变体零告警。闸门（Lead）：QEMU 420s 正常路径行为零变化，kernel efe0e55 入库 |
-| F01 | ✅已闭环（流程性） | Lead / 轮末重打 | 设备轮最终 c.img 重打本就按**实际 system 文件**重新生成 rdfile 参数并记录 kernel/loader/root/system 产物清单（既定流程），16 KiB 偏移随重打消失；loader 内自动长度/哈希对账的**代码加固** ⏸暂缓——重打纪律先收账，观察一轮再定是否值得改 loader |
-| F02 | ✅已闭环（观测先行部分，kernel b77eb0c） | drivers / task-17 stepper C | 观测一行已入库：redwood_soc_is_sm8750() 首调无条件打印原始 TCSR0 整字（`redwood: TCSR0 @0x1fc0000 reads 0x%08x`，每 boot 恰一次），QEMU 闸门已见空窗值 0x00000000 按预期现形（strings+控制台双确认，SpringBoard×2 零 panic）；K90 应回 0x26a/红杉应回 360 的真机读数待设备轮日志对账，为三态实证的唯一遗留收账点；评审建议的**可信身份源+fail-closed 重构**保持 ⏸暂缓（复杂：需 SMEM/固件协议核实，先用真机读数收编报告质疑，再定重构是否必要） |
-| F03 | ✅已闭环（kernel 75fb322 + 父仓，host 验收全过） | adreno / task-20 | tools/device-test.sh 重写同批入库：`tools/device-test.sh` F03 标记段，`getvar product 2>&1` 连退出码一起收，rc124 判超时、rc≠0 判死链（附首行错误原文）、product 含 xnuloader 判 loader 在位、is-userspace:yes 判 fastbootd、其余判 LK，类别变化才播报，PROBE_TRIES 可覆盖便于测试；宿主仿真用 stub 把应答写在 stderr（与真 fastboot 一致）跑通五输入（loader 在位/LK/fastbootd/rc3 失败/超时），日志 /tmp/task20/f03-f05-simulation.log |
-| F04 | ✅已闭环（kernel 75fb322 + 父仓，host 验收全过） | adreno / task-20 | kernel 75fb322：xnuloader/build.sh 按变体分产物（带 -DDIRECT_PHONE_PLAT 只写 loader-phone.efi，默认只写 loader.efi 并落同内容 loader-generic.efi 别名，trap 9 结构性不可能）；common/build.sh 经 conf 新增 LOADER_CFLAGS 把宏传给 loader 步骤，loader/images/mkpayload/mkxnuimg 逐步 die；验收：编译失败注入 rc1 且旧 boot.img mtime 不动，交替构建互不覆盖（phone 构建后 loader.efi 哈希不变、别名与主产物一致；注意本机工具链本身不可比特复现，同变体重编译哈希稳定在宿主从来不成立），记录 shim 证明 qemu 入口 EXTRA_CFLAGS 为空、annibale 入口宏生效，annibale 全量入口装载的是 loader-phone.efi（payload 内 phone 独有字符串命中），redwood 行为零变化 |
-| F05 | ✅已闭环（kernel 75fb322 + 父仓，host 验收全过） | adreno / task-20 | tools/device-test.sh 同批：`tools/device-test.sh` 入口加 pipefail；相关 grep 全部读尽管道替代 grep -q（40 万行 stub 流上旧形在 pipefail 下被 SIGPIPE 打成 141 把在位设备误报缺席，新形无恙，对照见同一仿真日志）；入口新增依赖汇总，fastboot/adb/timeout 与 xnu-annibale-log.img 缺哪个报哪个一次性列全后 exit 1，剥 PATH 实测 MISSING 行正确 |
-| F06 | ⚖按设计 | Lead | RAM-only 零持久化 + stage-system.sh --yes 用户同意门是既定裁决；"分配与并发"层面的重设计 ⏸暂缓（同意门在，风险受控） |
-| F07 | ✅已闭环 | mesa / task-21 | 已审查入库：trials 分级口径段+事实 1/2/7 观测/归属两级、playbook 间接指纹+boot_a 取证标注当前不可用+行 C 指纹说明+四阶段分级段、hw-map GOP 待验证注（随本次父仓提交） |
-| F08 | ✅已闭环 | mesa / task-21 | 已审查入库：mesa-rebase §9.1 收紧到符号名称层+§10.3 GL 观察项排期、内核审计零风险→低（F02 收账点）+Mini 两行改判、porting-plan 间接指纹+UEFI 构建输入记录待办、gpu-plan 状态对齐实现期、README 上游状态行（Lead 补批）（随本次父仓提交） |
+| F09 | 完成（kernel efe0e55） | adreno / task-19 stepper 3 | 自动路径 inspect_storage() 只读零写；写探针收进显式 oem probe 且五步非破坏 保存→写→验→恢复→验（日志 /tmp/task19/probe-simulation.log）；boot_a 回退仅在显式 oem logwrite 运行期间生效（F09LW 标记段+flag 门），自动 flush 无 logdump 时走 console 回显、USB 面纯读，oem logwrite 已入 busy 拒收列表；host harness 五例全过（logdump 恒优先/无 flag=NULL/flag 期=boot_a/命令结束回 NULL），日志 /tmp/task19/logwrite-simulation.log。闸门（Lead）：双编译变体过、QEMU 420s SpringBoard×2 零 panic；新增 oem probe/oem logwrite 两命令，命令面见 playbook |
+| F10 | 完成（kernel efe0e55） | adreno / task-19 stepper 1 | 布局与全部容量/溢出/目标区域检查抽成 plan_layout()，run_kernel 仅在检查通过后才触内存与读盘；host 分支测试逐字提取 loader.c F10 标记段，7 例（含验收四输入：刚好/差一页/远小于/异常长度）拒绝路径零加载调用，日志 /tmp/task19/rdfile-order-simulation.log；loader 两编译变体零告警。闸门（Lead）：QEMU 420s 正常路径行为零变化，kernel efe0e55 入库 |
+| F01 | 已闭环（流程性） | Lead / 轮末重打 | 设备轮最终 c.img 重打本就按**实际 system 文件**重新生成 rdfile 参数并记录 kernel/loader/root/system 产物清单（既定流程），16 KiB 偏移随重打消失；loader 内自动长度/哈希对账的**代码加固** 暂缓——重打纪律先收账，观察一轮再定是否值得改 loader |
+| F02 | 已闭环（观测先行部分，kernel b77eb0c） | drivers / task-17 stepper C | 观测一行已入库：redwood_soc_is_sm8750() 首调无条件打印原始 TCSR0 整字（`redwood: TCSR0 @0x1fc0000 reads 0x%08x`，每 boot 恰一次），QEMU 闸门已见空窗值 0x00000000 按预期现形（strings+控制台双确认，SpringBoard×2 零 panic）；K90 应回 0x26a/红杉应回 360 的真机读数待设备轮日志对账，为三态实证的唯一遗留收账点；评审建议的**可信身份源+fail-closed 重构**保持暂缓（复杂：需 SMEM/固件协议核实，先用真机读数收编报告质疑，再定重构是否必要） |
+| F03 | 已闭环（kernel 75fb322 + 父仓，host 验收全过） | adreno / task-20 | tools/device-test.sh 重写同批入库：`tools/device-test.sh` F03 标记段，`getvar product 2>&1` 连退出码一起收，rc124 判超时、rc≠0 判死链（附首行错误原文）、product 含 xnuloader 判 loader 在位、is-userspace:yes 判 fastbootd、其余判 LK，类别变化才播报，PROBE_TRIES 可覆盖便于测试；宿主仿真用 stub 把应答写在 stderr（与真 fastboot 一致）跑通五输入（loader 在位/LK/fastbootd/rc3 失败/超时），日志 /tmp/task20/f03-f05-simulation.log |
+| F04 | 已闭环（kernel 75fb322 + 父仓，host 验收全过） | adreno / task-20 | kernel 75fb322：xnuloader/build.sh 按变体分产物（带 -DDIRECT_PHONE_PLAT 只写 loader-phone.efi，默认只写 loader.efi 并落同内容 loader-generic.efi 别名，trap 9 结构性不可能）；common/build.sh 经 conf 新增 LOADER_CFLAGS 把宏传给 loader 步骤，loader/images/mkpayload/mkxnuimg 逐步 die；验收：编译失败注入 rc1 且旧 boot.img mtime 不动，交替构建互不覆盖（phone 构建后 loader.efi 哈希不变、别名与主产物一致；注意本机工具链本身不可比特复现，同变体重编译哈希稳定在宿主从来不成立），记录 shim 证明 qemu 入口 EXTRA_CFLAGS 为空、annibale 入口宏生效，annibale 全量入口装载的是 loader-phone.efi（payload 内 phone 独有字符串命中），redwood 行为零变化 |
+| F05 | 已闭环（kernel 75fb322 + 父仓，host 验收全过） | adreno / task-20 | tools/device-test.sh 同批：`tools/device-test.sh` 入口加 pipefail；相关 grep 全部读尽管道替代 grep -q（40 万行 stub 流上旧形在 pipefail 下被 SIGPIPE 打成 141 把在位设备误报缺席，新形无恙，对照见同一仿真日志）；入口新增依赖汇总，fastboot/adb/timeout 与 xnu-annibale-log.img 缺哪个报哪个一次性列全后 exit 1，剥 PATH 实测 MISSING 行正确 |
+| F06 | 按设计 | Lead | RAM-only 零持久化 + stage-system.sh --yes 用户同意门是既定裁决；"分配与并发"层面的重设计暂缓（同意门在，风险受控） |
+| F07 | 已闭环 | mesa / task-21 | 已审查入库：trials 分级口径段+事实 1/2/7 观测/归属两级、playbook 间接指纹+boot_a 取证标注当前不可用+行 C 指纹说明+四阶段分级段、hw-map GOP 待验证注（随本次父仓提交） |
+| F08 | 已闭环 | mesa / task-21 | 已审查入库：mesa-rebase §9.1 收紧到符号名称层+§10.3 GL 观察项排期、内核审计零风险→低（F02 收账点）+Mini 两行改判、porting-plan 间接指纹+UEFI 构建输入记录待办、gpu-plan 状态对齐实现期、README 上游状态行（Lead 补批）（随本次父仓提交） |
 
 
 ### F09：USB 诊断模式带有自动覆盖分区首块的探针

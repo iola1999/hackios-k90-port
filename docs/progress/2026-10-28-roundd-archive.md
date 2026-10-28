@@ -5,7 +5,7 @@
 填写规则（沿用）：
 
 - 身份期望全部等于 round C 原值，逐项对照 [round C 归档说明](2026-10-28-roundc-archive.md) 的对应节；任何一项与期望不符：停下报 lead。
-- bad access 与 `tl: td` 的判读口径、`lr` 三步归属、`is_saved_state64` 排除项、帧数三口径与 crashes 列新旧口径，沿用 round C 骨架 §7 的原文，本文件不重抄。
+- bad access 与 `tl: td` 的读数规则、`lr` 三步归属、`is_saved_state64` 排除项、帧数三口径与 crashes 列新旧口径，沿用 round C 骨架 §7 的原文，本文件不重抄。
 
 ## 1. 六项身份（零改动轮，全部 = round C 原值）
 

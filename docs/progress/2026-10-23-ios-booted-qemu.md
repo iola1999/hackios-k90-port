@@ -1,6 +1,6 @@
 # 进展日志
 
-## 1. 2026-10-23 — 🎉 M1 达成：iOS 16.5 在 QEMU 里开机进桌面
+## 1. 2026-10-23 — M1 达成：iOS 16.5 在 QEMU 里开机进桌面
 
 **目标里程碑（"先到 iOS 开机"）已在 QEMU 链路达成。** 屏幕截图存证：[evidence/2026-10-23-qemu-ios-homescreen.png](evidence/2026-10-23-qemu-ios-homescreen.png) ——SpringBoard 完整启动：状态栏时钟 12:46 在走、Weather/Calendar 大组件、FaceTime/照片/邮件/时钟/地图/设置等图标全部渲染、底部 Dock 与 Search 胶囊都在。
 

@@ -35,7 +35,7 @@ tl: td %d exec %#llx %s
 ## 2. 判读要点
 
 - region 名直接给出答案时按名记：落在 `libredwoodmetal.dylib`／`libredwoodair.dylib` 是拷贝路径实现自身引入段错误，落在系统库是拷贝路径让 CA 走过了原先 nil 失败的点。两种结果对拷贝路径的处置不同，由 lead 判 P2。
-- region 名是 `-` 而起止有值时，按 `__TEXT` 的 vmsize 反推归属，**不要用文件字节数**：region 打的是 vm_map entry 的起止，对应映射尺寸，两者差一到两个量级。数据来源是 perf 对本轮实际装车产物的 `otool -l` 实测，见[判读口径 §3.3](../analysis/2026-10-28-roundc-reading-criteria.md)：`libredwoodmetal` `0x20000`＝131,072（文件 241,488 字节）、`libredwoodair` `0xc0c000`＝12,632,064（文件 13,983,936 字节）、`backboardd` `0x100000`＝1,048,576（文件 1,366,064 字节）。三个 vmsize 互不相同，size 精确匹配就能定归属；entry 被切分时再用 `off = pc − lo` 的上限排除（`off ≥ 0x20000` 排 `libredwoodmetal`，`off ≥ 0x100000` 再排 `backboardd`）。前提也成立：bad access 走用户态数据异常路径、pc 正在执行，region 必然带 execute，候选集合就是这三个 `__TEXT`，`__DATA`／`__DATA_CONST`／`__LINKEDIT` 都不在里面。反推不成立就写「判不了」。
+- region 名是 `-` 而起止有值时，按 `__TEXT` 的 vmsize 反推归属，**不要用文件字节数**：region 打的是 vm_map entry 的起止，对应映射尺寸，两者差一到两个量级。数据来源是 perf 对本轮实际装车产物的 `otool -l` 实测，见[读数规则 §3.3](../analysis/2026-10-28-roundc-reading-criteria.md)：`libredwoodmetal` `0x20000`＝131,072（文件 241,488 字节）、`libredwoodair` `0xc0c000`＝12,632,064（文件 13,983,936 字节）、`backboardd` `0x100000`＝1,048,576（文件 1,366,064 字节）。三个 vmsize 互不相同，size 精确匹配就能定归属；entry 被切分时再用 `off = pc − lo` 的上限排除（`off ≥ 0x20000` 排 `libredwoodmetal`，`off ≥ 0x100000` 再排 `backboardd`）。前提也成立：bad access 走用户态数据异常路径、pc 正在执行，region 必然带 execute，候选集合就是这三个 `__TEXT`，`__DATA`／`__DATA_CONST`／`__LINKEDIT` 都不在里面。反推不成立就写「判不了」。
 - region 名是 `-` 且起止是 `0-0` 时，pc 当时不在任何 map entry 里，这一条与「取不到文件名」是两种情形，不要合并计数。
 - exec 基址覆盖的是 dyld 为这个进程映射的镜像，slide 行覆盖的是共享缓存里的 pc，两行合起来才能给 dump 里每个 pc 命名。上一轮判读里 tid 306 的 pc `0x105f00cd8` 缺的就是这一项。
 - `$17`（`x1`）应当等于同一行的 `$6`（故障地址）。离线分析给出的两处故障指令都是拷贝例程的第一次源访问（`_platform_memmove` 的 `+0x9c0` 是 `ldnp q2, q3, [x1]`、`+0xad4` 是 `ldr x6, [x1], #8`），所以这两个字段相等就是归属结论在设备侧的交叉验证；不相等说明故障指令不是那两处之一，`$8` 的归属要重判。
@@ -54,7 +54,7 @@ tl: td %d exec %#llx %s
 - exec 的遍历以 `fill_procregioninfo_onlymappedvnodes` 为一步：它只在真正有 vnode pager 的 region 上停（匿名内存、internal object、非 vnode pager 都返回 0），所以「第一个有 vnode 后备」这个条件由它保证，外面只加 execute 权限的判断。步数上限 64，并且下一步地址不前进就退出。
 - 打印范围沿用既有的 `backboardd`／`SpringBoard` 限定，exec 行只在有人写 `kern.redwood.thread_dump` 时出现。bad access 每条从约 60 字节增到约 110 字节，每次 dump 多一条，日志环的覆盖时长没有可观变化（roundb 全轮 15 起事件）。
 - 四个寄存器直接读 `saved_state64(state)->lr` 与 `->x[0..2]`，取值前判 `is_saved_state64(state)`：打印点在 `handle_user_abort` 里，这个函数服务的保存状态不保证是 64 位的。不剥 PAC 是有意的：剥一个用户态返回值要在内核里选一个 key，选错会得到一个看起来正常、实际错掉的地址；原始值的高位形态自己会说明有没有签名。
-- 新字段追加在行尾，为的是让已发布的判读口径继续可用：字段位置是按空白拆分的下标，追加保持 `$1` 到 `$11` 不变，region 那几项的下标跟着不动，读的人只加四行。
+- 新字段追加在行尾，为的是让已发布的读数规则继续可用：字段位置是按空白拆分的下标，追加保持 `$1` 到 `$11` 不变，region 那几项的下标跟着不动，读的人只加四行。
 
 `osfmk/kern/redwood_threads.c` 里的 slide 行此前只在树里、没有提交，而内核 `9a7a118a` 已经把它编进去了，这次随 `690e36a` 一起提交，提交说明里写明了这一点。
 
@@ -91,11 +91,11 @@ tl: td %d exec %#llx %s
 
 ## 6. round C 实测（device，2026-10-28）
 
-轮次身份：payload `ebdca4adfc9fb5f4…`（25,437,256 字节），内核 `cf1502f5632284af…`（roundc manifest 的 `kernel` 段与 task-14 记录一致），apfs 复用 roundb 的 `e36caefb…`（打包后复算未变），`pack.driver_sha256` `9d66dd36…`、`pack.air_sha256` `d7b9ced5…`、`jobs_source.sha256` `a4af9a9f…` 与 `jobs_sha256` `88326d5e…` 两项都等于 roundb 值，cmdline 除 `epoch=1793167025` 外与 roundb 逐字段相同，`gpu_speed` 3。13:59:17 起跑，`SAMPLED_SECONDS 420.4473890408408`、`failed_call None`；teardown 走 `"mode": "android"` 分支，run-queue 的 recover-loader 自动恢复到 loader A（`identified Android B to LK to existing loader A`），`fastboot getvar result` idle 通过，收尾时设备在 loader、无按键介入。证据在 `docs/progress/evidence/k90auto/kernel-12377-attr26-roundc/`（21 份 s*.log 加 hung-held.log），判读脚本与输出在同级 `analysis-roundc/`。
+轮次身份：payload `ebdca4adfc9fb5f4…`（25,437,256 字节），内核 `cf1502f5632284af…`（roundc manifest 的 `kernel` 段与 task-14 记录一致），apfs 复用 roundb 的 `e36caefb…`（打包后复算未变），`pack.driver_sha256` `9d66dd36…`、`pack.air_sha256` `d7b9ced5…`、`jobs_source.sha256` `a4af9a9f…` 与 `jobs_sha256` `88326d5e…` 两项都等于 roundb 值，cmdline 除 `epoch=1793167025` 外与 roundb 逐字段相同，`gpu_speed` 3。13:59:17 开始，`SAMPLED_SECONDS 420.4473890408408`、`failed_call None`；teardown 走 `"mode": "android"` 分支，run-queue 的 recover-loader 自动恢复到 loader A（`identified Android B to LK to existing loader A`），`fastboot getvar result` idle 通过，收尾时设备在 loader、无按键介入。证据在 `docs/progress/evidence/k90auto/kernel-12377-attr26-roundc/`（21 份 s*.log 加 hung-held.log），判读脚本与输出在同级 `analysis-roundc/`。
 
 **全轮 bad access 为零**：raw（跨快照求和）0、唯一行 0、物理事件 0，s*.log 与 hung-held.log 都是 0 条。`lr`／`x0`／`x1`／`x2` 四个新值没有数据，§2 的三条自我否证判据（`$17`=`$6`、`$19` 对 pc 区间、`lr` 三类归属）与 §5 的 PAC 形态、32 位排除两条在本轮都未获得验证，region 后备文件名（`$10`）同样没有执行记录。
 
-形态与 roundb 相反，按判读口径 §8 的判据归入冻结形态：`backboardd` 与 `SpringBoard` 的 `exited code` 行都是 0 条；帧号 id 1..3611 无断裂、3611 次交换交接；交换空档 8 个（首个 15.4 s，随后 15 s 周期的约 3 s 空档，最后一次交换在 tl 12941.7 s，其后到轮末约 300 s 提交永久停止，framewatch `still no frames` 计到 297 s）；截图 101 张全部 home screen、`bad_shots=0`（roundb 是 black x94）；`SpringBoard` pid 30 与 `backboardd` pid 38 全轮存活，lsprobe t=60 与 t=300 两次 `procs=` 读数相同。对照 roundb（内核 `9a7a118a`、同一份 apfs、同一份 jobs）：15 代 backboardd 死于 11/11、212 条 raw bad access、黑屏重启循环。
+形态与 roundb 相反，按读数规则 §8 的判据归入冻结形态：`backboardd` 与 `SpringBoard` 的 `exited code` 行都是 0 条；帧号 id 1..3611 无断裂、3611 次交换交接；交换空档 8 个（首个 15.4 s，随后 15 s 周期的约 3 s 空档，最后一次交换在 tl 12941.7 s，其后到轮末约 300 s 提交永久停止，framewatch `still no frames` 计到 297 s）；截图 101 张全部 home screen、`bad_shots=0`（roundb 是 black x94）；`SpringBoard` pid 30 与 `backboardd` pid 38 全轮存活，lsprobe t=60 与 t=300 两次 `procs=` 读数相同。对照 roundb（内核 `9a7a118a`、同一份 apfs、同一份 jobs）：15 代 backboardd 死于 11/11、212 条 raw bad access、黑屏重启循环。
 
 exec 与 slide 两处打印验证成立（§5 第二条）：exec 行有真实值且 `$6` 正是预期的主二进制，`tl: td 30 exec 0x100fb4000 SpringBoard`、`tl: td 38 exec 0x100c78000 backboardd`；slide 两个 pid 都是单值 `0x105a4000`。dump 正常发生：`periodic dump` 行在，`tl: td pid 30 threads 18..57`、`tl: td pid 38 threads 12..14` 随时间增长，`tl: td pid 30 printed <K>` 行齐。
 
@@ -103,9 +103,9 @@ exec 与 slide 两处打印验证成立（§5 第二条）：exec 行有真实�
 
 AIR 身份运行时核对通过：`perf draw: timing on, frames over 6000 us are printed, 128 frames per summary` 出现（raw 100、唯一 1 条），装车 AIR 确为 `d7b9ced5`；`perf driver` 行 raw 162。本轮帧数据在插桩开着的条件下采集。
 
-死亡行：`died on signal` 唯一行 28 条，全部是 widget 与系统任务（signal 9 code 1001 四个进程 10 行、signal 5 code 5 三个进程 9 行、signal 1 code -1 的 launchd.ios 与 MSUEarlyBootTask 各 1 行），signal 11 零条，backboardd／SpringBoard 零条。崩溃报告收集：`crash_files=0 crashes=root=-`（t=60 与 t=300 相同），按判读口径 §6 属第一类「目录空」；配 28 条死亡行读作「有进程死了但 ReportCrash 目录里没有报告」，通道修复仍排 round D。
+死亡行：`died on signal` 唯一行 28 条，全部是 widget 与系统任务（signal 9 code 1001 四个进程 10 行、signal 5 code 5 三个进程 9 行、signal 1 code -1 的 launchd.ios 与 MSUEarlyBootTask 各 1 行），signal 11 零条，backboardd／SpringBoard 零条。崩溃报告收集：`crash_files=0 crashes=root=-`（t=60 与 t=300 相同），按读数规则 §6 属第一类「目录空」；配 28 条死亡行读作「有进程死了但 ReportCrash 目录里没有报告」，通道修复仍排 round D。
 
-热与频率：`thermal: 3072 MHz held for 390 s (13 of 13 windows, domain 1), hottest 72.1 C in the first window, still there in the last of 13 windows (peak 78.3 C)`，`ff_s=390`；上限全程未掉，属判读口径 §9.2 三种去向里的第一种。`summary.py --verify` 的 coverage 跨度 418 s（tl 12841497838..13259580616 µs）、最大 tl 间隔 10.0 s。
+热与频率：`thermal: 3072 MHz held for 390 s (13 of 13 windows, domain 1), hottest 72.1 C in the first window, still there in the last of 13 windows (peak 78.3 C)`，`ff_s=390`；上限全程未掉，属读数规则 §9.2 三种去向里的第一种。`summary.py --verify` 的 coverage 跨度 418 s（tl 12841497838..13259580616 µs）、最大 tl 间隔 10.0 s。
 
 解释边界（协议 §5）：本轮与 roundb 的唯一变量是内核（`9a7a118a` → `cf1502f5`，差异是 task-1 的 region/exec 打印加 task-14 的四个值），但本轮零故障意味着 bad access 打印路径上的新代码一次都没有执行，执行过的新代码只有 dump 的 exec 行。「内核差异导致形态翻转」这个因果在本轮数据里立不起来，重启循环形态是否仍可由 `9a7a118a` 复现、以及拷贝路径与故障的相关性（roundb 的 11.8% 相邻率对 round C 的 230 条零故障）都还是未决问题，归 lead 与 perf 判。
 
@@ -233,7 +233,7 @@ framewatch: watching kern.redwood.frames from 3611, still after 2 s, at most 6 d
 
 ### 8.4 环的结构与代价模型
 
-这一节先前写的「1 MB 的环装约 20 秒，按这个速率一次 40 行的 dump 约占 27 秒环容量，会把之前 27 秒顶出去」，以及后来那句「7 个实例约 280 行约 20 KB 只占上限 1.5%、折合约 6 秒日志，所以相邻采样点不会互相顶掉」，两句都作废。第一句是从判读口径里一个我没实测就引用的数推的，第二句建立在一个错前提上（「整轮的日志连同启动内容都在这一份快照里」）。连带作废的还有那两条边界里的第一条（「快照间隔要短于相邻两个采样点的间隔，否则后一个采样点顶掉前一个」）：采样点之间不会互相顶掉，顶掉内容的是累计产出超过上限之后的挤出，而挤出只影响末份快照。
+这一节先前写的「1 MB 的环装约 20 秒，按这个速率一次 40 行的 dump 约占 27 秒环容量，会把之前 27 秒顶出去」，以及后来那句「7 个实例约 280 行约 20 KB 只占上限 1.5%、折合约 6 秒日志，所以相邻采样点不会互相顶掉」，两句都作废。第一句是从读数规则文档里一个我没实测就引用的数推的，第二句建立在一个错前提上（「整轮的日志连同启动内容都在这一份快照里」）。连带作废的还有那两条边界里的第一条（「快照间隔要短于相邻两个采样点的间隔，否则后一个采样点顶掉前一个」）：采样点之间不会互相顶掉，顶掉内容的是累计产出超过上限之后的挤出，而挤出只影响末份快照。
 
 实测的结构：**一份快照 = 263,349 字节的固定头 + 1,048,576 字节的滚动环**，两者相加逐字节等于三轮实测的上限 1,311,925。这个划分由两条独立路径定出，强度不同，都留着：
 
@@ -248,13 +248,13 @@ perf 一开始报的反证（`s000` 与 `s020` 的前 263,349 字节不相同，
 
 `span` 与内容覆盖是两件事，这一节先前把它们当成了一件：`round-stats.py:443` 的 `span` 取首末 `tl:` 时间戳之差，头把起点拉到开机、环把终点拉到轮末，所以跨度等于整轮推不出内容装着整轮。round C 的 `s020` 跨度 398.1 s 与 21 份并集相同，而它只有 16,453 行唯一行（并集 31,850）、11,331 个 `tl:` 时间戳（并集 21,906）、一段 51.4 s 的内部空洞（并集的最大内部空洞是 10.0 s）。`tl: v` 一行有 `ready`、`shown`、`done` 三个时间戳，本节取 `shown`，`round-stats.py:443` 的正则 `^tl: .*?(\d{9,})` 取到的是 `ready`，所以本节的 395.2 s 与工具的 398.1 s 都对，量的是不同字段。
 
-代价模型：空洞时长 ≈（全轮产出 − 1,311,925 字节）÷ 环的内容速率，**每多打 1 KB，空洞变长约 0.35 秒**。环的内容速率按它自己装着的那一段算：round C 的环装着 rel 54.5 到 418 s（363.5 s）约 1.05 MB，即 2.88 KB/s；空洞 51.6 s 反推全轮产出约 1.45 MB。这个 2.88 KB/s 与判读口径表里 round C 的 6.18 KB/s 是两个口径（那一个按并集唯一行算，并集含 24 个文件），空洞增长用环自己的速率，两个数都留着、不强行统一。
+代价模型：空洞时长 ≈（全轮产出 − 1,311,925 字节）÷ 环的内容速率，**每多打 1 KB，空洞变长约 0.35 秒**。环的内容速率按它自己装着的那一段算：round C 的环装着 rel 54.5 到 418 s（363.5 s）约 1.05 MB，即 2.88 KB/s；空洞 51.6 s 反推全轮产出约 1.45 MB。这个 2.88 KB/s 与读数规则表里 round C 的 6.18 KB/s 是两个口径（那一个按并集唯一行算，并集含 24 个文件），空洞增长用环自己的速率，两个数都留着、不强行统一。
 
 dump 块的实测单价（round C 的 `s020.log`，27 个块合计 38,766 字节）：一个名字的 dump 块，从 `periodic dump`／`dump asked for` 那行到 `tl: td pid N printed M`，是 18 到 23 行、1,008 到 1,312 字节，平均 1,436 字节；两个名字合计 2,872 字节、41 行。
 
 挤出只在累计产出超过 1,311,925 字节之后开始，round C 是约 366 s。所以在约 130 s 到挤出起点之间取的快照完整装着 80..130 s 那一段，按 20 秒一拉这区间里有约 10 份。**空洞只影响末份快照，归档读数的来源是并集**；判一个采样方案够不够，要问的是「并集里有没有」，不是「末份快照里有没有」。
 
-一条形式要求：以 0 作否定的结论要报字节数、跨度、最大内部空洞三个值，只报跨度会高估覆盖。规则由 perf 写在判读口径 §13.6，本节引用不另写一份。
+一条形式要求：以 0 作否定的结论要报字节数、跨度、最大内部空洞三个值，只报跨度会高估覆盖。规则由 perf 写在读数规则 §13.6，本节引用不另写一份。
 
 行数吃不下的退路（每个实例只盯一个名字，行数减半）仍然成立，但按实测的单价与挤出模型，它在 80..130 s 定点采样这个规模上用不着：11 个实例两个名字合计 22 个块、31.6 KB。
 

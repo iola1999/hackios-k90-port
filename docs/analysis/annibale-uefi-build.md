@@ -25,7 +25,7 @@
   2. 走 gbl-chainload/自载路径时，若让 XBL 直接加载我们的镜像，需保持同款 ELF 外壳（或改喂裸 FD 给自写的二级加载器）。
   3. 想看原厂 GOP/显示初始化：这个 ELF 已用 idalib 打开过（imagebase 0xa7000000，符号未 stripped 的字符串 1535 条），后续 IDA 会话可直接从 `DecompressFv` 顺藤。
 
-## 4. ✅ 2026-10-23 首次 FD 编译成功（冒烟）
+## 4. 2026-10-23 首次 FD 编译成功（冒烟）
 
 `Build/annibalePkg/RELEASE_CLANGPDB/FV/SILICIUM_UEFI.fd`（3MiB）产出，30 核容器约 4 分钟。冒烟路线用 **dodge（同 SM8750）固件转储软链** `Binaries/annibale -> dodge` 顶包。要点：
 
