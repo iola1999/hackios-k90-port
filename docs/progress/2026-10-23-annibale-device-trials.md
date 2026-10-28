@@ -12,7 +12,7 @@
 4. **五分区写探针全灭**：变体 A 探针依次对 boot_a/misc/metadata/logfs/xbl_sc_logs 块 0 写 `XNUPROBE-<名>-001`，回 Android dd 验证：全部保持原内容（misc 还是 Android 自己的 `bootonce-bootloader`）。BlockIo **写** 在 QcomPkg/SM8750 上不落地，读正常。原因待查（写探针打印在 loader 日志里，日志通道恰好就是卡点，鸡生蛋）。
 5. **串口线是假目标**：`/dev/cu.wchusbserial3120` 921600 波特抓到的是桌上另一台设备（desk-01，周期 JSON）；手机 debug pad 实测在 **QUP4 SE10 UART**（见 docs/analysis/annibale-hw-map.md），当前未飞线。
 6. **blackbox 分区不收录 `fastboot boot` 会话**：整分区 154MB 扫完，只有 XBL 的 `B-/D-` 与内核 printk，没有我方 EDK2/loader 输出。pstore 空。
-7. **变体 B 首刷观察**：观测：`flash boot_a + --set-active=a + reboot` 后 100s 内 USB 全静默（无 gadget/adb/LK）。归因为下述平台选错 bug 的表现（内核拿 QEMU GIC/核心参数起、早期即死、循环重启不到 fastboot）与现象吻合，但同属推断**待验证**：修复后的复跑日志到手前，不能排除其它早死路径。
+7. **变体 B 首刷观察**：观测：`flash boot_a + --set-active=a + reboot` 后 100s 内 USB 全静默（无 gadget/adb/LK）。归因为下述平台选错 bug 的表现（内核拿 QEMU GIC/核心参数起、启动早期就终止、循环重启不到 fastboot）与现象吻合，但同属推断**待验证**：修复后的复跑日志到手前，不能排除其它提前终止的路径。
 
 ## 2. 当天修掉的根因：GOP 缺失 → 平台选择停留在 qemu_virt
 

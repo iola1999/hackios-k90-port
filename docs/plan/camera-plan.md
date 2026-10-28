@@ -112,7 +112,7 @@
 
 1. **vendor dump 门**：拿不到 `/vendor/lib64/camera/com.qti.sensormodule.annibale_*.bin`（或等价 sensor 驱动）且真机 `cam=2` 式探针两次窗口内读不到 OV50E chip ID → **L1b/L2 立即冻结，只保留 L1a TPG 演示或回 L0**；sensor 表反推（从 Android logcat/CamX trace 抠寄存器）不进本期。行动项：下次真机窗口顺路 `adb pull /vendor/lib64/camera`（annibale-backup 现在只有 vendor_boot，无 vendor 分区）。
 2. **CPAS 门**：CPAS/CAMNOC 初始化连续 2 个真机窗口无法让 tfe/gdsc 稳定上电（读回失败/总线挂死）→ 降级为"仅 TPG 内存图 + loader 直接铺 framebuffer"的静态相机演示，相机整体转 perf backlog（与 GPU 同排，见 [gpu-plan.md#L113](./gpu-plan.md#L113) 的先例）。
-3. **窗口预算门**：单周窗口数 < 1 时只做盲写与离线校验（fw tab 解析、寄存器读回白名单），不开新硬件路径。
+3. **窗口预算门**：单周窗口数 < 1 时只做盲写与离线校验（fw tab 解析、寄存器读回白名单），不启用新的硬件路径。
 4. iOS 侧出现必须动用户态才通的新依赖（capture stack 探测了 annibale 才有的东西）→ 记录后推迟，不阻塞 kernel 分级验证。
 
 ## 6. TODO（未及，留待下轮）

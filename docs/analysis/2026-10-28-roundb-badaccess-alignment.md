@@ -63,7 +63,7 @@ ASCII 类是小端还原出可打印字节的取值；「损坏指针值」指�
 | 0x2e697269732e656c | 2 | 10,14 | ASCII `le.siri.` | `com.apple.siri.` 的 `&str[7]` 起 8 字节；backboardd 主二进制零命中，仅 `SpringBoard` 内嵌 plist 字符串命中四处（偏移 40438、72051、72944、77769）。**零命中范围不含 dyld 共享缓存**：来源搜索没有覆盖缓存，缓存文件本地在 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/`（85 个文件、约 4.9 GB），backboardd 地址空间含共享缓存；如需补搜，按显式路径用 `strings`/`grep -F`，不对镜像本体做带上下文正则的 `grep -a` |
 | 0x10000 | 1 | 11 | 小整数 | 65,536，与驱动 `NOCOPY_LIMIT` 同值；巧合记录，不作推断 |
 | 0x21f80001083f | 1 | 12 | 损坏指针值 | 同 0x21f8 前缀族 |
-| 0x616964656d2e656c | 1 | 13 | ASCII `le.media` | 形态与 `le.siri.` 相同（某个 `com.apple.media…` 串 &str[7] 起 8 字节）；具体来源二进制未核，lead 的来源搜索只覆盖上两个 ASCII 值 |
+| 0x616964656d2e656c | 1 | 13 | ASCII `le.media` | 形态与 `le.siri.` 相同（某个 `com.apple.media…` 串 &str[7] 起 8 字节）；具体来源二进制未经核对，lead 的来源搜索只覆盖上两个 ASCII 值 |
 | 0x82b00c2a010000 | 1 | 15 | 损坏指针值 | 0x0082b00c2a010000，与 0x80000c 族形态相近 |
 
 每条 bad access 的原始文本首次出现的快照：gen 1～3 为 s002，gen 4～5 为 s003，gen 6～7 为 s004，gen 8～9 为 s005，gen 10～11 为 s006，gen 12 为 s007，gen 13 为 s008，gen 14 为 s010，gen 15 为 s014；引用单条行时以这些快照为准（本表时刻即在各自首次出现快照内插值）。

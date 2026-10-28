@@ -29,7 +29,7 @@
 | SoC | SM8750（骁龙 8 Elite），dtb `qcom,sun` | 比 redwood（SM7325）新 4~5 代 |
 | CPU | 6×`0x514f0014` + 2×`0x513f0014`（Oryon），PSCI(SMC)，MPIDR `0,0x100..0x500 / 0x10000,0x10100` | `core_shift=8` 与 loader 假设一致；`small_cores`=前 6 核；armv9.2，PAC/BTI 齐（arm64e OK）；**无 AArch32**（iOS 16 全 64 位，无害） |
 | GIC | `arm,gic-v3` @0x16000000，redist @0x16080000，+ITS | loader 平台表直接可填；XNU 现成支持 |
-| GPU | **Adreno 830**（`qcom,adreno-gpu-gen8-0-1`），固件 `gen80000_gmu.bin/sqe.fw/aqe.fw/zap.mbn` 在机 | freedreno/Mesa 25.0.7 无 a8xx → 第一阶段不开 GPU |
+| GPU | **Adreno 830**（`qcom,adreno-gpu-gen8-0-1`），固件 `gen80000_gmu.bin/sqe.fw/aqe.fw/zap.mbn` 在机 | freedreno/Mesa 25.0.7 无 a8xx → 第一阶段不启用 GPU |
 | Wi-Fi/BT | PCIe `17cb:1107` = WCN785x（FastConnect 7900，Wi-Fi 7） | 需要 **ath12k** 移植（现有是 ath11k）+ PCIe gen4 PHY |
 | 触摸屏 | **Goodix @ SPI**（dtb `xiaomi,touch-spi` + `goodix,*`，irq/reset GPIO 有节点） | 与 redwood Goodix-GT9916 驱动同族，可改造复用 ✅ |
 | 屏 | DSI 1156×2510 @120Hz（SDE，Android 渲染分辨率，禁伪装后不变；社区树载**物理面板 1200×2608@480dpi**——比值为渲染缩放，面板驱动以真实时序为准） | UEFI 需驱动此面板出 GOP（最大难点） |
@@ -53,7 +53,7 @@ $ fastboot boot boot_a.img            → Sending 'boot.img' (98304 KB)  OKAY [2
 ```
 
 - **协议层面完全支持**，一次 OKAY，无 redwood 的重试怪癖。产物：`fastboot-test/getvar-all.txt` （含 cpuid、Xiaomi token——**token 属认证信息，勿外传**）、`fastboot-test/fastboot-boot.txt`。
-- **一个诚实的保留项**：`boot_a` 与 `boot_b` 的内核字节级同版（6.6.77 GKI 同构建），因此本次测试无法区分"XBL 真正引导了暂存镜像"还是"回落到槽上镜像正常启动"。这个区分要等自制的 BootShim/UEFI 镜像——其特征（USB 上出现 `xnuloader` fastboot 设备）一眼可辨。就 HackiOS 的风险模型而言，被排除的是"命令被拒"这一否决项，已排除。
+- **一个诚实的保留项**：`boot_a` 与 `boot_b` 的内核字节级同版（6.6.77 GKI 同构建），因此本次测试无法区分"XBL 真正引导了暂存镜像"还是"回落到槽上镜像正常启动"。这个区分要等自制的 BootShim/UEFI 镜像——其特征（USB 上出现 `xnuloader` fastboot 设备）一眼可辨。按 HackiOS 的风险模型，「命令被拒」这一否决项已排除。
 - `getvar all` 还显示：`awu:yes`、`parallel-download-flash:yes`、擦除/逻辑块 4096（GPT dd 恢复按此对齐）。
 
 ## 5. 分区备份

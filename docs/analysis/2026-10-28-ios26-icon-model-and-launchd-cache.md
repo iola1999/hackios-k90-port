@@ -15,7 +15,7 @@
 
 16.5 那份 working payload 的 job 生成走 `userland/build.sh` 的 `IOS_JOBS` 加 `mkjobs.py --rest`。`--rest` 只有 `REST=1` 时才生效，默认不带。默认的 `IOS_JOBS` 是 21 条（`notifyd`、`cfprefsd`×2、`logd`、`syslogd`、`distnoted`、`diagnosticd`、`fseventsd`、`containermanagerd`×2、`runningboardd`、`backboardd`、`mobile.usermanagerd`、`mobilegestalt.xpc`、`lsd`、`powerd`、`analyticsd`、`logd_helper`、`iconservicesagent`、`pluginkit.pkd`、`SpringBoard`），加 `wifid` 是 22 条；`--rest` 把 491 个 LaunchDaemon 与 12 个 LaunchAngel 里剩下的、带 MachServices 且程序在盘的全部加上，产物是 388 条。
 
-直接证据在 `docs/progress/evidence/2026-10-25-codex-gpu-resume/kernel-queue-wait-s23-auto-default/run/s002.log`：启动时会打印 `/redwood/LaunchDaemons` 的内容，去重后 388 个 `.plist`。同一份日志里 `com.apple.mobile.installd` 是 `launching: ipc (mach)` 拉起在 `user/501` 域，也就是它不在那 21 条显式清单里，是被 `lsd` 或别人问起来才起的。`--rest` 保留 MachServices、删掉 `RunAtLoad`／`KeepAlive`／`StartInterval` 与其余启动触发器，所以「388 条」不等于「同时 388 个进程」。
+直接证据在 `docs/progress/evidence/2026-10-25-codex-gpu-resume/kernel-queue-wait-s23-auto-default/run/s002.log`：启动时会打印 `/redwood/LaunchDaemons` 的内容，去重后 388 个 `.plist`。同一份日志里 `com.apple.mobile.installd` 是 `launching: ipc (mach)` 拉起在 `user/501` 域，也就是它不在那 21 条显式清单里，是被 `lsd` 或别人问起来才起的。`--rest` 保留 MachServices、删掉 `RunAtLoad`／`KeepAlive`／`StartInterval` 与其余启动触发器，所以「388 条」只说明登记条目数，说明不了同时运行的进程数。
 
 iOS 26 侧现在跑 31 条：`build.sh` 的 23 条（21 条加 `systemstatusd`、`wifid`）加 4 条 `com.redwood.*` 加 `package.py` 的 4 条（`chronod`、`PosterBoard`、`replicatord`、`mobile.installd`）。把同一份 `mkjobs.py --rest` 套 iOS 26 的 628 个 LaunchDaemon 与 32 个 LaunchAngel，得到 535 条。差集是 504 条，其中与登记直接相关的都在里面：`installd`、`pkd` 的依赖、`containermanagerd` 之外的用户域服务、`ondemand`、`mobile.attachmentd` 一类。
 
@@ -108,7 +108,7 @@ iOS 26 的 launchd 不扫描 `LaunchDaemons` 目录，任务与扩展记录都�
 
 **这条线到此收尾，剩下的不补。** `biomed` 与 `linkd` 两个大缺口（412 行与 0 行）补完，剩下的都在几十行量级且各有副作用：
 
-- `dasd`（提供 `duetactivityscheduler`）不补：它一启动就接管整个后台调度（`bg.system.task`、`dasd.end-prewarm`），会按自己的策略跑后台任务，把性能与温度两条线的测量搅乱。这不只是「多了负载」，而是它本身就是后续性能测量的干扰源；将来若必须补，测量口径要先改成「有后台任务在场」的版本。
+- `dasd`（提供 `duetactivityscheduler`）不补：它一启动就接管整个后台调度（`bg.system.task`、`dasd.end-prewarm`），会按自己的策略跑后台任务，把性能与温度两条线的测量搅乱。它的影响超出「多了负载」：它本身就是后续性能测量的干扰源；将来若必须补，测量口径要先改成「有后台任务在场」的版本。
 - `contextstored`（提供 `coreduetd.context`）与 `coreduetd` 不补：挂在 CoreDuet 的上下文预测上，读同一批 knowledge 流，依赖面比 `dasd` 还深，各自只占 6 行与更少。
 - `appprotectiond`（31 行）不补：属 App Protection／隐私面板，我们不走 `tccd` 那条线，补了大概率只换来另一个连接错误。
 

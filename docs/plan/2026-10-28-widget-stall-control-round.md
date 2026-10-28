@@ -197,7 +197,7 @@ redwood: proc ScreenTimeWidget pid 106 died on signal 9 code 1001
 
 三次实现的共同点是「返回一个真实 buffer，而先前返回 nil」；`dasd` 轮（改动之前）`11/11` 是 0、只有 1 条 `6/4`。所以段错误与这次改动有关，但三次实现都没消掉它，说明原因不在 `deallocator` 的时机与生命周期。`e932...` 那次打点在 `handle_user_abort()` 里输出了故障地址与 pc，用来区分三种可能：故障地址落在调用方 buffer 区间（不可读内存或释放后被读）、pc 落在 `libredwoodmetal`（用到失效指针）、pc 落在分配器（重复释放）。
 
-`driver3` 的每一代 `backboardd` 寿命是 10.2 秒，死亡紧贴最后一条日志（1 毫秒内），而最后那条日志每次不同（`Orientation`、`Backlight`、`Display`、`TouchEvents` 都有），所以 10 秒更像定时路径。
+`driver3` 的每一代 `backboardd` 寿命是 10.2 秒，终止时刻紧贴最后一条日志（1 毫秒内），而最后那条日志每次不同（`Orientation`、`Backlight`、`Display`、`TouchEvents` 都有），所以 10 秒的周期与定时路径一致。
 
 两次错的形态：第一次把调用方的内存在创建时就释放，调用方随后访问那块内存；第二次保存了调用方传入的 block 原指针，而 CA 传的多是内联栈 block，buffer 销毁时调用它等于跳进已释放的栈帧。`759d45e` 存堆副本并在调用后释放。
 
@@ -325,7 +325,7 @@ redwood: backboardd bad access at 0x51fff4f7eba5832  pc 0x2abeadad4
 
 8 次手势都是完整的「按下—移动—抬起」，`finger` 恒为 0（单指），相邻样本间隔 8 毫秒（`rwtouch.c` 的 `SAMPLE_MS = 8`），时间戳是内核在投递时取的 `mach_absolute_time`。**所以「每个采样被当成独立按下」「缺移动事件」「时间戳失真」三个候选都不成立，问题在注入之后。**
 
-一条同步的前置事实：`tl: p` 只在 2 的幂次打印（`RW_AGAIN`），**日志里的 426 条移动不代表 426 次移动**，按 8 毫秒与手势时长推算实际约 3,750 次。所以这一列只能判「有没有发生」。
+一条同步的前置事实：`tl: p` 只在 2 的幂次打印（`RW_AGAIN`），**日志里的 426 条移动行是采样计数，实际移动次数按 8 毫秒与手势时长推算约 3,750 次**。所以这一列只能判「有没有发生」。
 
 **`framewatch` 的作用与 `rwsig` 分开**：`rwsig` 主动冻住进程、问它此刻卡在哪；`framewatch` 等系统自己停下、在停下那一刻要 dump。这一轮是系统自己停的（`backboardd` 与 `SpringBoard` 的 pid 全程未变、没有死因记录），所以需要后者。
 

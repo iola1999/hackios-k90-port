@@ -114,7 +114,7 @@ dev.sh: <路径> is not a symlink; no host SDK to mount
 
 ## 5. 两次容器运行的记录
 
-两次都是 `IOS=../ios26 COMPILE_ONLY=1 bash build.sh`，都在 `src/inject_sb26.c:11` 停在 `'ptrauth.h' file not found`，`BUILD_EXIT=1`。`COMPILE_ONLY=1` 的出口在 `build.sh:926-932`，位置在第一个 `mkapfs`（`:935`）之前，所以两次都没有写任何镜像。失败点从早先的 `CoreFoundation/CoreFoundation.h not found` 变成 `ptrauth.h`，这是 `dev.sh` 那个 SDK 挂载生效的实测依据：26 分支先编 `src/input26_service.c`（`build.sh:227-228`，要 `-framework CoreFoundation -framework IOKit`），再编 `src/inject_sb26.c`（`:230-232`），两次都过了前者、停在后者的第 11 行。
+两次都是 `IOS=../ios26 COMPILE_ONLY=1 bash build.sh`，都在 `src/inject_sb26.c:11` 停在 `'ptrauth.h' file not found`，`BUILD_EXIT=1`。`COMPILE_ONLY=1` 的出口在 `build.sh:926-932`，位置在第一个 `mkapfs`（`:935`）之前，所以两次都没有写任何镜像。失败点从早先的 `CoreFoundation/CoreFoundation.h not found` 变成 `ptrauth.h`，这是 `dev.sh` 那个 SDK 挂载生效的实测依据：26 分支先编 `src/input26_service.c`（`build.sh:227-228`，要 `-framework CoreFoundation -framework IOKit`），再编 `src/inject_sb26.c`（`:230-232`），两次都通过了前者的编译、停在后者的第 11 行。
 
 | 项 | 第一次（12:37:11 到 12:37:13） | 第二次（14:15:12 前后） |
 |---|---|---|

@@ -158,7 +158,7 @@ boot.img(不变, ~8 MB) ─▶ BootShim ─▶ Mu UEFI(DXE: UFS/GOP/…) ─▶ 
 ### 3.E 其它被考虑过的小方案
 
 - **小 initramfs 只到 panic 前**：现状（root.apfs 4 MB 当 root）就是它——能验证内核起没起，到不了锁屏（没有 launchd 全家 + DSC）。作为 B/C 的回归基准保留。
-- md1 的用途提醒：完整启动时 root.apfs 不是 root 而是 `/redwood`（注入物），方案 C/D 都保留"payload 带 root.apfs"的形态，不要只发 system 不发 root。
+- md1 的用途提醒：完整启动时 root.apfs 挂载在 `/redwood`（注入物）、不当根目录用，方案 C/D 都保留"payload 带 root.apfs"的形态，不要只发 system 不发 root。
 
 ## 5. 推荐路线与任务分解（问题 4）
 

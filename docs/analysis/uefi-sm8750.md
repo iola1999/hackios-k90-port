@@ -4,7 +4,7 @@
 
 ## 1. 名称与前提校准
 
-- **机型纠偏（2026-10-23）**：本机是 **REDMI K90 = `annibale`**；**myron 是 K90 Pro Max，另一款机器**（此前 KernelSU 机型伪装模块导致误判）。SoC 不受影响：`/sys/devices/soc0` = soc_id 618/"SUN"，dtb `model="Annibale based on SM8750"`（`msm-id 0x26a`=618），GPU `Adreno830v2`，社区树 platform `sun` —— **SM8750 坐实**（并非社区 repo 名所称 SM8850）。
+- **机型纠偏（2026-10-23）**：本机是 **REDMI K90 = `annibale`**；**myron 是 K90 Pro Max，另一款机器**（此前 KernelSU 机型伪装模块导致误判）。SoC 不受影响：`/sys/devices/soc0` = soc_id 618/"SUN"，dtb `model="Annibale based on SM8750"`（`msm-id 0x26a`=618），GPU `Adreno830v2`，社区树 platform `sun` —— **SM8750 坐实**（社区 repo 名所称 SM8850 与实测不符）。
 - SM8750 Linux 代号 **sun**，高通参考平台 **Pakala**；SM8850 是 kaanapali（本代不涉及）。
 - 真仓库地址：[edk2-porting/edk2-msm](https://github.com/edk2-porting/edk2-msm)、[Project-Silicium/Mu-Silicium](https://github.com/Project-Silicium/Mu-Silicium) （旧的 MangoTheCat/Mu-Silicium 已 404）。"kane" 是 Motorola 代号，与本机无关。
 
