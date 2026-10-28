@@ -61,7 +61,11 @@ python3 tools/k90auto/make-payload.py 12377-attr26 roundc \
 
 CPU_ARGS 用默认（roundb 即默认值）。`GPU_SPEED=3` 是 roundb 的实测档位（roundb manifest `gpu_speed: 3`、cmdline `adreno8_speed=3`），`make-payload.py:109` 会断言其与 pack 记录一致，档位写错打包即失败。`epoch=` 由脚本注入当前时间，是每轮唯一合法变动参数。
 
-打包后核对（对 round C 的 `manifest.json`）：`kernel.sha256` == task-14 新内核值（lead 将发）；`pack.driver_sha256` == `9d66dd36…`、`pack.air_sha256` == `d7b9ced5…`；`pack.root_sha256` == `e36caefb…`；`cmdline` 与 roundb 除 `epoch=` 外逐字段相同。**jobs 核对目标更正**：task-4 rev3 写的「`pack.jobs_sha256` 等于 `a4af9a9f1384fbac`」对不上字段——`a4af9a9f…` 是 `pack.jobs_source.sha256`（源文件 `rc.jobs.freeze`），`pack.jobs_sha256` 是镜像内生效 `/etc/rc.jobs` 的 `88326d5e…`。正确核对是两项：`jobs_source.sha256 == a4af9a9f…` 且 `jobs_sha256 == 88326d5e…`，两项都与 roundb 相等才构成「jobs 原样」。
+打包后核对（对 round C 的 `manifest.json`）：`kernel.sha256` == task-14 新内核值（lead 将发）；`pack.driver_sha256` == `9d66dd36…`、`pack.air_sha256` == `d7b9ced5…`；`pack.root_sha256` == `e36caefb…`；
+
+- `cmdline` 与 roundb 除 `epoch=` 外逐字段相同。**jobs 核对目标更正**：task-4 rev3 写的「`pack.jobs_sha256` 等于 `a4af9a9f1384fbac`」对不上字段——`a4af9a9f…` 是 `pack.jobs_source.sha256`（源文件 `rc.jobs.freeze`），`pack.jobs_sha256` 是镜像内生效 `/etc/rc.jobs` 的 `88326d5e…`。
+- 正确核对是两项：`jobs_source.sha256 == a4af9a9f…` 且 `jobs_sha256 == 88326d5e…`，两项都与 roundb 相等才构成「jobs 原样」。
+
 
 运行：设备现为 fresh idle，需整盘上传，预算约 9.4 分钟（123 s 上传 + 420 s 跑 + 18 s 复位）；`bash tools/k90auto/run-queue.sh docs/progress/evidence/k90auto/kernel-12377-attr26-roundc 420`。
 

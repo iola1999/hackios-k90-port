@@ -14,14 +14,24 @@ bad access 物理事件共 **15 条**，与 15 次 backboardd 段错误 **1:1 �
 
 1. 每一对死亡之前 bad access 恰好 1 条，紧贴死亡时刻（相邻行、同一插值区间，亚秒级分辨不出先后）。其中 13 次（gen 3～15）故障行上方 2 行是一条 32,768 字节的 `rwa buffer: copied` 打印，拷贝打印与故障之间只隔一条 `tl: w` 出入口打点，打点窗口宽 246～468 µs，故障发生在拷贝完成后的亚毫秒尺度内。
 2. bad access 只在死亡时刻出现。15 代 backboardd 每代恰好 1 条，稳定存活时段（SpringBoard 各代的 10～80 秒存活期）零条。它是致命故障本身（异常递交时的打印，随后进程被杀），不是可恢复的刷屏噪声。
-3. pc 与代次强相关：`0x2b0fb5ad4` 只在 gen 1（开机首个 backboardd，pid 38，故障地址 `0x1`）出现 1 次；`0x2b0fb59c0` 覆盖 gen 2～15 全部 14 次。离线分析已把两个 pc 定到共享缓存里 `libsystem_platform.dylib` 的 `_platform_memmove`：`0x2b0fb59c0` = +0x9c0（`ldnp q2, q3, [x1]`）、`0x2b0fb5ad4` = +0xad4（`ldr x6, [x1], #8`），两处都是第一次源访问的指令，故障地址即调用方传给 `memmove` 的 `src` 实参本身（归属结论来自 lead 的离线分析）。round C 的判据相应改为取 `lr`(x30) 与 `x0/x1/x2`，见 §7。故障地址在少数几个垃圾值上循环：`0x80000c00000000` ×3、`0x80000c00010000` ×2、`0x21f80001xxxx` ×3、ASCII 串片段 ×4（`cketTouc` 为 `PocketTouchesExpected` 的 &str[2] 起 8 字节，`le.siri.` ×2 为 `com.apple.siri.` 的 &str[7] 起 8 字节，`le.media` 同形态，来源见 §3 分类表）、`0x10000`、`0x1`、`0x82b00c2a010000` 各 1。ASCII 值与拷贝路径的因果关系是假设，核对状态见 §7。
+3. pc 与代次强相关：`0x2b0fb5ad4` 只在 gen 1（开机首个 backboardd，pid 38，故障地址 `0x1`）出现 1 次；`0x2b0fb59c0` 覆盖 gen 2～15 全部 14 次。
+
+- 离线分析已把两个 pc 定到共享缓存里 `libsystem_platform.dylib` 的 `_platform_memmove`：`0x2b0fb59c0` = +0x9c0（`ldnp q2, q3, [x1]`）、`0x2b0fb5ad4` = +0xad4（`ldr x6, [x1], #8`），
+- 两处都是第一次源访问的指令，故障地址即调用方传给 `memmove` 的 `src` 实参本身（归属结论来自 lead 的离线分析）。round C 的判据相应改为取 `lr`(x30) 与 `x0/x1/x2`，见 §7。
+- 故障地址在少数几个垃圾值上循环：`0x80000c00000000` ×3、`0x80000c00010000` ×2、`0x21f80001xxxx` ×3、ASCII 串片段 ×4（`cketTouc` 为 `PocketTouchesExpected` 的 &str[2] 起 8 字节，`le.siri.` ×2 为 `com.apple.siri.` 的 &str[7] 起 8 字节，`le.media` 同形态，来源见 §3 分类表）、`0x10000`、`0x1`、`0x82b00c2a010000` 各 1。
+- ASCII 值与拷贝路径的因果关系是假设，核对状态见 §7。
+
 
 ## 2. 口径与方法
 
-- **计数主口径：单份快照内的邻接校验**（不依赖拼接）。对 21 份快照逐份检查：每条 bad access 行的下一行是否 backboardd 的 died 行；同一死亡行上方是否出现两条 bad access；同一 pid 在不同快照里的（地址, pc）是否一致。结果：212 条 raw 行全部有紧邻的死亡行，无一例外、无一对多、跨快照零冲突；15 个 pid 各对应唯一组合。匹配串全貌与位置：bad access 行首 `redwood: backboardd bad access at <地址> pc <pc>`；died 行首 `redwood: proc backboardd pid <N> died on signal 11 code 11`；exited 行首 `redwood: backboardd pid <N> exited code -1 reason 2`（注意与 died 行差一个 `proc `，两者都在行首）。iOS 日志行的进程标识是行中 `<时间戳> backboardd[<pid>:` 形态，与内核行的方括号形式 `redwoodmetal[backboardd <pid>]:` 又各不同，三套串不能混用。
+- **计数主口径：单份快照内的邻接校验**（不依赖拼接）。对 21 份快照逐份检查：每条 bad access 行的下一行是否 backboardd 的 died 行；同一死亡行上方是否出现两条 bad access；同一 pid 在不同快照里的（地址, pc）是否一致。结果：212 条 raw 行全部有紧邻的死亡行，无一例外、无一对多、跨快照零冲突；
+  - 15 个 pid 各对应唯一组合。匹配串全貌与位置：bad access 行首 `redwood: backboardd bad access at <地址> pc <pc>`；died 行首 `redwood: proc backboardd pid <N> died on signal 11 code 11`；
+  - exited 行首 `redwood: backboardd pid <N> exited code -1 reason 2`（注意与 died 行差一个 `proc `，两者都在行首）。iOS 日志行的进程标识是行中 `<时间戳> backboardd[<pid>:` 形态，与内核行的方括号形式 `redwoodmetal[backboardd <pid>]:` 又各不同，三套串不能混用。
 - 计数三口径并列：raw（跨快照求和）212；唯一行文本（`round-stats.py` 的整行去重口径）11；物理事件（邻接校验/拼接时间线）15。15 − 4 = 11：四组事件的整行文本互相重复（`0x80000c00000000` ×3、`0x80000c00010000` ×2、`0x2e697269732e656c` ×2）。**对齐与结论一律用物理事件口径 15**，整行去重会把不同时刻的同文本事件并掉，不适合计数。
 - **时刻口径：单份快照内插值**。每条 bad access 与其死亡行的时刻，在该事件首次出现的快照内、用同一份快照里的相邻锚点行按行号线性插值（协议 §5 口径：按 `tl:` 基线逐点，墙钟不直接相减）；对间隔（bbd 死 → sb 死等）取两条行共同出现的单份快照（s009 含 gen 1～13 全部死亡行，s014／s020 含 gen 3～15 全部死亡行）在同一份内计算。全部 15 个事件的单快照插值与拼接时间线插值一致；bad access 行到其死亡行的 tl 差为 +0.0008～+0.0644 秒（打印顺序上故障行总在死亡行上方 1 行）。
-- 拼接时间线（只用于覆盖完整性证明与交叉核对，不作为计数或时刻的依据）：每份快照 = 固定 256 KB 头 + 1 MB 环，均为时序。头在 s002～s020 逐字节一致（sha256 相同），头含 3,406 行。相邻快照按「已拼接序列的尾部在下一份快照里的唯一精确匹配」接续（匹配长度从 20,000 行逐级降到 30 行，要求唯一），s000→s001 为前缀增长直接续接。结果 18,459 行、零内容缺口，即 21 份快照的环覆盖首尾相接，中间没有被覆盖掉而丢失的时段；单份环可容纳约 148 秒日志（`round-stats.py` ring coverage 段），远大于 20 秒快照间隔，环写满不会在两份快照之间掉行。逐份窗口核对：按每份快照的行数与头行数推出其环窗口在拼接坐标里的区间，15 个物理事件落在窗口内的预测集合与 21 份快照的实际 bad access 行全部吻合（21/21，含 s010～s013 环起点越过 gen 1/2 后的 12 条平台段）；各快照行数序列 3,5,7,9,11,12,13,13,12,12,12,12,13,13,13,13,13,13,13,13,13（s000/s001 为 0），Σ=212。
+- 拼接时间线（只用于覆盖完整性证明与交叉核对，不作为计数或时刻的依据）：每份快照 = 固定 256 KB 头 + 1 MB 环，均为时序。头在 s002～s020 逐字节一致（sha256 相同），头含 3,406 行。相邻快照按「已拼接序列的尾部在下一份快照里的唯一精确匹配」接续（匹配长度从 20,000 行逐级降到 30 行，要求唯一），s000→s001 为前缀增长直接续接。
+  - 结果 18,459 行、零内容缺口，即 21 份快照的环覆盖首尾相接，中间没有被覆盖掉而丢失的时段；单份环可容纳约 148 秒日志（`round-stats.py` ring coverage 段），远大于 20 秒快照间隔，环写满不会在两份快照之间掉行。逐份窗口核对：按每份快照的行数与头行数推出其环窗口在拼接坐标里的区间，15 个物理事件落在窗口内的预测集合与 21 份快照的实际 bad access 行全部吻合（21/21，含 s010～s013 环起点越过 gen 1/2 后的 12 条平台段）；
+  - 各快照行数序列 3,5,7,9,11,12,13,13,12,12,12,12,13,13,13,13,13,13,13,13,13（s000/s001 为 0），Σ=212。
 - 时间：两个独立时钟域并列报告，互不相减。墙钟域取 iOS 日志行首 `2026-10-28 HH:MM:SS.ffffff+0800`（8,724 个锚点）；tl 域取 `tl: …at <µs>`／`tl: v …done <µs>`／`tl: c …read <µs>`／`framewatch: …at <µs>`（981 个锚点）。无时间戳的行在两个域里各自用同域最近锚点按行号线性插值；末段无墙钟锚点处只报下界（标 ≥）。
 - 实测两个时钟域速率比 ≈1.003:1（20 对相邻快照的 mtime 差 vs 末条 tl 值差，单对比值 0.95～1.10，含抓取抖动）。本轮墙钟与 tl 秒差主要来自末尾：iOS 侧打印止于墙钟 10:21:45.114，内核侧打印（framewatch/battery/cpufreq/buttons）又持续约 131 秒到轮次末快照。
 - 数据质量注记一条：头部区域有一行环写入交错损坏的行（`2026-10-28 10:17:21.291840+0800 iconservicesag0x80000000 0 at 987392861`，iOS 行前半与 `tl: w` 行尾拼接），已从 tl 锚点排除，未影响拼接（拼接按整行精确匹配）。
@@ -113,7 +123,11 @@ userabort: SpringBoard[161] aborts, shared cache slide 0xbc54000; called from: 0
 
 ## 5. 轮次末段状态
 
-gen 15（bbd265）死于墙钟 ≥10:21:45.114（该行下方已无墙钟锚点，取下界；其上方 2 行是 bbd265 自己 10:21:45.113601 的 iOS 日志）。这是最后一次交换（`tl: s` 末条 tl 1235.9）之后的时刻，此后整轮再无帧。sb267 起来后没有任何 iOS 日志行；framewatch 的周期 dump 对它要了三次线程转储：tl 1238.4 时 8 个线程，dump 14/15 时都只剩 4 个线程（对照：sb260 的 dump 是 21 个线程）。内核侧打印持续到最后一份快照 s020（末行 `framewatch: still no frames, 130 s at 1366540835`），收尾抓取 `hung-held.log` 又把它延长了 21 秒：framewatch 计到 151 秒（tl 1387.6，与「末次交换 tl 1235.9 → tl 1387.6」的差一致），battery/memory/buttons 打印节奏正常，随后是 stop 标记行、adreno8 泊车行与 `== END OF LOG ==`；收尾走正常 stop→hung-held→复位路径（`reboot.json`: `left=hung-held, reset=true`）。即内核没有提前静默，日志终止于主机主动收尾；静默的是 iOS 用户态（backboardd 不再重启、sb267 无日志无帧，收尾抓取里也没有第 16 代 backboardd 的任何行）。
+gen 15（bbd265）死于墙钟 ≥10:21:45.114（该行下方已无墙钟锚点，取下界；其上方 2 行是 bbd265 自己 10:21:45.113601 的 iOS 日志）。这是最后一次交换（`tl: s` 末条 tl 1235.9）之后的时刻，此后整轮再无帧。sb267 起来后没有任何 iOS 日志行；
+
+- framewatch 的周期 dump 对它要了三次线程转储：tl 1238.4 时 8 个线程，dump 14/15 时都只剩 4 个线程（对照：sb260 的 dump 是 21 个线程）。内核侧打印持续到最后一份快照 s020（末行 `framewatch: still no frames, 130 s at 1366540835`），收尾抓取 `hung-held.log` 又把它延长了 21 秒：framewatch 计到 151 秒（tl 1387.6，与「末次交换 tl 1235.9 → tl 1387.6」的差一致），battery/memory/buttons 打印节奏正常，随后是 stop 标记行、adreno8 泊车行与 `== END OF LOG ==`；
+- 收尾走正常 stop→hung-held→复位路径（`reboot.json`: `left=hung-held, reset=true`）。即内核没有提前静默，日志终止于主机主动收尾；静默的是 iOS 用户态（backboardd 不再重启、sb267 无日志无帧，收尾抓取里也没有第 16 代 backboardd 的任何行）。
+
 
 后段「bbd 死 → sb 被杀」间隔逐代翻倍（10→20→40→80 秒）与 sb267 未死于日志内自洽：按翻倍规律 sb267 应在 bbd265 死后约 160 秒被杀，落在 tl ≈1396，而日志止于 tl 1387.6，差约 8 秒没有等到。翻倍的机制（launchd 对反复崩溃任务的退避，或 SpringBoard 侧等待超时逐代加长）本轮日志判不了，留给 P5。
 
@@ -121,9 +135,21 @@ gen 15 死亡行后紧跟的 `framewatch: resumed at 1236048399 after 79 s`（s0
 
 ## 6. 对交接文档与任务文本的更正
 
-1. 拷贝阈值（已闭合）：交接文档 §2 写「≤16 KiB 拷贝并托管 deallocator」，perf 复核确认该数沿用了 `hackios-xnu-kernel/userland/src/redwoodmetal.m:2405` 注释里的错数，注释与常量差 4 倍；实际阈值是 `:2408` 的源码常量 `enum { NOCOPY_LIMIT = 0x10000 }` = 65,536 字节（本文直接读源码同值）。roundb 的 `rwa buffer: copied` 唯一行分布 32768→94、15360→5、62464→5、16384→4、65536→1，合计 109，全部不超过 65,536，最大一条正好等于阈值，与本文拼接时间线的物理口径 109 条一致；「超过阈值仍被拷贝」不成立。唯一 1 条 nil 是 1.3 MB 超限，按设计返回。计数口径注记：交接文档 §2 的 copied raw 1,775 条（32768 占 1,579）是加了 `hung-held.log` 的口径；`round-stats.py` 只读 `s*.log`，同轮为 1,675 条（32768 占 1,487），差 100 条。按 `round-stats.py` 报数用后者，引用交接文档数字时注明两边统计方式不同。
+1. 拷贝阈值（已闭合）：交接文档 §2 写「≤16 KiB 拷贝并托管 deallocator」，perf 复核确认该数沿用了 `hackios-xnu-kernel/userland/src/redwoodmetal.m:2405` 注释里的错数，
+
+- 注释与常量差 4 倍；实际阈值是 `:2408` 的源码常量 `enum { NOCOPY_LIMIT = 0x10000 }` = 65,536 字节（本文直接读源码同值）。roundb 的 `rwa buffer: copied` 唯一行分布 32768→94、15360→5、62464→5、16384→4、65536→1，
+- 合计 109，全部不超过 65,536，最大一条正好等于阈值，与本文拼接时间线的物理口径 109 条一致；「超过阈值仍被拷贝」不成立。唯一 1 条 nil 是 1.3 MB 超限，按设计返回。计数口径注记：交接文档 §2 的 copied raw 1,775 条（32768 占 1,579）是加了 `hung-held.log` 的口径；
+- `round-stats.py` 只读 `s*.log`，同轮为 1,675 条（32768 占 1,487），差 100 条。按 `round-stats.py` 报数用后者，引用交接文档数字时注明两边统计方式不同。
+
 2. bad access 计数口径：「212 条」为跨快照求和；物理事件 15 条、唯一行文本 11 条。交接文档的 pc 分布（204/8）同为 raw 口径，物理口径为 `0x2b0fb59c0` ×14、`0x2b0fb5ad4` ×1。
-3. SpringBoard 世代 pid 集合：交接文档 §2 记 14 代（含 267、无 91 与 166），与日志不符。本文按唯一行口径实读两种行、集合完全一致，均为 15 代死亡 `{30, 91, 103, 131, 142, 161, 166, 175, 189, 205, 214, 228, 241, 246, 260}`：died 行首 `redwood: proc SpringBoard pid <N> died on signal <S> code <C>`（14 代 9/0、pid 161 一代 6/6），exited 行首 `redwood: SpringBoard pid <N> exited code -1 reason <R>`（14 代 reason 15、pid 161 一代 reason 2）。两串都在行首、相差一个 `proc ` 前缀；iOS 日志行的进程标识是行中 `SpringBoard[<pid>:` 形态，与 `redwoodmetal[SpringBoard <pid>]:` 也不同，三套串不能混用。perf 按 exited 唯一行的实读结果与此一致。267 不在死亡集合里：它的出处是 framewatch 的 dump 请求行（`asked for SpringBoard pid 267`）与内核转储行（`tl: td pid 267 threads 8`／`printed 4`），都是行中匹配，说明它被拉起过且轮末存活。backboardd 侧 15 代 `{38, 84, 99, 124, 140, 153, 167, 187, 197, 212, 221, 235, 243, 257, 265}` 全部 11/11、exited 全部 reason 2，与交接文档一致。交接文档按时点快照不改写，本条即承载更正结论。
+3. SpringBoard 世代 pid 集合：交接文档 §2 记 14 代（含 267、无 91 与 166），与日志不符。本文按唯一行口径实读两种行、集合完全一致，均为 15 代死亡 `{30, 91, 103, 131, 142, 161, 166, 175, 189, 205, 214, 228, 241, 246, 260}`：died 行首 `redwood: proc SpringBoard pid <N> died on signal <S> code <C>`（14 代 9/0、pid 161 一代 6/6），
+
+- exited 行首 `redwood: SpringBoard pid <N> exited code -1 reason <R>`（14 代 reason 15、pid 161 一代 reason 2）。两串都在行首、相差一个 `proc ` 前缀；
+- iOS 日志行的进程标识是行中 `SpringBoard[<pid>:` 形态，与 `redwoodmetal[SpringBoard <pid>]:` 也不同，三套串不能混用。perf 按 exited 唯一行的实读结果与此一致。
+- 267 不在死亡集合里：它的出处是 framewatch 的 dump 请求行（`asked for SpringBoard pid 267`）与内核转储行（`tl: td pid 267 threads 8`／`printed 4`），
+- 都是行中匹配，说明它被拉起过且轮末存活。backboardd 侧 15 代 `{38, 84, 99, 124, 140, 153, 167, 187, 197, 212, 221, 235, 243, 257, 265}` 全部 11/11、exited 全部 reason 2，
+- 与交接文档一致。交接文档按时点快照不改写，本条即承载更正结论。
+
 4. 死亡对的先后与间隔：交接文档 §2 写「backboardd 先死 11/11，0.2～0.7 秒后 SpringBoard 死 9/0，每对间隔约 10 秒，后段拉长到 20/40/80 秒」。实测稳态是 backboardd 段错误后约 10 秒（后段 20/40/80 秒）SpringBoard 才被杀；0.2～0.97 秒对应的是「SpringBoard 被杀 → 下一代 backboardd 段错误」的间隔。两个间隔的归属需要对调。
 5. 任务文本的「17 对」：实测 backboardd 段错误 15 次、SpringBoard 死亡 15 次（含 1 次 6/6），按 backboardd 死亡计的对为 15 对。17 的来源在数据里找不到对应。
 

@@ -146,7 +146,12 @@ A 类直接读 `$10`。归属与 P2 的对应关系（由 lead 判处置）：
 1. **精确匹配 size。** `size = hi − lo`。`size` 等于 `0x20000`／`0xc0c000`／`0x100000` 之一时，归属就是对应镜像，记「按 region 大小判定」。
 2. **偏移上限排除。** `size` 与三个值都不相符时（vm_map entry 被切过，region 是某个 `__TEXT` 的一段），改用 `off = pc − lo` 与 `off + size ≤ vmsize` 逐个候选过一遍。`off ≥ 0x20000` 排除 `libredwoodmetal.dylib`，`off ≥ 0x100000` 再排除 `backboardd`。只剩一个候选时记「按偏移上限判定，region 被切分」。
 3. **exec 基址交叉核。** 同一 pid 的 `tl: td <pid> exec <基址> <名>` 给出主二进制的 `__TEXT` 基址。`0 ≤ pc − 基址 < 0x100000` 时 pc 在 `backboardd` 主二进制里，与第 1、2 步的结果必须一致；不一致就把两个读数都贴出来报 lead，不要挑一个。`pc − 基址` 落在 `[0x100000, 0x150000)` 时 pc 在 `backboardd` 的数据段里，与「pc 正在执行」矛盾，说明这个 pc 不可信，按 C 类读。
-4. **共享缓存查表。** 前三步都不成立而 `pc − slide` 落在缓存的 `__TEXT` 镜像区里时，pc 属于缓存里的某个系统库。算法与三个边界数见[归属复核](2026-10-28-roundb-memmove-attribution.md) §3 与 §4：`slide` 取同一 pid 的 `tl: td <pid> slide %#x` 直接读数，`u = pc − slide`，在 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/dyld_shared_cache_arm64e` 头部 `+0x88` 的 `imagesText` 数组（4315 项、每项 32 字节、`loadAddress` 在 `+16`、`textSegmentSize` 在 `+24`、`pathOffset` 在 `+28`）里找 `loadAddress ≤ u < loadAddress + textSegmentSize` 的那一项，镜像名就是它的 `pathOffset` 指向的路径，镜像内偏移是 `u − loadAddress`。该数组的 `max(loadAddress + textSegmentSize)` 是 `0x2adb74640`，`u` 超过它就落在缓存的 `__TEXT` 镜像区之外，此时写「判不了」并把 `u` 与这个上界一起报。
+4. **共享缓存查表。** 前三步都不成立而 `pc − slide` 落在缓存的 `__TEXT` 镜像区里时，pc 属于缓存里的某个系统库。算法与三个边界数见[归属复核](2026-10-28-roundb-memmove-attribution.md) §3 与 §4：`slide` 取同一 pid 的 `tl: td <pid> slide %#x` 直接读数，
+
+- `u = pc − slide`，在 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/dyld_shared_cache_arm64e` 头部 `+0x88` 的 `imagesText` 数组（4315 项、每项 32 字节、`loadAddress` 在 `+16`、`textSegmentSize` 在 `+24`、`pathOffset` 在 `+28`）里找 `loadAddress ≤ u < loadAddress + textSegmentSize` 的那一项，
+- 镜像名就是它的 `pathOffset` 指向的路径，镜像内偏移是 `u − loadAddress`。该数组的 `max(loadAddress + textSegmentSize)` 是 `0x2adb74640`，
+- `u` 超过它就落在缓存的 `__TEXT` 镜像区之外，此时写「判不了」并把 `u` 与这个上界一起报。
+
 
 四步都不成立时写「判不了」，并附四样东西：region 起止、算出来的 `size` 与 `off`、三个候选的 `__TEXT` vmsize、`pc − slide` 与 `0x2adb74640` 的关系。写「判不了」本身就是一条结论：它把「需要再补一个打印」与「归属已定」区分开，下一轮据此决定补什么，不再重复走同一条路。
 
@@ -196,7 +201,11 @@ bad access 有三个口径，各自量不同的东西，报数时三个并列并
 
 P2 要判拷贝路径的去留，阈值与尺寸分布是它的输入，两处都与既有记录对不上，这里按源码与 roundb 的日志核一遍。
 
-阈值是 **65536 字节**。`hackios-xnu-kernel/userland/src/redwoodmetal.m:2408` 的 `enum { NOCOPY_LIMIT = 0x10000 }`，`newBufferWithBytesNoCopy:` 在 `length > NOCOPY_LIMIT` 时返回 nil 并打 `rwa buffer: %lu bytes left nil, over the %u this path copies`（`:2413`）。它上面那段注释（`:2405`）写的是「16 KiB is 109 of the 128 requests a round logs」，与常量差 4 倍；[交接文档](../plan/2026-10-28-team-handoff-model-switch.md) §2 的「大于 16 KiB 阈值」沿用的是注释那个数。日志自己把实际阈值打出来了，roundb 的那一条是 `rwa buffer: 1359872 bytes left nil, over the 65536 this path copies`，所以以 65536 为准。1.3 MB 那个 nil 的结论两种阈值下都成立。
+阈值是 **65536 字节**。`hackios-xnu-kernel/userland/src/redwoodmetal.m:2408` 的 `enum { NOCOPY_LIMIT = 0x10000 }`，`newBufferWithBytesNoCopy:` 在 `length > NOCOPY_LIMIT` 时返回 nil 并打 `rwa buffer: %lu bytes left nil, over the %u this path copies`（`:2413`）。
+
+- 它上面那段注释（`:2405`）写的是「16 KiB is 109 of the 128 requests a round logs」，与常量差 4 倍；[交接文档](../plan/2026-10-28-team-handoff-model-switch.md) §2 的「大于 16 KiB 阈值」沿用的是注释那个数。
+- 日志自己把实际阈值打出来了，roundb 的那一条是 `rwa buffer: 1359872 bytes left nil, over the 65536 this path copies`，所以以 65536 为准。1.3 MB 那个 nil 的结论两种阈值下都成立。
+
 
 `rwa buffer: copied %p of %lu bytes, buffer at %p`（`:2641`）里的尺寸字段是 `length`，即调用方请求的长度，而 `memcpy(_contents, bytes, length)`（`:2638`）拷的就是这个长度，所以它同时是请求长度与拷贝长度；分配长度走 `initWithDevice:gpu:length:` 拿到的 `_length`，同一个值。
 
@@ -260,7 +269,10 @@ dump 里逐线程行的 pc 分三类，符号化路径不同，不要混用：
 | 减去该 pid 的 `exec` 基址之后落进主二进制 `__TEXT` | 该进程的主二进制 | 主二进制加偏移；`backboardd` 与 `SpringBoard` 都已剥符号，只有偏移 |
 | 两者都不落 | 私有 dylib 或不可信 | 需要该地址所在 region 的名字，本轮的 region 名只随 bad access 行打，dump 里没有，写「判不了」 |
 
-`slide` 用本轮 `tl: td <pid> slide %#x` 的直接读数，每个 pid 一条。交接文档 §3 里那个 `0xb05000` 已确认是错的，roundb 的正确值是 `0xbc54000`（全轮 `slide 0x…` 只有这一个值、出现 239 次，`0xb05000` 零命中），核对过程见[归属复核](2026-10-28-roundb-memmove-attribution.md) §2：`libsystem_kernel.dylib` 的 `loadAddress` 是 `0x232f09000`，它 `+0xccc` 是 `mov x16, #-0x2f`（即 `movn x16,#46`，−47）、`+0xcd0` 是 `svc #0x80`、`+0xcd4` 是 `ret`，与 `osfmk/mach/syscall_sw.h:128` 的 `kernel_trap(mach_msg2_trap, -47, 8)` 对上。`slide` 是 `0xffffffff` 时表示该 task 从未设置过共享缓存 slide，此时缓存内的 pc 不可读，按第三类记。
+`slide` 用本轮 `tl: td <pid> slide %#x` 的直接读数，每个 pid 一条。交接文档 §3 里那个 `0xb05000` 已确认是错的，roundb 的正确值是 `0xbc54000`（全轮 `slide 0x…` 只有这一个值、出现 239 次，`0xb05000` 零命中），核对过程见[归属复核](2026-10-28-roundb-memmove-attribution.md) §2：`libsystem_kernel.dylib` 的 `loadAddress` 是 `0x232f09000`，它 `+0xccc` 是 `mov x16, #-0x2f`（即 `movn x16,#46`，−47）、`+0xcd0` 是 `svc #0x80`、`+0xcd4` 是 `ret`，与 `osfmk/mach/syscall_sw.h:128` 的 `kernel_trap(mach_msg2_trap, -47, 8)` 对上。
+
+- `slide` 是 `0xffffffff` 时表示该 task 从未设置过共享缓存 slide，此时缓存内的 pc 不可读，按第三类记。
+
 
 共享缓存的范围可以从本地这份缓存直接算出来，位置是 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/`，85 个文件、4.87 GiB、UUID `46E741B7-0E75-3F19-A308-0464F4140B00`。三个边界数量的是不同的东西，用法见 3.3 第 4 步：
 
@@ -272,7 +284,11 @@ dump 里逐线程行的 pc 分三类，符号化路径不同，不要混用：
 
 `maxSlide` 是 `0x20000000`（头部 `+0xf0`），每轮的 slide 都在它范围内，但值每轮都变，所以判「落不落进缓存」要先减本轮的 slide 再比这三个数。交接文档 §3 那句「超出共享缓存上界」把第三个数当成了缓存上界，还用了错的 slide，两处都不成立，作废。
 
-命名一个缓存内的 pc 要走 3.3 第 4 步的 `imagesText` 查表加反汇编，`atos` 与 idalib 这两条现成路径对这份缓存都不可用：`atos` 报 `cannot load symbols for the file dyld_shared_cache_arm64e for architecture arm64e`，宿主机没有 `dyld_shared_cache_util` 或 `ipsw`；`idb_open` 对主缓存文件与对 subcache `.77` 都返回 `Failed to open database`（两次都传了 `run_auto_analysis: false`、`build_caches: false`、`init_hexrays: false`），该目录下 `.symbols` 文件是 0 个，IDA 的共享缓存装载器通常需要它，这是最可能的原因，未验证。可用的组合是自己解缓存头部与 `imagesText`、按 subcache 的 mapping 表算文件偏移、再用 capstone 反汇编，[归属复核](2026-10-28-roundb-memmove-attribution.md) §1 给了四个结构的字段偏移，§4 给了走通的实例。
+命名一个缓存内的 pc 要走 3.3 第 4 步的 `imagesText` 查表加反汇编，`atos` 与 idalib 这两条现成路径对这份缓存都不可用：`atos` 报 `cannot load symbols for the file dyld_shared_cache_arm64e for architecture arm64e`，宿主机没有 `dyld_shared_cache_util` 或 `ipsw`；
+
+- `idb_open` 对主缓存文件与对 subcache `.77` 都返回 `Failed to open database`（两次都传了 `run_auto_analysis: false`、`build_caches: false`、`init_hexrays: false`），该目录下 `.symbols` 文件是 0 个，IDA 的共享缓存装载器通常需要它，这是最可能的原因，未验证。
+- 可用的组合是自己解缓存头部与 `imagesText`、按 subcache 的 mapping 表算文件偏移、再用 capstone 反汇编，[归属复核](2026-10-28-roundb-memmove-attribution.md) §1 给了四个结构的字段偏移，§4 给了走通的实例。
+
 
 一个已经能离线算出的实例，用它示范第三类怎么写：冻结线里 tid 306 的 pc `0x105f00cd8`。假设 exec 基址是页对齐的 `0x105f00000`，偏移是 `0xcd8`；`SpringBoard` 的 `__TEXT` 只用到 `0x1000005d4`（`__text` 0x100000568 起 4 字节、`__auth_stubs` 0x10000056c 起 16 字节、`__unwind_info` 0x10000057c 起 88 字节），`0xcd8` 落在段内空白区，没有任何 section 覆盖它。所以「tid 306 的 pc 在 SpringBoard 私有 `__TEXT`」这个归属即使基址对上了也命不中代码，读法是「保存的 pc 不指向一条有效指令」。这与 `osfmk/kern/redwood_threads.c` 头注释写的取值条件一致：线程字段不持线程锁读，运行态线程的 `upcb` 可能不是当下的值。本轮拿到 exec 行之后先核这一条，再决定要不要给这个 pc 找名字。
 
@@ -317,7 +333,11 @@ lead 在宿主机上直接搜了 roundb 那两个含 ASCII 的故障地址，结
 
 另一条内存口径，搜大文件之前先看：BSD grep 的内存开销约等于最长无换行段的 3 倍，`-a` 让它把二进制当文本，遇到长无换行段就整段缓冲。实测 64 MiB 全无换行的文件峰值 RSS 71 MB，同样 64 MiB 切成 64 字节一行只有 1.9 MB，1 MiB 单行 2.9 MB、2 MiB 单行 6.1 MB。**在多 GB 的二进制上用 `grep -a` 会按最长无换行段吃内存**，`userland/system26.apfs` 4.9 GB、`out/` 下那些 `root.apfs`、dyld 共享缓存都属于这一类，这是唯一能把 grep 的内存推到 GB 量级的用法；要在这些文件里搜字符串，先 `strings` 再 `grep -F`。
 
-**共享缓存已搜，命中数如下。** 缓存位置是 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/`，85 个文件、4.87 GiB。用 python 流式 `bytes.find` 扫全部 85 个文件（块 8 MiB、块间保留 `len(pattern) − 1` 字节重叠，内存有界，不用 `grep -a` 扫多 GB 文件）：`le.siri.` 1958 次、`le.media` 567 次、`cketTouc` 23 次、`PocketTouches` 8 次。所以 `le.siri.` 那一条的来源候选包含缓存里的镜像，SpringBoard 主二进制的内嵌 plist 只是其中一个（22 处）；`backboardd` 的地址空间里有共享缓存，两个来源都在它的地址空间里，光凭故障地址分不出是哪一个。要分开就需要故障时刻的 region 归属，本轮的新打印给的是 pc 所在 region 而不是故障地址所在 region，所以这一项本轮判不了。缓存里的命中数与「多少个不同串、多少个镜像」是两件事，后者要先从命中位置抽完整字符串再按镜像归属，[归属复核](2026-10-28-roundb-memmove-attribution.md) §9 标了判不了。
+**共享缓存已搜，命中数如下。** 缓存位置是 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/`，85 个文件、4.87 GiB。用 python 流式 `bytes.find` 扫全部 85 个文件（块 8 MiB、块间保留 `len(pattern) − 1` 字节重叠，内存有界，不用 `grep -a` 扫多 GB 文件）：`le.siri.` 1958 次、`le.media` 567 次、`cketTouc` 23 次、`PocketTouches` 8 次。
+
+- 所以 `le.siri.` 那一条的来源候选包含缓存里的镜像，SpringBoard 主二进制的内嵌 plist 只是其中一个（22 处）；`backboardd` 的地址空间里有共享缓存，两个来源都在它的地址空间里，光凭故障地址分不出是哪一个。要分开就需要故障时刻的 region 归属，本轮的新打印给的是 pc 所在 region 而不是故障地址所在 region，所以这一项本轮判不了。
+- 缓存里的命中数与「多少个不同串、多少个镜像」是两件事，后者要先从命中位置抽完整字符串再按镜像归属，[归属复核](2026-10-28-roundb-memmove-attribution.md) §9 标了判不了。
+
 
 读法上的三条限制：
 
@@ -1078,6 +1098,10 @@ python3 tools/round-stats.py           docs/progress/evidence/k90auto/kernel-123
 
 **task-16 §6.1 那个阻塞点，round F 没有回答它。** §6.1 问的是冻结族为什么渲染段只有约 96 s（round C 97.7 s、round D 96.4 s），而 round F 是循环族：末帧 rel 185.2 s、停帧 rel 190.1 s，比 C／D 长，但形态不同。C／D 是连续渲染然后提交停止而 SpringBoard 主 run loop 仍在转；F 是 8 个世代各自渲染 0.0 到 16.7 s、间隔 10 到 41 s，最后进程群死透不再起（SpringBoard 末次退出 rel 425.7 s、backboardd 末次 rel 746.0 s；rel 190 s 之后仍有 6,773 行活动，主要是 framewatch 2,346、battery 486、cpufreq 300、sbmetal26 252）。**F 的停渲染有可见原因，C／D 的没有。** §6.1 的阻塞点仍留在 C／D 那一族。
 
-其余收尾读数：`summary.py --verify` 是 `windows 7 merged / 7 in snapshots; frames 52 merged / 52 in snapshots`、`coverage: tl: 840380098 to 1586333836 us, span 746 s, largest gap between tl: lines 320.2 s, 50 frames`、`registration: 2 stuck`（extensionkitservice、iconservicesagent，round E 是 4）、`thermal: 3072 MHz held for 150 s (5 of 43 windows, domain 1), hottest 73.3 C, dropped at window 6 of 43`。summary 行是 `commit=5c9f563 args=cpus=2 gpu_log=1 cpufreq=1 fb_threads=2 seconds=- panic=0 fps=0.0 fps_mv=- static=- driver_us=0 beat_us=- onbeat=- gl_p50=0.0 gl_p90=0.0 under18=0% mid=0% long=0% long_count=0 hottest=73.3 lowest_share=97% ff_s=150 shots=44 bad_shots=0 crashes=33`。`gestures.py` 是 `coverage: 182 s of frames, largest gap 41.0 s, 3 touch downs recognised, 1 of them Control Center pulls`，没有可测的手势动画。`round-stats.py` 三段是 `fence timeouts` 0 条、`ring coverage` 11956 lines over 210 s（141 B/行，单份环折合约 7420 行、约 130 s）、`swap holes` 52 次交接、7 个 1 s 以上的洞（12-18 s 两个，最大 843.3 s 处 16.5 s 与 860.8 s 处 20.8 s）。
+其余收尾读数：`summary.py --verify` 是 `windows 7 merged / 7 in snapshots; frames 52 merged / 52 in snapshots`、`coverage: tl: 840380098 to 1586333836 us, span 746 s, largest gap between tl: lines 320.2 s, 50 frames`、`registration: 2 stuck`（extensionkitservice、iconservicesagent，round E 是 4）、`thermal: 3072 MHz held for 150 s (5 of 43 windows, domain 1), hottest 73.3 C, dropped at window 6 of 43`。
+
+- summary 行是 `commit=5c9f563 args=cpus=2 gpu_log=1 cpufreq=1 fb_threads=2 seconds=- panic=0 fps=0.0 fps_mv=- static=- driver_us=0 beat_us=- onbeat=- gl_p50=0.0 gl_p90=0.0 under18=0% mid=0% long=0% long_count=0 hottest=73.3 lowest_share=97% ff_s=150 shots=44 bad_shots=0 crashes=33`。
+- `gestures.py` 是 `coverage: 182 s of frames, largest gap 41.0 s, 3 touch downs recognised, 1 of them Control Center pulls`，没有可测的手势动画。`round-stats.py` 三段是 `fence timeouts` 0 条、`ring coverage` 11956 lines over 210 s（141 B/行，单份环折合约 7420 行、约 130 s）、`swap holes` 52 次交接、7 个 1 s 以上的洞（12-18 s 两个，最大 843.3 s 处 16.5 s 与 860.8 s 处 20.8 s）。
+
 
 采样在轮内约 238 s 处中断，harness 的作业句柄消失且没有完成通知，内核继续在设备上跑了约 18 分钟无人监督，device 先手动抢拉当前环再走收尾。丢掉的是 lsprobe 的 t=300 第二锚、第三实例（241.3 s 启动）与它的 6 个深静止 dump、以及 240 到 420 s 的常规采样。**上表里所有 rel 大于 238 s 的读数都来自手动抢回的那一份环或 `hung-held.log`，两个工具都不读抢回那一份，是本文单独读的。**

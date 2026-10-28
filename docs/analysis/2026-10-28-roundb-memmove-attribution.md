@@ -6,7 +6,12 @@
 
 ## 1. 复核用到的工具与一处工具失败
 
-`mcp__idalib__*` 这一组工具在本会话可用，但两个输入都打不开：`idb_open` 对 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/dyld_shared_cache_arm64e.77` 与对主缓存文件 `dyld_shared_cache_arm64e` 都返回 `Failed to open database`，两次都按 lead 的约束传了 `run_auto_analysis: false`、`build_caches: false`、`init_hexrays: false`，`idb_list` 之后是空会话列表，目录可写、没有 `.i64`／`.idb` 残留。该目录下 `.symbols` 文件是 **0 个**，另有一个 `dyld_shared_cache_arm64e.atlas`（2,790,670 字节，与主缓存同日 Sep 2 17:50）。IDA 的共享缓存装载器通常需要 `.symbols`，`.atlas` 是不是也要，两处都未验证，这是最可能的原因。将来若真要用 idalib 开这份缓存，先试两件事再决定投入：产出 `.symbols`，以及查清装载器要不要 `.atlas`。lead 已裁定本次不追，理由是下面这条替代路径够硬：第 4 到 6 点是用 capstone 5.0.7 加自解的缓存结构完成的，反汇编结果在本文里逐条给出原文，可复算，而第 4 点的函数边界用了三条独立证据（`udf #0` 填充给边界、`bl #+0x930` 给入口、入口的重叠检查给 memmove 的语义），比解 export trie 拿一个导出名更硬。真正需要 idalib 的场景只剩一个：`lr` 落在缓存里要给调用方命名，而那一步用 §4 的 `imagesText` 查表加 capstone 也能做。
+`mcp__idalib__*` 这一组工具在本会话可用，但两个输入都打不开：`idb_open` 对 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/dyld_shared_cache_arm64e.77` 与对主缓存文件 `dyld_shared_cache_arm64e` 都返回 `Failed to open database`，两次都按 lead 的约束传了 `run_auto_analysis: false`、`build_caches: false`、`init_hexrays: false`，`idb_list` 之后是空会话列表，目录可写、没有 `.i64`／`.idb` 残留。
+
+- 该目录下 `.symbols` 文件是 **0 个**，另有一个 `dyld_shared_cache_arm64e.atlas`（2,790,670 字节，与主缓存同日 Sep 2 17:50）。IDA 的共享缓存装载器通常需要 `.symbols`，`.atlas` 是不是也要，两处都未验证，这是最可能的原因。
+- 将来若真要用 idalib 开这份缓存，先试两件事再决定投入：产出 `.symbols`，以及查清装载器要不要 `.atlas`。lead 已裁定本次不追，理由是下面这条替代路径够硬：第 4 到 6 点是用 capstone 5.0.7 加自解的缓存结构完成的，反汇编结果在本文里逐条给出原文，可复算，而第 4 点的函数边界用了三条独立证据（`udf #0` 填充给边界、`bl #+0x930` 给入口、入口的重叠检查给 memmove 的语义），比解 export trie 拿一个导出名更硬。
+- 真正需要 idalib 的场景只剩一个：`lr` 落在缓存里要给调用方命名，而那一步用 §4 的 `imagesText` 查表加 capstone 也能做。
+
 
 复算用的四个入口：
 
@@ -192,7 +197,11 @@ libsystem_kernel+0xcd8  mov x16, #-0x30     ; -48 = macx_swapon
 
 7 个 `_memmove` 调用点的地址（dylib 自己的 vmaddr，`__text` 起于 `0x4000`）：`0x1d6008`、`0x1d69f8`、`0x212a7c`、`0x260534`、`0x2605fc`、`0x3a7f8c`、`0x3db3ac`。
 
-子任务那句「`userland/src/` 与 `tools/mesa/air/` 里 `memmove`／`bcopy` 出现 0 次」在它自己那个范围内是对的，但那个范围覆盖不到 AIR 库的主体。库的构成看 `hackios-xnu-kernel/tools/mk-mesa.sh`：`:144-145` 把 `tools/mesa/air` 拷成 `mesa-$VERSION/src/compiler/air`，`:205` 链 `src/gallium/drivers/freedreno/libredwoodair.dylib`。该目标的 ninja 链接语句里只有 1 个目标文件（`air_metal.c.o`）加一长串静态库：`libgallium.a`、`libnir.a`、`libcompiler.a`、`libmesa_util.a`、`libmesa_util_simd.a`、`libblake3.a`、`libmesa_util_c11.a`、`libgalliumvl_stub.a`、`libws_null.a`、`libfreedrenowinsys.a`、`libair.a`、`libsoftpipe.a`、`libfreedreno.a`、`libfreedreno_common.a` 等。所以源码检索的正确范围是这些静态库对应的目录，不是 `src/compiler/air` 一个目录。
+子任务那句「`userland/src/` 与 `tools/mesa/air/` 里 `memmove`／`bcopy` 出现 0 次」在它自己那个范围内是对的，但那个范围覆盖不到 AIR 库的主体。库的构成看 `hackios-xnu-kernel/tools/mk-mesa.sh`：`:144-145` 把 `tools/mesa/air` 拷成 `mesa-$VERSION/src/compiler/air`，`:205` 链 `src/gallium/drivers/freedreno/libredwoodair.dylib`。
+
+- 该目标的 ninja 链接语句里只有 1 个目标文件（`air_metal.c.o`）加一长串静态库：`libgallium.a`、`libnir.a`、`libcompiler.a`、`libmesa_util.a`、`libmesa_util_simd.a`、`libblake3.a`、`libmesa_util_c11.a`、`libgalliumvl_stub.a`、`libws_null.a`、`libfreedrenowinsys.a`、`libair.a`、`libsoftpipe.a`、`libfreedreno.a`、`libfreedreno_common.a` 等。
+- 所以源码检索的正确范围是这些静态库对应的目录，不是 `src/compiler/air` 一个目录。
+
 
 按链接进来的目录逐个检索 `memmove`／`bcopy` 调用点（`--include` 限定 `.c`／`.cpp`／`.cc`／`.h`）：
 
@@ -245,7 +254,10 @@ libsystem_kernel+0xcd8  mov x16, #-0x30     ; -48 = macx_swapon
 
 15 个事件 pid 是 `{38, 84, 99, 124, 140, 153, 167, 187, 197, 212, 221, 235, 243, 257, 265}`，与该轮 `redwood: backboardd pid N exited code -1 reason 2` 的 15 个 pid **完全相同**。两个独立来源（故障后紧跟的死亡行、进程退出行）给出同一个 15 代集合，事件口径因此站得住：每一代 backboardd 崩一次，一次故障对应一次死亡。
 
-这个 15 与另一处出现的 15 无关，写结论时不要对上。`hackios-xnu-kernel/userland/src/redwoodmetal_blit.inc:35-38` 的注释写着「A selector nobody answers aborts the process, and backboardd died fifteen times in one run on -generateMipmapsForTexture: before anything was drawn」，那是没人应答的 selector 导致 `abort()`，信号 6，发生在绘制之前，且已经由该文件里的转发实现修掉；roundb 这 15 起是 `died on signal 11 code 11`，信号 11，发生在已经画出内容之后。两个数相同，成因、信号、发生时机都不同。本文与读数规则文档里凡出现 15 的地方都带着 `signal 11 code 11` 或 `reason 2`，两份文档对 `signal 6`、`abort`、`generateMipmaps`、`selector` 四个词的检索都是零命中。
+这个 15 与另一处出现的 15 无关，写结论时不要对上。`hackios-xnu-kernel/userland/src/redwoodmetal_blit.inc:35-38` 的注释写着「A selector nobody answers aborts the process, and backboardd died fifteen times in one run on -generateMipmapsForTexture: before anything was drawn」，那是没人应答的 selector 导致 `abort()`，信号 6，发生在绘制之前，且已经由该文件里的转发实现修掉；
+
+- roundb 这 15 起是 `died on signal 11 code 11`，信号 11，发生在已经画出内容之后。两个数相同，成因、信号、发生时机都不同。本文与读数规则文档里凡出现 15 的地方都带着 `signal 11 code 11` 或 `reason 2`，两份文档对 `signal 6`、`abort`、`generateMipmaps`、`selector` 四个词的检索都是零命中。
+
 
 11 个唯一故障地址按形式分类，事件口径的分布与子任务一致（小整数 2、ASCII 4、打包整数样 9、正常堆地址 0）：
 

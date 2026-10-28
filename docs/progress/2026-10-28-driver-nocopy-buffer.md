@@ -132,9 +132,16 @@ git 历史查不出更多：`_buffers[index] = buffer;`、`[buffer autorelease] 
 
 ### 8.6 memmove 的调用方候选，即 round C 里 `lr` 的预期值清单（问题 6）
 
-先给一条把候选收窄的实测。装车那份 `libredwoodmetal.dylib`（`9d66dd36`）的未定义符号里只有 `_memcpy`；`libredwoodair.dylib`（`d7b9ced5`）的未定义符号里有 `_memmove`、`_memcpy`、`___memcpy_chk`、`___memset_chk`、`_memset`、`_memset_pattern16`（`nm -u`）。所以崩溃那次 `_platform_memmove` 的调用方不可能是我们的驱动，只能是 AIR 库或 iOS 侧。`tools/mesa/air/` 里 memmove 出现 0 次、memcpy 46 处，而这个目录只是 AIR 库的一小部分：`tools/mk-mesa.sh:144-145` 把 `tools/mesa/air` 拷成 `mesa-$VERSION/src/compiler/air`，`:205` 链的 `src/gallium/drivers/freedreno/libredwoodair.dylib` 里只有 `air_metal.c.o` 一个目标文件，其余全来自 `libgallium.a`、`libnir.a`、`libcompiler.a`、`libmesa_util.a`、`libfreedreno.a` 一长串静态库。
+先给一条把候选收窄的实测。装车那份 `libredwoodmetal.dylib`（`9d66dd36`）的未定义符号里只有 `_memcpy`；`libredwoodair.dylib`（`d7b9ced5`）的未定义符号里有 `_memmove`、`_memcpy`、`___memcpy_chk`、`___memset_chk`、`_memset`、`_memset_pattern16`（`nm -u`）。
 
-perf 在复核里把这处空白填了（[roundb memmove 归属复核](../analysis/2026-10-28-roundb-memmove-attribution.md) §6.3、§6.4）：镜像里 `_memmove` 有 **7 个调用点**，dylib 内 vmaddr 分别是 `0x1d6008`、`0x1d69f8`、`0x212a7c`、`0x260534`、`0x2605fc`、`0x3a7f8c`、`0x3db3ac`；按链接进来的目录检索源码得到 9 处候选（`src/util` 3、`src/compiler` 除 air 外 4、`src/freedreno` 1、`src/gallium/auxiliary` 1），7 与 9 不相等的原因未查，所以那 9 处只是候选清单。故障时刻的 `lr` 是调用方那条 `bl` 的下一条指令，即 7 个调用点各加 4；7 个预期值的低 12 位互不相同，而 dylib 的加载地址页对齐，所以给定一个运行时 `lr`，只有一个候选能让 `lr − 预期值` 页对齐，那一个就是调用点，差值就是 AIR 库的加载地址。这一步不需要内核另外打 AIR 库的基址。
+- 所以崩溃那次 `_platform_memmove` 的调用方不可能是我们的驱动，只能是 AIR 库或 iOS 侧。`tools/mesa/air/` 里 memmove 出现 0 次、memcpy 46 处，而这个目录只是 AIR 库的一小部分：`tools/mk-mesa.sh:144-145` 把 `tools/mesa/air` 拷成 `mesa-$VERSION/src/compiler/air`，`:205` 链的 `src/gallium/drivers/freedreno/libredwoodair.dylib` 里只有 `air_metal.c.o` 一个目标文件，其余全来自 `libgallium.a`、`libnir.a`、`libcompiler.a`、`libmesa_util.a`、`libfreedreno.a` 一长串静态库。
+
+
+perf 在复核里把这处空白填了（[roundb memmove 归属复核](../analysis/2026-10-28-roundb-memmove-attribution.md) §6.3、§6.4）：镜像里 `_memmove` 有 **7 个调用点**，dylib 内 vmaddr 分别是 `0x1d6008`、`0x1d69f8`、`0x212a7c`、`0x260534`、`0x2605fc`、`0x3a7f8c`、`0x3db3ac`；
+
+- 按链接进来的目录检索源码得到 9 处候选（`src/util` 3、`src/compiler` 除 air 外 4、`src/freedreno` 1、`src/gallium/auxiliary` 1），7 与 9 不相等的原因未查，所以那 9 处只是候选清单。故障时刻的 `lr` 是调用方那条 `bl` 的下一条指令，即 7 个调用点各加 4；
+- 7 个预期值的低 12 位互不相同，而 dylib 的加载地址页对齐，所以给定一个运行时 `lr`，只有一个候选能让 `lr − 预期值` 页对齐，那一个就是调用点，差值就是 AIR 库的加载地址。这一步不需要内核另外打 AIR 库的基址。
+
 
 内存进出边界的全部出口，按方向列。交出去（对方随后可能对它做块拷贝）：
 

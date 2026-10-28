@@ -35,7 +35,9 @@
 - S2 `dipa-studio/ios-sweet` 的 `NOTES.md`，来自 iPhone X / iOS 16.7.16 / 20H392 的共享缓存，用 `ipsw dyld disass --image IOMobileFramebuffer` 取的。有一行完整的 `3 _kern_GetLayerDefaultSurface[ScalarMethod_stub]; 4 _kern_SwapBegin[...] ... 86 _IOMFBGainEncoderFinishEncoding[Method_stub]; UNKNOWN {}`，表在 86 处终止。另有通知 ABI 段落写明 `sel 72 scalars [NotifyCallbackFuncs[type], fb, type, 0]` 与 type 的取值（0 HotPlug、1 Power、3 FrameInfo、4 CRC、5 Vsync）。
 - S3 Google Project Zero，Ian Beer，《The curious tale of a fake Carrier.app》（CVE-2021-30983）。原文是「The exploit only calls 3 different external method selectors on the AppleCLCD2 user client: 68, 78 and 79. The one with the largest and most interesting-looking input is 78, which corresponds to ... `IOReturn IOMobileFramebufferUserClient::s_set_block(...)`」。这是 78 的内核符号名唯一直接来源。
 - S4 `jsherman212` 的 CVE-2021-30656 文章，L153 到 L156 写「Here is the structure that represents IOMobileFramebufferUserClient's external method 74」并给出 `IOExternalMethodDispatch <s_supported_frame_info, 1, 0, 1, 0x40>`。同文 L143 与 L146 给出 external method 0 = `s_rotate_surface`（3 scalar in），L174 给出 `s_swap_submit` 行 `<0, 0xFFFFFFFF, 0, 0>`。这是 iOS 14 时代的表，74 当时是 1 个 scalar out。
-- S5 `ma6x9x/Lum1na` 的 `LabIntelOffsets.m` L235 与 L245，直接读 kernelcache 的 `sMethods`。iOS 26.5（23F77/T8101）的表在 `0xFFFFFFF007EF0C90`，stride `0x18`，记为「88 rows sel0..0x57」，rows 59-64 与 70-71 是 fn=0 的退役行，row5 的 sin 是 `0x588`，row68 的 sin 是 `0x100`，special sels `0x44`／`0x4e`／`0x4f`／`0x55` 即 68／78／79／85 会先把整行拷到栈上。iOS 27.0（24A435/T8150）的表在 `0xFFFFFE000832FD70`，stride `0x28`，记为「93 rows sel0..0x5c」，新增 `+0x20` 的 entitlement 列：row23 是 `com.apple.private.iomfb.set-block`、row83 是 `com.apple.private.allow-explicit-graphics-priority`、row86 是 `com.apple.private.gain-map-access`；row5 的 sin 从 `0x588` 变成 `0x6e0`，row68 的 sin 从 `0x100` 变成 `0xffffffff`，rows78 与 79 的 ci 与 sin 从 0 变成 `0xffffffff` 即变长。这一份只有行号、大小与 entitlement，没有符号名。
+- S5 `ma6x9x/Lum1na` 的 `LabIntelOffsets.m` L235 与 L245，直接读 kernelcache 的 `sMethods`。iOS 26.5（23F77/T8101）的表在 `0xFFFFFFF007EF0C90`，stride `0x18`，记为「88 rows sel0..0x57」，rows 59-64 与 70-71 是 fn=0 的退役行，row5 的 sin 是 `0x588`，row68 的 sin 是 `0x100`，special sels `0x44`／`0x4e`／`0x4f`／`0x55` 即 68／78／79／85 会先把整行拷到栈上。
+  - iOS 27.0（24A435/T8150）的表在 `0xFFFFFE000832FD70`，stride `0x28`，记为「93 rows sel0..0x5c」，新增 `+0x20` 的 entitlement 列：row23 是 `com.apple.private.iomfb.set-block`、row83 是 `com.apple.private.allow-explicit-graphics-priority`、row86 是 `com.apple.private.gain-map-access`；
+  - row5 的 sin 从 `0x588` 变成 `0x6e0`，row68 的 sin 从 `0x100` 变成 `0xffffffff`，rows78 与 79 的 ci 与 sin 从 0 变成 `0xffffffff` 即变长。这一份只有行号、大小与 entitlement，没有符号名。
 - S6 `samhenrigold/qemu-ios` 的 `docs/research/gap-display-stack-kernel.md` L81，是古董 iOS（iPod touch 2G 与 iPhone 3GS 时代）的表：`0xf SetDebugFlags`、`0x11 SetGammaTable(struct)`、`0x12 IsMainDisplay`、`0x16 SetDisplayDevice`、`0x1b GetGammaTable (0xc00 out)`、`0x20 VideoPowerSavings`，另外 `1 SwapSurface`、`2 WaitSurface`、`9 VSync notify on/off`、`0x15 HotPlug notify` 都是旧真方法后来退役，这解释了 S5 那些 fn=0 的空洞行。
 - S8 `orhunnx/beyond2lte-ios` 的 `xnu-overlay/iokit/Kernel/arm/B2LFramebuffer.cpp`，自称对 iOS 26.6.2 共享缓存做过逆向并给了地址。独立作者，不是从 ios-sweet 派生。
 
@@ -94,13 +96,22 @@
 
 enum 在 `MiniIOMobileFramebuffer.cpp:49-70`，case 实现在同文件 `:1328-1372`。三个名字都对，语义注释有两处要改。
 
-72 `kFBMethodNotifications` 名字对，而 26.6 上是两个实现，enable 与 disable 分开。本地 enable 在 `0x2294bb218`、装在 slot `0xa28`，disable 在 `0x2294bb2a0`、装在 slot `0xa30`，都是 `IOConnectCallScalarMethod(conn, 0x48, scalars, 4, 0, 0)`。enable 的 4 个 scalar 是 `[NotifyCallbackFuncs[type], fb, type, 0]`，回调函数指针从 `__AUTH_CONST,__const + 0xe20` 的表里按 type 取；disable 是 `[0, 0, type, 0]`，即 4 个 scalar 先清零再把 type 写到 index 2。公开名字是 `kern_EnableNotifications` 与 `kern_DisableNotifications`（S1、S2），导出 wrapper 是 `IOMobileFramebuffer{Enable,Disable}{VSync,Power,HotPlugDetect,NeedSwap,CRC}Notifications`，五个 Enable 共用 slot `0xa28`，五个 Disable 共用 slot `0xa30`。项目实现读 `in[0]` 当 callback、`in[2]` 当 type，与 26.6 一致，不用改。日志里 72 从未出现，说明 backboardd 还没注册通知，而正常路径会注册 Vsync 即 type 5。
+72 `kFBMethodNotifications` 名字对，而 26.6 上是两个实现，enable 与 disable 分开。本地 enable 在 `0x2294bb218`、装在 slot `0xa28`，disable 在 `0x2294bb2a0`、装在 slot `0xa30`，都是 `IOConnectCallScalarMethod(conn, 0x48, scalars, 4, 0, 0)`。
+
+- enable 的 4 个 scalar 是 `[NotifyCallbackFuncs[type], fb, type, 0]`，回调函数指针从 `__AUTH_CONST,__const + 0xe20` 的表里按 type 取；disable 是 `[0, 0, type, 0]`，即 4 个 scalar 先清零再把 type 写到 index 2。
+- 公开名字是 `kern_EnableNotifications` 与 `kern_DisableNotifications`（S1、S2），导出 wrapper 是 `IOMobileFramebuffer{Enable,Disable}{VSync,Power,HotPlugDetect,NeedSwap,CRC}Notifications`，五个 Enable 共用 slot `0xa28`，五个 Disable 共用 slot `0xa30`。
+- 项目实现读 `in[0]` 当 callback、`in[2]` 当 type，与 26.6 一致，不用改。日志里 72 从未出现，说明 backboardd 还没注册通知，而正常路径会注册 Vsync 即 type 5。
+
 
 73 `kFBMethodChangeFrameInfo` 名字对。本地实现在 `0x2294bb314`、装在 slot `0xba8`，形式是 `IOConnectCallScalarMethod(conn, 0x49, scalars, 2, 0, 0)`，scalars 是 `[3, index]`，3 是 framework 硬编码常量。导出 wrapper `IOMobileFramebufferChangeFrameInfo(fb, bool)` 的流程是先查 74 拿描述符，再把选中的 index 存到 `fb+0x828`，然后调 73。所以 74 返回 count 0 时 73 不会被调用，与日志一致。项目现在直接 `return kIOReturnSuccess`（`:1333`），够用。
 
 74 `kFBMethodSupportedFrameInfo` 名字对，内核符号是 `IOMobileFramebufferUserClient::s_supported_frame_info`，S4 明文点名并贴了 iOS 14 的表行。本地实现在 `0x2294bb384`、装在 slot `0xbb0`，形式是 `IOConnectCallMethod(conn, 0x4a, &type, 1, NULL, 0, output, &outputCnt, outputStruct, &structSize)`，其中 `outputCnt` 初始化成 2、`structSize` 初始化成 64，返回后 framework 直接 `*a3 = output[0]`、`*a5 = output[1]`，不检查实际写回了几个。
 
-项目实现（`:1350-1358`）只写 `out[0] = 0` 并把 `args->scalarOutputCount` 设成 1，还 bzero 了那个 struct。26.6 的 framework 请求 2 个 scalar，所以第二个槽位保持它自己栈上的初值 `0xAAAAAAAAAAAAAAAA`，调用方拿到 `0xAAAAAAAA` 当 selected index。count 是 0 的情况下正常路径不会去用这个 index，所以目前没出问题，而把两个 scalar 都写 0 更稳。enum 的注释 `/* in: type; out: how many, and their tags: none */` 里「their tags」在公开资料里找不到对应物，26.6 的实际输出是 2 个 scalar（count 与 selected index）加 64 字节 struct，注释可以按这个改。S5 给的 iOS 14 表行是 `<1, 0, 1, 0x40>`，即 14 上是 1 scalar in、1 scalar out、`0x40` struct out，18.2 起变成 2 scalar out，所以跨版本别写死。
+项目实现（`:1350-1358`）只写 `out[0] = 0` 并把 `args->scalarOutputCount` 设成 1，还 bzero 了那个 struct。26.6 的 framework 请求 2 个 scalar，所以第二个槽位保持它自己栈上的初值 `0xAAAAAAAAAAAAAAAA`，调用方拿到 `0xAAAAAAAA` 当 selected index。
+
+- count 是 0 的情况下正常路径不会去用这个 index，所以目前没出问题，而把两个 scalar 都写 0 更稳。enum 的注释 `/* in: type; out: how many, and their tags: none */` 里「their tags」在公开资料里找不到对应物，26.6 的实际输出是 2 个 scalar（count 与 selected index）加 64 字节 struct，注释可以按这个改。
+- S5 给的 iOS 14 表行是 `<1, 0, 1, 0x40>`，即 14 上是 1 scalar in、1 scalar out、`0x40` struct out，18.2 起变成 2 scalar out，所以跨版本别写死。
+
 
 这一处与 task-20 直接相关：74 返回 count 0 正是「CA 可能被封顶而与 `fb_hz` 无关」那一层的机制，两处要互引。
 
@@ -108,11 +119,20 @@ enum 在 `MiniIOMobileFramebuffer.cpp:49-70`，case 实现在同文件 `:1328-13
 
 框架侧的分块协议有公开定义，payload 内容没有。
 
-S1 给出的 `kern_SetBlock(a1=fb, a2=blockType, a3=data, a4=dataSize, a5=extraU32Array, a6=extraCount)` 算法是：scalar 数组长度等于 `a6 + 2`，全部先填 `0xAA`；`scalars[0] = blockType`；`scalars[1] = 0` 作分块偏移 cookie；`scalars[2 .. a6+1]` 是 a5 指向的 a6 个 u32，每个零扩展成 u64；然后循环 `IOConnectCallMethod(conn, 0x4E, scalars, a6+2, data + offset, min(4096, dataSize - offset), 0,0,0,0)`，返回后 `scalars[1] += 4096`，直到 `offset >= dataSize` 或返回非 0；没有任何输出参数。本地 26.6 的 `0x2294bcc3c` 已逐条对过，算法一致（`mov w1,#0x4e`，`mov x3,x21` 取 extra+2，`csel x5, x10, x24, hi` 取 min(剩余, 0x1000)，回写是 `ldr x8,[x22,#8]; add x8,x8,#0x1000; str x8,[x22,#8]`）。S5 说 27.0 上 rows78 与 79 的 `checkScalarInputCount` 与 `checkStructureInputSize` 都是 `0xffffffff` 即变长，与分块协议一致。
+S1 给出的 `kern_SetBlock(a1=fb, a2=blockType, a3=data, a4=dataSize, a5=extraU32Array, a6=extraCount)` 算法是：scalar 数组长度等于 `a6 + 2`，全部先填 `0xAA`；`scalars[0] = blockType`；
+
+- `scalars[1] = 0` 作分块偏移 cookie；`scalars[2 .. a6+1]` 是 a5 指向的 a6 个 u32，每个零扩展成 u64；然后循环 `IOConnectCallMethod(conn, 0x4E, scalars, a6+2, data + offset, min(4096, dataSize - offset), 0,0,0,0)`，返回后 `scalars[1] += 4096`，直到 `offset >= dataSize` 或返回非 0；
+- 没有任何输出参数。本地 26.6 的 `0x2294bcc3c` 已逐条对过，算法一致（`mov w1,#0x4e`，`mov x3,x21` 取 extra+2，`csel x5, x10, x24, hi` 取 min(剩余, 0x1000)，回写是 `ldr x8,[x22,#8]; add x8,x8,#0x1000; str x8,[x22,#8]`）。
+- S5 说 27.0 上 rows78 与 79 的 `checkScalarInputCount` 与 `checkStructureInputSize` 都是 `0xffffffff` 即变长，与分块协议一致。
+
 
 导出 wrapper `IOMobileFramebufferSetBlock` 是纯转发（`ldr x6,[x0,#0xb88]; braaz x6`），所以公开签名就是上面那 6 个参数。同一个 slot `0xb88` 还被 `IOMobileFramebufferSwapSetToneMapConfig` 用，它自己固定传 `blockType = 0x6b`、`dataSize = 0x4c` 即 76 字节、`extraCount = 1`。
 
-日志里 SwapBegin(4) 与 SwapEnd(5) 之间有三次 78 调用，原始 scalar 与 struct 长度是 `[0x32 0x0 0x1 0x4]` 配 64 字节、`[0x32 0x0 0x1 0x5]` 配 64 字节、`[0x33 0x0 0x1 0xc]` 配 656 字节。按上面的协议读出来：blockType 是 `0x32` 即 50 两次、`0x33` 即 51 一次；chunk offset 都是 0，因为都小于 4096，单次就传完；extra u32 分别是 `{1, 4}`、`{1, 5}`、`{1, 0xc}`。block type `0x32` 与 `0x33` 的含义以及 64 与 656 字节 payload 的字段布局在公开资料里查不到：S1 与 S2 只给框架侧算法，S3 只贴了内核 handler 开头几行（读 `args->structureInput` 与 `extra_args`），S5 只给行属性。656 是 `0x290`，与 tone-map 的 76 字节、74 的 64 字节都不是同一个结构。三次调用的 blockType 都不是 `0x6b`，所以它们不是 tone-map 路径。
+日志里 SwapBegin(4) 与 SwapEnd(5) 之间有三次 78 调用，原始 scalar 与 struct 长度是 `[0x32 0x0 0x1 0x4]` 配 64 字节、`[0x32 0x0 0x1 0x5]` 配 64 字节、`[0x33 0x0 0x1 0xc]` 配 656 字节。
+
+- 按上面的协议读出来：blockType 是 `0x32` 即 50 两次、`0x33` 即 51 一次；chunk offset 都是 0，因为都小于 4096，单次就传完；extra u32 分别是 `{1, 4}`、`{1, 5}`、`{1, 0xc}`。block type `0x32` 与 `0x33` 的含义以及 64 与 656 字节 payload 的字段布局在公开资料里查不到：S1 与 S2 只给框架侧算法，S3 只贴了内核 handler 开头几行（读 `args->structureInput` 与 `extra_args`），S5 只给行属性。
+- 656 是 `0x290`，与 tone-map 的 76 字节、74 的 64 字节都不是同一个结构。三次调用的 blockType 都不是 `0x6b`，所以它们不是 tone-map 路径。
+
 
 内核侧的准入检查有公开符号：`isSetBlockEnumAllowed` 与 `detectSetBlockClientType`，配 entitlement `com.apple.private.iomfb.set-block`，backboardd 持有它。S5 说 27.0 上这个 entitlement 挂在 row23，这与 23 是 SetDigitalOutMode 冲突，按语义它更可能在 row78。
 
@@ -131,7 +151,9 @@ S1 给出的 `kern_SetBlock(a1=fb, a2=blockType, a3=data, a4=dataSize, a5=extraU
 
 四条冲突照实记，不替任何一方下结论。
 
-- selector 23 的归属。S2 给 `_kern_SetDigitalOutMode`，Snapintosh 点名 macOS 27 的 `s_set_digital_out_mode` 是 native selector 23，两者说是 SetDigitalOutMode；S5 说 27.0 的 row23 挂 `com.apple.private.iomfb.set-block`。本地 26.6 的证据支持前者：`_IOMobileFramebufferSetDigitalOutMode`（`0x2294b8afc`）取 slot `0xab0`，`_IOMobileFramebufferOpen` 在 `0x2294982a8` 把 `0x2294bc2c0` 装进 slot `0xab0`，而 `0x2294bc2c0` 调 `IOConnectCallScalarMethod(conn, 0x17, ...)` 即 23。S5 的 row83（`allow-explicit-graphics-priority`，与 83 是 `s_displayed_fb_surface` 吻合）和 row86（`gain-map-access`，与 86 是 GainEncoderFinishEncoding 吻合）都对得上，只有 row23 对不上，倾向 S5 在这一行抄错或串列，而没有证据判定。
+- selector 23 的归属。S2 给 `_kern_SetDigitalOutMode`，Snapintosh 点名 macOS 27 的 `s_set_digital_out_mode` 是 native selector 23，两者说是 SetDigitalOutMode；S5 说 27.0 的 row23 挂 `com.apple.private.iomfb.set-block`。
+  - 本地 26.6 的证据支持前者：`_IOMobileFramebufferSetDigitalOutMode`（`0x2294b8afc`）取 slot `0xab0`，`_IOMobileFramebufferOpen` 在 `0x2294982a8` 把 `0x2294bc2c0` 装进 slot `0xab0`，而 `0x2294bc2c0` 调 `IOConnectCallScalarMethod(conn, 0x17, ...)` 即 23。
+  - S5 的 row83（`allow-explicit-graphics-priority`，与 83 是 `s_displayed_fb_surface` 吻合）和 row86（`gain-map-access`，与 86 是 GainEncoderFinishEncoding 吻合）都对得上，只有 row23 对不上，倾向 S5 在这一行抄错或串列，而没有证据判定。
 - 表长度。S5 说 iOS 26.5 是「88 rows sel0..0x57」即最大 87，而 S1 的 iOS 18.2 framework 已经在用 87、88、89、90，本地 26.6 还找到 91 与 92。两者不能同时成立，S5 的 26.5 行数偏少。
 - row68 的 struct 大小。S5 说 26.5 上 `checkStructureInputSize` 是 `0x100` 即 256，27.0 改成 `0xffffffff`。S1 与本地都显示 framework 按 `8 * count` 传，日志里是 8 字节。XNU 的 `checkStructureInputSize` 是精确比较，8 字节过不了 256 的检查。这一条没有解释。
 - swap record 即 selector 5 的大小逐版本变：`0x8c`（古董 iOS）、`0x46c`（16.7）、1288（17）、`0x588`（26.5 与 26.6）、`0x6e0`（27.0）。不能写死。本地 26.6 的 `_IOMobileFramebufferOpen` 初始化路径里确实有 `mov w1, #0x588` 配 `__bzero`。17 与 27 的 gamma 表大小也版本相关：26.6 上是 `0xC0C` 即 3084，与 S1 的 18.2 相同，与 S6 古董表的「`0xc00` out」不同。

@@ -35,7 +35,9 @@ tl: td %d exec %#llx %s
 ## 2. 判读要点
 
 - region 名直接给出答案时按名记：落在 `libredwoodmetal.dylib`／`libredwoodair.dylib` 是拷贝路径实现自身引入段错误，落在系统库是拷贝路径让 CA 走过了原先 nil 失败的点。两种结果对拷贝路径的处置不同，由 lead 判 P2。
-- region 名是 `-` 而起止有值时，按 `__TEXT` 的 vmsize 反推归属，**不要用文件字节数**：region 打的是 vm_map entry 的起止，对应映射尺寸，两者差一到两个量级。数据来源是 perf 对本轮实际装车产物的 `otool -l` 实测，见[读数规则 §3.3](../analysis/2026-10-28-roundc-reading-criteria.md)：`libredwoodmetal` `0x20000`＝131,072（文件 241,488 字节）、`libredwoodair` `0xc0c000`＝12,632,064（文件 13,983,936 字节）、`backboardd` `0x100000`＝1,048,576（文件 1,366,064 字节）。三个 vmsize 互不相同，size 精确匹配就能定归属；entry 被切分时再用 `off = pc − lo` 的上限排除（`off ≥ 0x20000` 排 `libredwoodmetal`，`off ≥ 0x100000` 再排 `backboardd`）。前提也成立：bad access 走用户态数据异常路径、pc 正在执行，region 必然带 execute，候选集合就是这三个 `__TEXT`，`__DATA`／`__DATA_CONST`／`__LINKEDIT` 都不在里面。反推不成立就写「判不了」。
+- region 名是 `-` 而起止有值时，按 `__TEXT` 的 vmsize 反推归属，**不要用文件字节数**：region 打的是 vm_map entry 的起止，对应映射尺寸，两者差一到两个量级。数据来源是 perf 对本轮实际装车产物的 `otool -l` 实测，见[读数规则 §3.3](../analysis/2026-10-28-roundc-reading-criteria.md)：`libredwoodmetal` `0x20000`＝131,072（文件 241,488 字节）、`libredwoodair` `0xc0c000`＝12,632,064（文件 13,983,936 字节）、`backboardd` `0x100000`＝1,048,576（文件 1,366,064 字节）。
+  - 三个 vmsize 互不相同，size 精确匹配就能定归属；entry 被切分时再用 `off = pc − lo` 的上限排除（`off ≥ 0x20000` 排 `libredwoodmetal`，`off ≥ 0x100000` 再排 `backboardd`）。前提也成立：bad access 走用户态数据异常路径、pc 正在执行，region 必然带 execute，候选集合就是这三个 `__TEXT`，`__DATA`／`__DATA_CONST`／`__LINKEDIT` 都不在里面。
+  - 反推不成立就写「判不了」。
 - region 名是 `-` 且起止是 `0-0` 时，pc 当时不在任何 map entry 里，这一条与「取不到文件名」是两种情形，不要合并计数。
 - exec 基址覆盖的是 dyld 为这个进程映射的镜像，slide 行覆盖的是共享缓存里的 pc，两行合起来才能给 dump 里每个 pc 命名。上一轮判读里 tid 306 的 pc `0x105f00cd8` 缺的就是这一项。
 - `$17`（`x1`）应当等于同一行的 `$6`（故障地址）。离线分析给出的两处故障指令都是拷贝例程的第一次源访问（`_platform_memmove` 的 `+0x9c0` 是 `ldnp q2, q3, [x1]`、`+0xad4` 是 `ldr x6, [x1], #8`），所以这两个字段相等就是归属结论在设备侧的交叉验证；不相等说明故障指令不是那两处之一，`$8` 的归属要重判。
@@ -91,7 +93,11 @@ tl: td %d exec %#llx %s
 
 ## 6. round C 实测（device，2026-10-28）
 
-轮次身份：payload `ebdca4adfc9fb5f4…`（25,437,256 字节），内核 `cf1502f5632284af…`（roundc manifest 的 `kernel` 段与 task-14 记录一致），apfs 复用 roundb 的 `e36caefb…`（打包后复算未变），`pack.driver_sha256` `9d66dd36…`、`pack.air_sha256` `d7b9ced5…`、`jobs_source.sha256` `a4af9a9f…` 与 `jobs_sha256` `88326d5e…` 两项都等于 roundb 值，cmdline 除 `epoch=1793167025` 外与 roundb 逐字段相同，`gpu_speed` 3。13:59:17 开始，`SAMPLED_SECONDS 420.4473890408408`、`failed_call None`；teardown 走 `"mode": "android"` 分支，run-queue 的 recover-loader 自动恢复到 loader A（`identified Android B to LK to existing loader A`），`fastboot getvar result` idle 通过，收尾时设备在 loader、无按键介入。证据在 `docs/progress/evidence/k90auto/kernel-12377-attr26-roundc/`（21 份 s*.log 加 hung-held.log），判读脚本与输出在同级 `analysis-roundc/`。
+轮次身份：payload `ebdca4adfc9fb5f4…`（25,437,256 字节），内核 `cf1502f5632284af…`（roundc manifest 的 `kernel` 段与 task-14 记录一致），apfs 复用 roundb 的 `e36caefb…`（打包后复算未变），`pack.driver_sha256` `9d66dd36…`、`pack.air_sha256` `d7b9ced5…`、`jobs_source.sha256` `a4af9a9f…` 与 `jobs_sha256` `88326d5e…` 两项都等于 roundb 值，cmdline 除 `epoch=1793167025` 外与 roundb 逐字段相同，`gpu_speed` 3。
+
+- 13:59:17 开始，`SAMPLED_SECONDS 420.4473890408408`、`failed_call None`；teardown 走 `"mode": "android"` 分支，run-queue 的 recover-loader 自动恢复到 loader A（`identified Android B to LK to existing loader A`），`fastboot getvar result` idle 通过，收尾时设备在 loader、无按键介入。
+- 证据在 `docs/progress/evidence/k90auto/kernel-12377-attr26-roundc/`（21 份 s*.log 加 hung-held.log），判读脚本与输出在同级 `analysis-roundc/`。
+
 
 **全轮 bad access 为零**：raw（跨快照求和）0、唯一行 0、物理事件 0，s*.log 与 hung-held.log 都是 0 条。`lr`／`x0`／`x1`／`x2` 四个新值没有数据，§2 的三条自我否证判据（`$17`=`$6`、`$19` 对 pc 区间、`lr` 三类归属）与 §5 的 PAC 形态、32 位排除两条在本轮都未获得验证，region 后备文件名（`$10`）同样没有执行记录。
 
@@ -99,7 +105,11 @@ tl: td %d exec %#llx %s
 
 exec 与 slide 两处打印验证成立（§5 第二条）：exec 行有真实值且 `$6` 正是预期的主二进制，`tl: td 30 exec 0x100fb4000 SpringBoard`、`tl: td 38 exec 0x100c78000 backboardd`；slide 两个 pid 都是单值 `0x105a4000`。dump 正常发生：`periodic dump` 行在，`tl: td pid 30 threads 18..57`、`tl: td pid 38 threads 12..14` 随时间增长，`tl: td pid 30 printed <K>` 行齐。
 
-拷贝路径这一轮走到了但零故障：`rwa buffer: copied` raw 230（s*.log 口径）、唯一行 21，尺寸分布 16384×16、65536／62464／49152／32768／15360 各 1（49152 是 roundb 没出现过的尺寸；roundb 以 32768 为主，raw 1487/1675）。驱动侧 nil 两种：`rwa buffer: 1081344 bytes left nil, over the 65536 this path copies` ×3、`1163264` 同款 ×13；CA 侧 `nil buffer from memory` raw 16。roundb 里 `copied` 与故障的相邻率是 11.8%（209/1775），本轮 230 条 `copied` 对应 0 起故障。round-stats 的「no-copy served as a copy: 0」数的是旧驱动的打印串 `no-copy buffer of N bytes served as a copy`，与 `9d66dd36` 的 `rwa buffer: copied` 是两个指标，不冲突。
+拷贝路径这一轮走到了但零故障：`rwa buffer: copied` raw 230（s*.log 口径）、唯一行 21，尺寸分布 16384×16、65536／62464／49152／32768／15360 各 1（49152 是 roundb 没出现过的尺寸；roundb 以 32768 为主，raw 1487/1675）。
+
+- 驱动侧 nil 两种：`rwa buffer: 1081344 bytes left nil, over the 65536 this path copies` ×3、`1163264` 同款 ×13；CA 侧 `nil buffer from memory` raw 16。roundb 里 `copied` 与故障的相邻率是 11.8%（209/1775），本轮 230 条 `copied` 对应 0 起故障。
+- round-stats 的「no-copy served as a copy: 0」数的是旧驱动的打印串 `no-copy buffer of N bytes served as a copy`，与 `9d66dd36` 的 `rwa buffer: copied` 是两个指标，不冲突。
+
 
 AIR 身份运行时核对通过：`perf draw: timing on, frames over 6000 us are printed, 128 frames per summary` 出现（raw 100、唯一 1 条），装车 AIR 确为 `d7b9ced5`；`perf driver` 行 raw 162。本轮帧数据在插桩开着的条件下采集。
 
@@ -115,7 +125,10 @@ AIR 身份运行时核对通过：`perf draw: timing on, frames over 6000 us are
 
 ### 7.1 roundb 那份内核出自哪个源码状态
 
-roundb 的内核是 `9a7a118a1545fba4…`、20,210,112 字节。`docs/progress/evidence/k90auto/kernel-12377-attr26-roundb/manifest.json` 的 `build.sources` 逐字记着「out/xnu12377 at e933479 with the thread dump printing the task's shared-region slide; the image links, the dSYM step of build-macos.sh fails on a missing intermediate」，`build.command` 是 `XNU26_SRC=out/xnu12377 xnu26/build-macos.sh -j10`，`build.host` 是 macOS with Xcode clang。同一份 manifest 的 `record_written_by_hand` 说明这条记录是手写的：`tools/k90auto/build-kernel.py` 在 kbuild 容器里对 xnu-8796 那棵树构建，记不了 macOS 上从 `out/xnu12377` 出的内核，而 `kernel.sha256` 是产物的实际哈希。
+roundb 的内核是 `9a7a118a1545fba4…`、20,210,112 字节。`docs/progress/evidence/k90auto/kernel-12377-attr26-roundb/manifest.json` 的 `build.sources` 逐字记着「out/xnu12377 at e933479 with the thread dump printing the task's shared-region slide; the image links, the dSYM step of build-macos.sh fails on a missing intermediate」，`build.command` 是 `XNU26_SRC=out/xnu12377 xnu26/build-macos.sh -j10`，`build.host` 是 macOS with Xcode clang。
+
+- 同一份 manifest 的 `record_written_by_hand` 说明这条记录是手写的：`tools/k90auto/build-kernel.py` 在 kbuild 容器里对 xnu-8796 那棵树构建，记不了 macOS 上从 `out/xnu12377` 出的内核，而 `kernel.sha256` 是产物的实际哈希。
+
 
 所以 roundb 的内核是**提交 `e933479`（2026-10-28 07:21:54）加当时工作树里未提交的改动**，其中已知的一项是 thread dump 打 slide 那行，后来由 `690e36a` 提交。构建时刻只能夹在区间里：`e933479` 提交于 07:21:54，freeze 那轮的 manifest（同一个内核 sha）写于 09:44:16，roundb 的载荷 `out/handoff-12377-attr26-roundb.bin` 打包于 10:17:17、跑轮在 10:27，所以构建发生在 07:21:54 到 09:44:16 之间。
 
@@ -172,7 +185,13 @@ bad access 打印那条路径（`sleh.c` 的 region 名与四个值，加 `bsd/d
 这条执行过的路径有没有可能把重启循环变成冻结，日志给了三条否证。
 
 1. **最后一次 dump 完整收尾。** `s020.log` 里最后一次请求在第 18297 行（`periodic dump 15 of 15, asked for backboardd pid 38`），随后 18298 到 18314 是它的完整输出：`tl: td pid 38 threads 13`、`tl: td 38 slide 0x105a4000`、`tl: td 38 exec 0x100c78000 backboardd`、13 行线程、`tl: td pid 38 printed 13`。日志里没有半截的 dump。
-2. **请求方没有阻塞也没有被拒。** dump 由 `framewatch` 请求，两条来源都在日志里走到头：周期模式（`framewatch.m:159-191`，每 20 秒一次、共 15 次、2 个名字）打到 `periodic dump 15 of 15`；停滞模式那个实例的启动行是 `watching kern.redwood.frames from 3611, still after 2 s, at most 6 dumps`，它在 `stalled == still_seconds` 那一刻触发一次 `dump_all`（`framewatch.m:270-272`），产出第 17332 与 17355 行两条 `dump asked for`，此后 `stalled` 单调增长、`== 2` 的条件不再成立，只剩 `:275-276` 那句 `still no frames` 每秒一条，打到 297 s。`dump refused` 全轮 0 条。最后一次请求之后还有 159 行输出，其中 89 条是 `still no frames`。**dump 停止的原因是两个用户态预算：周期模式 15 次用完，停滞模式每次停滞只在跨过阈值那一秒触发一次。**
+2. **请求方没有阻塞也没有被拒。** dump 由 `framewatch` 请求，两条来源都在日志里走到头：周期模式（`framewatch.m:159-191`，每 20 秒一次、共 15 次、2 个名字）打到 `periodic dump 15 of 15`；
+
+- 停滞模式那个实例的启动行是 `watching kern.redwood.frames from 3611, still after 2 s, at most 6 dumps`，它在 `stalled == still_seconds` 那一刻触发一次 `dump_all`（`framewatch.m:270-272`），
+- 产出第 17332 与 17355 行两条 `dump asked for`，此后 `stalled` 单调增长、`== 2` 的条件不再成立，只剩 `:275-276` 那句 `still no frames` 每秒一条，
+- 打到 297 s。`dump refused` 全轮 0 条。最后一次请求之后还有 159 行输出，其中 89 条是 `still no frames`。**dump 停止的原因是两个用户态预算：周期模式 15 次用完，
+- 停滞模式每次停滞只在跨过阈值那一秒触发一次。**
+
 3. **那次 sysctl 的加锁语义不构成全局阻塞。** `CTLFLAG_LOCKED` 在 `bsd/sys/sysctl.h:166` 的定义是「node will handle locking itself」，处理器不持内核锁运行。`redwood_task_exec_image()` 放在 dump 之前调用，原因是 `fill_procregioninfo*` 自己取 `task_lock`，而 osfmk 那一半在线程遍历期间持着它（`bsd/dev/redwood_threads.c:168-169` 的注释）。
 
 据此：**本轮数据里没有任何一条能把形态翻转归到内核差异上。** 零故障使 bad access 那条路径的新代码完全没执行；执行过的那条路径有界（64 次探测）、跑完了、输出齐全、请求方存活；两次构建之间除那三个文件没有第四个源文件被写过，所以「唯一变量是打印代码」这个前提成立。7.4 那两处不确定性来源在两份内核里取值相同（版本串逐字一致），也不构成本轮的差异。
