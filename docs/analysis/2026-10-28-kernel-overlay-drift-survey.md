@@ -40,7 +40,7 @@
 | `osfmk/kern/redwood_threads.c` | 只在树上 | 存在 | 对账前不存在 | 3,317 B，mtime 2026-10-28 11:45:12 |
 | `bsd/dev/redwood_threads.c` | 只在树上 | 存在 | 对账前不存在 | 6,009 B，mtime 2026-10-28 11:47:55 |
 
-`redwood_net.c` 那一条对读数的影响是零：round C、D、E 的 cmdline 里没有 `net_wireless`，`PE_parse_boot_argn` 失败即 return。`mhi_pcie.c` 那一条改了启动行为，对平那一轮之后的第一轮要把 PCIe step 6 的输出标成预期变更。`annibale_cpufreq.c` 那一条全是注释，`ff_s` 与热读数在它拷进树之后仍可与 C、D、E 直接比。
+`redwood_net.c` 那一条对读数的影响是零：round C、D、E 的 cmdline 里没有 `net_wireless`，`PE_parse_boot_argn` 失败即 return。`mhi_pcie.c` 那一条改了启动行为，两侧同步那一轮之后的第一轮要把 PCIe step 6 的输出标成预期变更。`annibale_cpufreq.c` 那一条全是注释，`ff_s` 与热读数在它拷进树之后仍可与 C、D、E 直接比。
 
 两个孤儿文件与 `bsd/dev/redwood_input.c`（+7 行）、`bsd/sys/redwood_input.h`（+13 行）一起随 `2142061` 落进仓库。两处 diff 都是纯增加，树上那份是 overlay 那份的严格超集，所以覆盖没有丢东西。
 
@@ -131,6 +131,20 @@ git -C out/xnu12377 show ac9718fb1af618d5ce8678d0dc6e8a58f252216f:bsd/conf/files
 第二步在一个临时仓库里 `git apply --check -v`，两个 patch 都返回 0。
 
 落地之后核了四件事：两个 patch 对 BASE 的纯净副本 `git apply --check` 退出 0；四个文件与树上那份 `cmp` 逐位相同；overlay 里 `redwood_frames_shown` 的命中数从 0/0 变成 2/1；隐私扫描（`/Users/`、`/Volumes/`、`fan@`）零命中。构建树全程没有被写过。
+
+### 4.6 一个值的形状不符合手里那一支的编码规则时，先查它属于哪一支
+
+实例是 EXC_GUARD 的 `flavor=0x43`。文件描述符那一支的 flavor 是 `1u << 0` 到 `1u << 6`（`out/xnu12377/bsd/sys/guarded.h:104-110`），按它去套会把 `0x43` 读成三个 bit 的组合，进而判成字段归属不明。它实际属于 mach port 那一支：`out/xnu12377/osfmk/mach/port.h:637` 是 `kGUARD_EXC_DESCRIPTOR_VIOLATION = 67`，单个枚举值，而 `:616-618` 的注释正好解释了那些稀疏取值——「Note: these had been designed as bitfields, hence the weird spaced values, but are truly an enum, please add new values in the "holes".」
+
+字段布局有两处树内来源：`out/xnu12377/osfmk/kern/exc_guard.h:74` 的注释表画出 `[63:61] GUARD_TYPE_MACH_PORT | [60:32] flavor | [31:0] target`，`:187-192` 是三个编码宏（type 移 61、flavor 移 32 并取 `0x1fffffff`、target 取低 32 位），`:58-63` 是三个解码宏。类型表在 `:67` 到 `:183`，八个值从 `GUARD_TYPE_NONE 0x0` 到 `GUARD_TYPE_FROZEN_SWAPIN 0x7`。
+
+规则：**一个值的形状看起来不符合某一支的编码规则时，先查它属于哪一支，不要按手里那一支的规则去套。**
+
+### 4.7 mach IPC 与 guard 异常这一类枚举，先搜构建树的 doc 目录
+
+`out/xnu12377/doc/mach_ipc/` 下有四份文档：`guard_exceptions.md`（21,908 字节）、`ipc_security_concepts.md`、`kmsg.md`、`port_types.md`。`guard_exceptions.md` 按码值逐条列出 ReportCrash 名字、Target meaning 与 Payload meaning。`:283-291` 那一节的标题就是 `### kGUARD_EXC_DESCRIPTOR_VIOLATION 0x00000043`，与日志里的 `flavor=0x43` 逐字对得上，并且给出 Target meaning 是「The IPC space policy」（所以 `target=0x800407` 装的是 IPC space policy，不是端口名）、Payload meaning 是 `(violation_type << 56) | aux`（按它解 `subcode=0x300000000000011` 得 `violation_type = 0x03`、`aux = 0x11`，即 17）。
+
+规则：**遇到这一类枚举先搜构建树的 `doc/`。** 它是树内来源，而此前查这一类值一直在树外找（公开文档、记忆里的枚举形状），树外找会得到形状相近而取值不同的另一支。
 
 ## 5. 两个结论与它们的查法
 

@@ -79,7 +79,7 @@ round F 的记录在它收尾之后再补这一层，方法与上面相同。
 
 **清单形式**：两份，都用 JSON。`tools/k90auto/staging-manifest.json` 记 `BASE/root` 下每个条目的镜像路径、kind、mode，文件另记 sha256 与 size，符号链接记 target，头部记生成时所对的 `BASE_ROOT_SHA256` 与生成命令；校验值用 sha256，因为 §4 那一步只比 size 与 mode，同尺寸的替换查不出来。pack 记录增一个 `"payload_programs"` 字段，记 `EXTRA_PROGRAMS` 的每个路径与其 sha256，放在已有的 `"probe"` 旁边。
 
-**断言位置**：树清单的断言加在 `:425` 之后、`:449` 之前，因为 `:425` 是这棵树进入打包的唯一位置，而 `:449-506` 都是有目的地改 `dest`。报错按路径分类（缺失、多余、mode、sha256）并写出重新生成清单的命令。放行开关 `ALLOW_STAGING_CHANGE=1`，与已有的 `ALLOW_DIRTY`（`:190`）、`ALLOW_DRIVER_CHANGE`（`:215`）同形。`payload_programs` 只记录不断言；另建议打包开头打一行上一轮配方与本轮配方的差异，比对 `PROBE`、`PAYLOAD_PROGRAMS`、`JOBS_SOURCE`、`EXTRA_JOBS`、`JOBS_DROP`、`MSAA`、`REDWOOD_DIAG`、`GPU_SPEED`，读上一份 pack 记录。打印而不断言，因为一轮合法地会改这些，打印的作用是让漏设的环境变量在设备轮之前可见。
+**断言位置**：树清单的断言加在 `:425` 之后、`:449` 之前，因为 `:425` 是这棵树进入打包的唯一位置，而 `:449-506` 都是有目的地改 `dest`。报错按路径分类（缺失、多余、mode、sha256）并写出重新生成清单的命令。放行开关 `ALLOW_STAGING_CHANGE=1`，与已有的 `ALLOW_DRIVER_CHANGE`（`:213`）同形。工作树那一侧现在没有开关可对：`ALLOW_DIRTY` 与它原来那个拦截分支都删掉了，未提交的改动只打印一行并写进 pack 记录的 `worktree_status`（`:365-367`、`:636`），所以清单断言是这一处唯一的拦截，`ALLOW_STAGING_CHANGE=1` 是它唯一的放行口。`payload_programs` 只记录不断言；另建议打包开头打一行上一轮配方与本轮配方的差异，比对 `PROBE`、`PAYLOAD_PROGRAMS`、`JOBS_SOURCE`、`EXTRA_JOBS`、`JOBS_DROP`、`MSAA`、`REDWOOD_DIAG`、`GPU_SPEED`，读上一份 pack 记录。打印而不断言，因为一轮合法地会改这些，打印的作用是让漏设的环境变量在设备轮之前可见。
 
 **清单由谁何时更新**：新脚本 `tools/k90auto/staging-manifest.py`，`--check` 与 `--write` 两个模式，形状与 `tools/unwrap_md.py` 一致。改了 staging 树的人在同一个提交里跑 `--write`，打包时 `--check` 那条断言强制它。清单是顶层仓库的跟踪文件，树在 git 忽略的 `out/` 下，所以清单是这棵树唯一被记录的状态。`payload_programs` 由 `package.py` 自己写，不需要维护。
 
@@ -87,7 +87,7 @@ round F 的记录在它收尾之后再补这一层，方法与上面相同。
 
 **与 `image-diff.py` 的分工**：清单是输入闸，在打包之前，比对树与仓库里记录的应有状态，回答「输入是不是我们记录的那棵树」；`image-diff.py` 是输出闸，在打包之后，比对新镜像与上一轮实际跑过的镜像，回答「这一轮的载荷改了什么」。两者在一次手工改树上都会报，差别在时机与所指。这次事故只有 `image-diff.py` 那一侧能看见，因为 `framewatch` 从来不在这棵树里，树与它自己的清单完全相符；配方缺口由 `payload_programs` 那一项补。
 
-落地时机建议排在 round F 收尾之后，与打包闸的另一处盲区（`package.py:221-233` 的 `dirty_sources()` 只看 `common/ugit status --short` 与顶层仓库限定 `-- tools/k90auto`，所以 `xnu/files/` 下的改动对闸不可见）合成一笔，因为两处都是给 `package.py` 加断言，一次改动一次验证。
+落地时机建议排在修复轮收尾之后，与打包记录的另一处缺口合成一笔，因为两处都是给 `package.py` 加断言或加记录字段，一次改动一次验证。那一处是：`package.py:219` 的 `dirty_sources()` 只看 `common/ugit status --short` 与顶层仓库限定 `-- tools/k90auto`，所以 `xnu/files/` 下的改动不出现在它的返回值里。这一处我原来写成「对闸不可见」，而工作树检查现在已经不拦截打包（`:365-367` 只打印一行，`:636` 把清单写进 pack 记录的 `worktree_status`），所以缺口的性质变了：从「一次打包会带着未提交的内核 overlay 改动过去而不被拦下」变成「`worktree_status` 少列这些改动，事后查不到那一轮的内核侧工作树状态」。补法不变：给 `dirty_sources()` 加 `git -C hackios-xnu-kernel status --short -- xnu/files`，再加一次按 `files.skip` 排除之后与 `$XNU26_SRC` 的 `cmp` 时效性扫描；不查 `out/xnu12377` 的 status，它的未跟踪条目是设计内的。
 
 ## 7. 未验证
 
