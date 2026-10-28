@@ -37,7 +37,7 @@
 - `src/camera_device.c`：FigCaptureDevice + 两条 FigCaptureStream（后=wide、前=front），格式名照抄 iPhone X 的 `CMCapture D22/AVCaptureSession.plist` 让 AVCaptureDevice 格式/会话预设能解析；帧经 `VideoOutputHandlers` 的 PixelBufferHandler 进图；StillImageCaptureNow 出全幅一帧；wide 有 VCM：`af_frame()` 点按对焦。未实现的属性打日志放行。
 - `src/camera_isp.c/.h`：软 ISP——黑电平、lens shading 网格、AWB（grey-world）+AE 增益、CCM、sRGB gamma；预览最近邻抽样、拍照双线性 demosaic；CCM/shading 可吃 sensor 自带 tuning（`isp_load_tuning()`）。无降噪、无视频稳像（明确拒绝给硬件没有的东西）。
 - 测试/回归：`camera_test.c`（raw/cycle/noise 三模式，帧率、四摄轮切、黑电平噪声表征）、`camera_avtest.m`（AVFoundation 枚举）、`rc.jobs.camera`（开 Camera.app 预览 40s + 快门/切前摄/变焦/点按对焦，靠 loader 假 `/arm-io/isp` 节点出图标）、`rc.jobs.photo`（关 Live Photo 后连按两次快门）。
-- **能做到什么程度（文档口径）**：四摄取流、预览、静止拍照、AF、变焦、手电、噪声测量都写成了真机流程；没有录像/视频稳像/RAW 域多帧。结论：annibale 移植时用户态这一半≈免费，**改动全在 kernel**。
+- **能做到什么程度（文档口径）**：四摄取流、预览、静止拍照、AF、变焦、手电、噪声测量都写成了真机流程；没有录像/视频稳像/RAW 域多帧。结论：annibale 移植时用户态这一半几乎无额外代价，**改动全在 kernel**。
 
 ## 3. annibale 侧资源
 

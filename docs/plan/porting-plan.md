@@ -45,7 +45,7 @@
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| ~~SM8750 无现成 UEFI~~ → Mu-Silicium main 已含 SM8750（Pakala），姊妹机型 EFI 入口已通（本机待移植确认） | M2 风险中低 | annibale pkg 移植 + XBL 协议地址随 HyperOS 漂移逐版重扫 |
+| ~~SM8750 无现成 UEFI~~ → Mu-Silicium main 已含 SM8750（Pakala），姊妹机型 EFI 入口已通（本机待移植确认） | M2 风险中低 | annibale pkg 移植 + XBL 协议地址随 HyperOS 变化逐版重扫 |
 | Gunyah 占 EL2 | UEFI 运行层级未知 | UEFI 起来后实测 |
 | OrbStack VM 内存默认偏小 | QEMU 起不来（需 ≥3GB） | 调 OrbStack 配置 / `QEMU_RAM_GB` |
 | VirtioFS 慢 | fetch/解包/构建耗时 | 必要时挪进容器卷 |

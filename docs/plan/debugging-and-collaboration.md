@@ -108,6 +108,8 @@
 
 内核镜像不指认产出它的源码提交：版本串里的 `aec10a9` 是移植线基提交，roundb 与 round C 两份内核的版本串逐字相同（display 用 `strings -a` 加 `grep -F` 对 `handoff-12377-attr26-roundb.bin` 核过），拿两个内核镜像比版本串永远判不出源码差异，内核来历只能靠外部记录——roundb 那份靠 manifest 的 `build.sources` 逐字记录才定到 `e933479` 加当时未提交的改动。原因是生成的 `version.c` 嵌构建时间、构建者登录名与 `git describe --dirty`（规则在 `makedefs/MakeInc.kernel:285`），增量构建复用它（`version.o` 的 mtime 是 2026-10-26 12:50:44），只有干净重建才会变字节。另一处不确定性来源：镜像里嵌源文件绝对路径（`__FILE__` 带进来的），换检出目录字节就变，这同时是发布前的一道检查项。全树 `__DATE__`／`__TIME__` 零命中。未实测的是同源两次构建，以及那 15 个与改动无关却重编的目标文件是否逐字节稳定（round C 那次构建写了 16 个目标文件，task-1 那次 2 个）。
 
+内核源码的可复现身份只有构建树的工作状态本身（10-28，display 双向不一致普查后 lead 定，取代同日早先的「两组」口径）：一个构建出来的内核，只能由 `out/xnu12377` 的工作状态定——HEAD（`5c9f563`）加它的脏已跟踪文件（当时 `osfmk/conf/files` 是 ` M`、`bsd/conf/files` 干净）加它的未跟踪文件内容（120 个 `??` 条目，含 `BUILD/`、整套移植驱动 `bsd/dev/adreno8*.c`、`iokit/Kernel/MiniIOMobileFramebuffer.cpp`、`osfmk/kern/redwood_threads.c`）。仓库那一侧两个方向都过期：正向，`xnu26/apply.sh` 单向铺出构建树（Apple tag `xnu-12377.121.6`、BASE `ac9718fb…` → 分支 `redwood26` → `BUILD/` 写进 `.git/info/exclude` → 按 `xnu26/patches/series` 73 件逐件 `git apply` → 把 `xnu/files/` 的 157 个文件用 `cp -P -p` 拷进去 → 再覆盖 `xnu26/files/.` 的 2 个文件），开头有守卫（目录已存在即退出），树铺出来之后没有任何脚本再同步它；反向，`xnu26/export.sh` 按 `git diff BASE` 重新生成 `xnu26/patches/` 与 `xnu26/files/`，是唯一写仓库那一侧的脚本，从不写 `xnu/files/`（按脚本注释是手工维护、与 xnu-8796 线共用），且自 10-27 15:18 以后没跑过。所以报 `5c9f563` 不能确定 framebuffer 驱动的内容，报 `5c9f563` 加 `c2ccc7c` 也不能——`redwood_frames_shown` 的定义与 `SYSCTL_INT(_kern_redwood, OID_AUTO, frames, CTLFLAG_RD, &redwood_frames_shown, 0, ...)` 注册只在构建树的 `bsd/dev/redwood_input.c` 与 `bsd/sys/redwood_input.h` 里（比 overlay 分别新 7 行与 13 行），overlay 那两份里这个符号出现 0 次。这条比版本串那条更容易被忽略：它不表现为一个可疑的读数，而表现为一个看起来完整的提交号。演变记录：「两组」口径（`out/xnu12377` 提交加脏已跟踪文件，加外层仓 `xnu/files/` 的提交与拷贝时刻）当天先立后退——它的前提是 `xnu/files/` 为权威副本，双向不一致普查（5 处不一致加 1 个孤儿文件，正反两个方向都有过期）否定这个前提。
+
 比较初始化顺序要追踪资源申请、框架回调和首次启动的完整调用关系。某个启动函数没有配置时钟或地址映射，可能由更早的公共路径完成。先确定差异能解释哪个失败阶段，再选择修改；不能仅因涉及安全固件就提前调用 SCM。本次调用关系核对未支持这种顺序调整，调查继续检查 stream 与 context 分配。
 
 同一驱动保留多种运行模式，先确认本机产品配置实际选择哪个入口。相同消息名在不同模式下可能有不同前置条件；本次普通 HFI 与硬件调度模式的 START 顺序和内存请求处理不同。局部公共消息通过后，仍按选定模式检查完整握手。等待最终应答期间若收到对方的资源请求，必须处理或明确失败，单向发送后等待 ACK 的模型可能不完整。
@@ -156,11 +158,15 @@ GPU 命令不继续执行，故障寄存器又为零，继续围绕「有没有�
 
 日志快照按时间或数字编号选择，字符排序可能把较早的文件排到最后；同时保留最后一次请求与最后一个非空快照，分别解释传输状态和设备进度。
 
+`sort -u` 之后的唯一行序是文本序，凡带时间语义的序列必须按锚点（`tl:` 微秒行、墙钟行）重建时间轴再读，排序与去重产生的任何顺序同理。2026-10-28 的实例：一次误读把 57→18 的线程收敛读成 18→57 增长（后在 task-19 文档更正）。
+
 协议状态也可能依赖诊断缓冲。状态返回为空但日志仍增长，先检查格式化空间和缓冲生命周期；本次 loader 的状态字符串曾因日志填满而生成失败。修复状态输出后还要检查其他查询是否复用同一路径，并用缓冲接近容量或填满的情形验收。`getvar result` 的修复只覆盖该入口，`getvar screen` 的同类依赖继续单独处理。
 
 日志里的完成标记只覆盖它所描述的动作。一次定时器 IRQ 进入和退出，还需要持续中断验收；一次 framebuffer 初始化，还需要帧提交和面板显示验收。
 
 内核的 `memorystatus_perform_idle_demotion() timed out stuck process N [name]` 不能当成「某进程出问题」的判据。它的含义是「这个进程跨过两个 aging 期限仍未 idle」，服务端空闲时本来就会走到这里。2026-10-28 统计了 58 个证据目录，被判卡的只有五个名字（`AudioConverterService`、`pkd`、`iconservicesagent`、`extensionkitservice`、`installd`），而当时最干净的一轮（11,015 帧、无停帧）这五个里出现了三个。用这一行判断进程是否真卡住，会把正常态误判成故障；要用效果判断，例如记录有没有写出来、容器有没有建立、报错计数有没有归零。判据没坏这件事也由同一份统计支持：若判据随手标卡，`lsd`、`SpringBoard` 这类进程也会出现。
+
+对账产物与构建输入时，判据是给每个镜像条目记「进入通道」（base apfs 自带／staging 树／PROBE 自建／PAYLOAD_PROGRAMS／EXTRA_JOBS），无通道的才算真丢失风险，并且配方本身要落进一个可执行记录。2026-10-28 的实例（round F 第一次跑轮中止）：没有任何文件丢失，丢的是配方记忆——roundb 的完整环境变量没有落进任何可执行记录，device 从 pack 记录逐字段反推配方时漏了两个（`PAYLOAD_PROGRAMS` 与 `JOBS_DROP`）；`framewatch` 历来经 `PAYLOAD_PROGRAMS` 进镜像（`package.py:53-56` 定义、`:452-454` 断言存在并 copy2 进 dest/bin、`:522-526` 计入 added 集合），`lsprobe` 历来经 `PROBE=1` 自建（`:64`／`:402`／`:495`），base 镜像与 staging 的 `/bin` 本来都不含这两个文件（base 镜像 `33ed5fc9` 的 `/bin` 34 条、staging 与 base 集合逐名一致、`package.py:422-425` 的 dest 树每次打包从 `BASE/root` 重新 copytree）。查法：pack 记录 `changes` 里每个 `null→sha` 的 added 条目必须归到一个通道，归不到的就是配方缺口；两层配方对账与全条目 diff 在[运行协议](k90auto-run-protocol.md)。早先的判据「这个文件有没有第二条来路」建立在「`framewatch` 来路只有 staging」的误判上，随根因撤销（device `3278bf9`）。
 
 ## 5. 用状态和资源归属理解设备行为
 
@@ -229,6 +235,10 @@ RAM 系统盘可以在同一驻留 loader 生命周期中复用。整机重启�
 实验重启意外进入 Android，先查询 LK 的槽位成功、可启动和重试计数。连续未标记成功的实验启动可能耗尽重试次数并回退到受保护槽；已有 loader 镜像仍在，可经 ADB／LK 恢复入口，具体步骤见操作手册。不能仅凭进入 Android 推断实验分区已被改写。
 
 软件恢复不可用再请求用户按键。一次说明完整动作、预期画面和后续操作。保留用户已尝试的动作及结果，并关联当时环境：本次重插 USB 未恢复旧 loader 停滞，后来 Android 桌面出现但主机未枚举设备，重插后 ADB 恢复。先前恢复动作的结果适用于对应状态；用户报告新画面后，重新检查枚举、协议和身份，再选择恢复动作。
+
+设备轮中途失联时，先抢拉日志环，再发 stop（lead 2026-10-28 定的常设规程，修复轮开始前生效）：判据是环随时可能被新输出覆盖、也可能随 stop 丢失，抢拉动作排在任何 stop 命令之前。round F 的第二次异常是它的验证：harness 作业无声死亡、采样止于 238 s，device 先手动抢拉了 manual-s012-deepstatic.log 再做 teardown，环跨度因此覆盖了近全轮。
+
+跑轮开始后每 60 s 核一次 `commands.jsonl` 的 mtime 推进（lead 2026-10-28 定的常设规程，修复轮开始前生效）：mtime 停滞即视为失联，走上一条的恢复规程（先抢拉环、再 stop、teardown 到 fresh idle 三项验证）。round F 的 harness 作业无声死亡时没有这个核查，死亡要到收尾才会被发现。
 
 ## 6. 存储安全取决于所有权和时间
 
