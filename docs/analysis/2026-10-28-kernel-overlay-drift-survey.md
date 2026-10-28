@@ -134,7 +134,7 @@ git -C out/xnu12377 show ac9718fb1af618d5ce8678d0dc6e8a58f252216f:bsd/conf/files
 
 ### 4.6 一个值的形状不符合手里那一支的编码规则时，先查它属于哪一支
 
-实例是 EXC_GUARD 的 `flavor=0x43`。文件描述符那一支的 flavor 是 `1u << 0` 到 `1u << 6`（`out/xnu12377/bsd/sys/guarded.h:104-110`），按它去套会把 `0x43` 读成三个 bit 的组合，进而判成字段归属不明。它实际属于 mach port 那一支：`out/xnu12377/osfmk/mach/port.h:637` 是 `kGUARD_EXC_DESCRIPTOR_VIOLATION = 67`，单个枚举值，而 `:616-618` 的注释正好解释了那些稀疏取值——「Note: these had been designed as bitfields, hence the weird spaced values, but are truly an enum, please add new values in the 『holes』.」
+实例是 EXC_GUARD 的 `flavor=0x43`。文件描述符那一支的 flavor 是 `1u << 0` 到 `1u << 6`（`out/xnu12377/bsd/sys/guarded.h:104-110`），按它去套会把 `0x43` 读成三个 bit 的组合，进而判成字段归属不明。它实际属于 mach port 那一支：`out/xnu12377/osfmk/mach/port.h:637` 是 `kGUARD_EXC_DESCRIPTOR_VIOLATION = 67`，单个枚举值，而 `:616-618` 的注释正好解释了那些稀疏取值——原文是 Note: these had been designed as bitfields, hence the weird spaced values, but are truly an enum, please add new values in the `holes`.
 
 字段布局有两处树内来源：`out/xnu12377/osfmk/kern/exc_guard.h:74` 的注释表画出 `[63:61] GUARD_TYPE_MACH_PORT | [60:32] flavor | [31:0] target`，`:187-192` 是三个编码宏（type 移 61、flavor 移 32 并取 `0x1fffffff`、target 取低 32 位），`:58-63` 是三个解码宏。类型表在 `:67` 到 `:183`，八个值从 `GUARD_TYPE_NONE 0x0` 到 `GUARD_TYPE_FROZEN_SWAPIN 0x7`。
 

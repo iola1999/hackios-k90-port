@@ -56,6 +56,9 @@
 ## 4. 设备状态备忘
 
 slot _a active（boot_a=auto.img 8,034,304 B 旧版），静默循环；`--set-active=b` 随时可回用户 Android（boot_b/userdata 头未动）。c.img 与本轮所有镜像在 hackios-xnu-kernel/ 根目录（gitignore）。
+
+## 5. 后续任务落地（task-8 至 task-22，10-23 同一轮内完成）
+
 19. **mesa iOS 交叉构建可复现（task-9，userland b9baeac + 父仓 983f7ba）**：在重建后的 hackios-dev:latest 容器内 `VERSION=26.2.5 SHA256=794b… REBASE=26 AIR=1 tools/mk-mesa.sh` 端到端 rc=0，产出 libOSMesa.8.dylib（18 659 056 B，1300 个 gl* 导出）、libredwoodair.dylib（13 063 080 B，31 个 rwa_*）、air_run，导出符号面与 host darwin 构建逐名一致。
     - mk-mesa.sh 六处 26.x 修正（vdpau/xa 版本开关、REBASE=26 容忍旧补丁环失败、ld64/xnu-clang++ 自建符号链接、install_name_tool 走 $THEOS、nm→llvm-nm、gl.xml 路径回退）。
     - Dockerfile 固化：iOS 工具链钉版本（theos 304e0799 + ld64/install_name_tool/SDKSettings.plist 三个 sha256 构建期校验，不一致即失败）、amd64 multiarch 层（ports 无 amd64 索引与 zlib1g Multi-Arch:same 互锁的绕法进注释）、apt 依赖补齐（meson 故意不进 apt，走 mk-mesa venv 钉 1.12.1）。
@@ -84,7 +87,7 @@ slot _a active（boot_a=auto.img 8,034,304 B 旧版），静默循环；`--set-a
     - discardcheck.py NIR 判定改读 air2nir 默认 nir_print_shader（@demote 判据不变，2/2 rc=0），ir3 段无 $IR3 打 SKIPPED 不拦停（25.0.7 老树仍可用），--emit/--check 设备契约未动；同病 fbfetchcheck/vattrcheck/corpus --ir3 未动（账 §10.3）。
     - 设备轮注意（§10.3）：26.x a8xx 发原生 ir3_DEMOTE 而非 a6xx 的 DEMOTE→KILL，旧「kill for both kinds」结论仅 a6xx 成立，指令形状归设备实测裁决。
 24. **§10.3 三家 harness 同款降级（optional 项，userland 68e1e7f + 报告两处）**：fbfetchcheck/vattrcheck 的 ir3 半（isamm 指令行、VFD fetch 表）在 $IR3 缺失时打 SKIPPED 计入通过、preflight 只留 AIR2NIR，NIR/interface 可判半原样保留；corpus.py --ir3 缺编译器时去列停 translate + stderr 一行；$IR3 存在（25.0.7 老树 bisect）原路径一字未动；check.sh 对三家只取退出码，26.x host 上 CI 优雅降级。实测 fbfetch 7/7、vattr 16/16、corpus rc=0（IR3=/nonexistent）。
-25. **AGENTS.md 新立代码行数约定 + 存量审计开工（task-15/16）**：用户指令——代码文件 ≤1000 行、按层/职责合理拆分（私有声明走 *_private.h），无法拆分需文件头写理由；存量不强制回溯、新文件与大改文件必须遵守。
+25. **AGENTS.md 新立代码行数约定 + 存量审计开工（task-15/16）**：用户指令——代码文件 ≤1200 行、按层/职责合理拆分（私有声明走 *_private.h），无法拆分需文件头写理由；存量不强制回溯、新文件与大改文件必须遵守。
     - AGENTS.md 自身同时 unwrap 合规。
     - 摸底扫描：内核侧 git 跟踪文件 >1000 行 31 个（redwood_focaltech_fw.h 7288 生成表、redwood_wifi.c 4397、redwood_camera.c 4269、loader.c 4174、redwood_adreno.c 4129、redwood_adsp.c 3244、annibale_haptic.c 815 新文件越线 15 行等，apfs/libdeflate/hostinc 属 vendored）；用户态侧 30+（metal_drv_test.m 7737、air_metal.c 6978、redwoodmetal.m 6333、eagl.c 4205、air_to_nir.c 4086 等）。
     - 派生只读审计 task-15（drivers→docs/analysis/linecount-audit-2026-10.md 内核侧）与 task-16（mesa→姊妹文档 linecount-audit-userland-2026-10.md），审计表=行数/性质/层缝/设备轮排期风险/时机（设备轮前零风险面才可动，拆分任务按表另立）。

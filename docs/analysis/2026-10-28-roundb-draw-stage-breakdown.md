@@ -40,7 +40,7 @@ roundb 装车的 AIR 库带逐帧计时插桩，日志里有三帧按阶段拆�
 - 内核 `hackios-xnu-kernel/out/xnu12377/iokit/Kernel/MiniIOMobileFramebuffer.cpp:169-175` 的 `micros()` 是 `absolutetime_to_nanoseconds(absolute, &ns); return ns / 1000;`，返回值是微秒。`tl: s`（`:838`）与 `tl: v`（`:1017`）都经它。
 - 插桩 `draw-perf.patch` 的 `fd_perf_us()` 是 `return mach_absolute_time() / 1000;`，返回值是 tick 数除以 1000，没有过 `absolutetime_to_nanoseconds`。
 
-所以两侧之比等于每 tick 的纳秒数，也就是 `mach_timebase_info` 的 `numer / denom`。patch 的注释写着「The clock is mach_absolute_time over 1000, the one the kernel's 『tl:』 lines use, so a line here lines up with tl: s, tl: Q and tl: v in the same log」，前半句对：钟确实是同一个。后半句错在单位：`ticks / 1000` 只有在时基是 1 GHz 时才等于微秒。
+所以两侧之比等于每 tick 的纳秒数，也就是 `mach_timebase_info` 的 `numer / denom`。patch 的注释原文是 The clock is mach_absolute_time over 1000, the one the kernel's `tl:` lines use, so a line here lines up with tl: s, tl: Q and tl: v in the same log，前半句对：钟确实是同一个。后半句错在单位：`ticks / 1000` 只有在时基是 1 GHz 时才等于微秒。
 
 ### 2.1 从时钟换算推出来
 
