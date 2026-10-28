@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnablePressuredExit</key>
+	<false/>
+	<key>EnableTransactions</key>
+	<false/>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>com.apple.PosterBoard</string>
+	<key>MachServices</key>
+	<dict>
+		<key>com.apple.posterboardservices.services</key>
+		<true/>
+	</dict>
+	<key>POSIXSpawnType</key>
+	<string>App</string>
+	<key>ProcessType</key>
+	<string>App</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Applications/PosterBoard.app/PosterBoard</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/dev/console</string>
+	<key>StandardOutPath</key>
+	<string>/dev/console</string>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>UserName</key>
+	<string>mobile</string>
+</dict>
+</plist>

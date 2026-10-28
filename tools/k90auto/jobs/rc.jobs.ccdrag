@@ -1,0 +1,5 @@
+# Diagnostic script: hold the Control Center half pulled down, so a screenshot lands mid-drag.
+# run-auto.py is given 1 s between screenshots for it (the acceptance script uses 3 s).
+# Unlock at 32 s; then three slow drags of 2.5 s each, held at the end for 6 s, with taps on the
+# media and connectivity modules between them.
+/redwood/bin/rwtouch wait 32 swipe 0.5 0.985 0.5 0.3 250 wait 26 drag 0.92 0.003 0.92 0.5 2500 6000 wait 8 tap 0.33 0.12 wait 12 tap 0.13 0.12 wait 12 drag 0.92 0.003 0.92 0.5 2500 6000 wait 8 drag 0.92 0.003 0.92 0.5 2500 6000 wait 10

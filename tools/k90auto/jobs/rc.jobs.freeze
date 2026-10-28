@@ -1,0 +1,19 @@
+# Freeze localisation: the round asks where SpringBoard and backboardd sit while the panel stops
+# changing, so the drags are not the subject here. Two framewatch runs:
+#
+#   one in stop mode with MAX_DUMPS 0, which only reports "still" and never takes a dump slot;
+#   one in periodic mode, 15 dumps 20 s apart, which covers 40 s to 340 s around the freeze at
+#   about 93 s.
+#
+# init waits for each line, so both watch lines go first.
+/redwood/bin/lsprobe 60 &
+/redwood/bin/lsprobe 300 &
+/redwood/bin/framewatch 5 0 backboardd SpringBoard &
+/redwood/bin/framewatch --every 20 --count 15 SpringBoard backboardd &
+/redwood/bin/rwtouch wait 90 swipe 0.5 0.985 0.5 0.3 250 wait 10 button home wait 50
+# framewatch has no start delay, and init starts each line when the previous one returns, so
+# the wait above is what puts this watcher at about 150 s. The threshold is 2 s and there are
+# six dumps: the round has a 3 s hole every 15 s from about 180 s, and a 5 s threshold never
+# fires inside a 3 s hole. Starting late keeps the boot's own frameless stretch from spending
+# the dumps on something that is not the hole.
+/redwood/bin/framewatch 2 6 backboardd SpringBoard

@@ -1,0 +1,14 @@
+# Touch diagnosis: five steps, one screenshot each, so that "the touch reaches the UI at all",
+# "the home screen ignores horizontal drags" and "only the unlock swipe is recognised" can be told
+# apart from the pictures instead of guessed from logs.
+#
+# init runs a job file line at a time and waits for each line, so the probe lines go first and each
+# step gets its own line: the gaps between them are what the screenshot timestamps line up with.
+/redwood/bin/lsprobe 60 &
+/redwood/bin/lsprobe 300 &
+/redwood/bin/rwtouch wait 90 swipe 0.5 0.985 0.5 0.3 250 wait 5
+/redwood/bin/rwtouch tap 0.15 0.34 wait 12
+/redwood/bin/rwtouch swipe 0.5 0.995 0.5 0.55 250 wait 6
+/redwood/bin/rwtouch swipe 0.9 0.5 0.1 0.5 400 wait 3
+/redwood/bin/rwtouch swipe 0.9 0.5 0.1 0.5 8000 wait 6
+/redwood/bin/rwtouch swipe 0.5 0.003 0.5 0.75 400 wait 6 swipe 0.5 0.75 0.5 0.003 400 wait 4

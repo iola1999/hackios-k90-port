@@ -1,0 +1,17 @@
+# Performance round: fps can only be credited inside the 0.25 s after a pointer event
+# (tools/k90auto/input_fps.py), so every drag here is 30 s long and aimed at a surface that
+# moves while the finger is down.
+#
+# Lines run one at a time and init waits for each, so the two framewatch lines go first: they
+# watch backboardd and SpringBoard for the whole round instead of only after the drags.
+/redwood/bin/lsprobe 60 &
+/redwood/bin/lsprobe 300 &
+/redwood/bin/framewatch 5 3 backboardd SpringBoard &
+/redwood/bin/rwtouch wait 60 swipe 0.5 0.985 0.5 0.3 250 wait 5
+/redwood/bin/rwtouch swipe 0.9 0.5 0.1 0.5 30000 wait 3 swipe 0.1 0.5 0.9 0.5 30000 wait 3
+/redwood/bin/rwtouch swipe 0.5 0.003 0.5 0.9 30000 wait 3 swipe 0.5 0.9 0.5 0.003 30000 wait 3
+/redwood/bin/rwtouch swipe 0.9 0.5 0.1 0.5 30000 wait 3 swipe 0.1 0.5 0.9 0.5 30000 wait 3
+/redwood/bin/rwtouch swipe 0.5 0.003 0.5 0.9 30000 wait 3 swipe 0.5 0.9 0.5 0.003 30000 wait 3
+/redwood/bin/rwtouch swipe 0.9 0.5 0.1 0.5 30000 wait 3 swipe 0.1 0.5 0.9 0.5 30000 wait 3
+/redwood/bin/rwtouch swipe 0.5 0.003 0.5 0.9 30000 wait 3 swipe 0.5 0.9 0.5 0.003 30000 wait 3
+/redwood/bin/rwtouch swipe 0.9 0.5 0.1 0.5 30000 wait 3 swipe 0.1 0.5 0.9 0.5 30000 wait 3

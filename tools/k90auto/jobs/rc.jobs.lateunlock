@@ -1,0 +1,14 @@
+# Commands run by the launchd job com.redwood.demo (see com.redwood.demo.plist).
+# Unattended display check: unlock at 32 s; from 120 s, eight rounds of Control Center open (6 s), home button,
+# a swipe up from the bottom edge, and a home screen page swipe there and back (6 s each), for host screenshots
+# of each state. The edge swipe is what closes the Control Center on a device without a home button: the K90
+# reports HomeButtonType 2, and the injected home press is a no-op there.
+/redwood/bin/rwtouch wait 90 swipe 0.5 0.985 0.5 0.3 250 wait 88
+/redwood/bin/rwtouch swipe 0.92 0.003 0.92 0.5 300 wait 6 button home wait 6 swipe 0.5 0.999 0.5 0.55 250 wait 1 swipe 0.85 0.55 0.15 0.55 250 wait 6 swipe 0.15 0.55 0.85 0.55 250 wait 6
+/redwood/bin/rwtouch swipe 0.92 0.003 0.92 0.5 300 wait 6 button home wait 6 swipe 0.5 0.999 0.5 0.55 250 wait 1 swipe 0.85 0.55 0.15 0.55 250 wait 6 swipe 0.15 0.55 0.85 0.55 250 wait 6
+/redwood/bin/rwtouch swipe 0.92 0.003 0.92 0.5 300 wait 6 button home wait 6 swipe 0.5 0.999 0.5 0.55 250 wait 1 swipe 0.85 0.55 0.15 0.55 250 wait 6 swipe 0.15 0.55 0.85 0.55 250 wait 6
+/redwood/bin/rwtouch swipe 0.92 0.003 0.92 0.5 300 wait 6 button home wait 6 swipe 0.5 0.999 0.5 0.55 250 wait 1 swipe 0.85 0.55 0.15 0.55 250 wait 6 swipe 0.15 0.55 0.85 0.55 250 wait 6
+/redwood/bin/rwtouch swipe 0.92 0.003 0.92 0.5 300 wait 6 button home wait 6 swipe 0.5 0.999 0.5 0.55 250 wait 1 swipe 0.85 0.55 0.15 0.55 250 wait 6 swipe 0.15 0.55 0.85 0.55 250 wait 6
+/redwood/bin/rwtouch swipe 0.92 0.003 0.92 0.5 300 wait 6 button home wait 6 swipe 0.5 0.999 0.5 0.55 250 wait 1 swipe 0.85 0.55 0.15 0.55 250 wait 6 swipe 0.15 0.55 0.85 0.55 250 wait 6
+/redwood/bin/rwtouch swipe 0.92 0.003 0.92 0.5 300 wait 6 button home wait 6 swipe 0.5 0.999 0.5 0.55 250 wait 1 swipe 0.85 0.55 0.15 0.55 250 wait 6 swipe 0.15 0.55 0.85 0.55 250 wait 6
+/redwood/bin/rwtouch swipe 0.92 0.003 0.92 0.5 300 wait 6 button home wait 6 swipe 0.5 0.999 0.5 0.55 250 wait 1 swipe 0.85 0.55 0.15 0.55 250 wait 6 swipe 0.15 0.55 0.85 0.55 250 wait 6

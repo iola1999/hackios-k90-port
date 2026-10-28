@@ -1,0 +1,13 @@
+# Builds a second home screen page, then stops. The acceptance script in rc.jobs.desktop swipes
+# between pages, and on a desktop with a single page that swipe only springs back, so this one
+# exists to answer a narrower question: does iOS create the page and draw the page dots?
+#
+# Unlock at 32 s. At 52 s hold the Photos icon for 700 ms, drag it to x=0.97 over 900 ms, hold
+# there 1200 ms so the paging view has time to create the page, then release. Coordinates come from
+# shot-04195 of kernel-12377-attr-bbm26 measured on the 480-wide preview: Photos sits at (290, 110),
+# normalised (0.604, 0.106).
+/redwood/bin/rwtouch wait 32 swipe 0.5 0.985 0.5 0.3 250 wait 20 drag 0.604 0.106 0.97 0.106 900 1200 700 wait 3
+# Second attempt at the edge, for a run where the first drag left the icon where it was: hold 700 ms,
+# drag to x=0.985 over 1800 ms, hold 700 ms. It assumes the icon is still on page 1; if the first
+# drag moved it to page 2, this drag grabs nothing and does nothing harmful.
+/redwood/bin/rwtouch wait 40 drag 0.604 0.106 0.985 0.106 700 1800 700 wait 3
