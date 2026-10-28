@@ -4,7 +4,24 @@
 
 ## 1. 设备当前状态
 
-原会话结束时设备仍以 `xnuloader` 枚举，但 `getvar`、`oem log`、`stage`、`reboot` 全部 60～90 秒无回包。本轮接手后由用户按键恢复到 LK，安装 v7 并通过 USB 验收；最近的 HFI 布局及 VRB／RAW131 实验仍自动复位；随后 ARC CX／MX 读取完成；完整时钟候选在 CX 写 3 后仍读回 0；随后已完成 CX／MX 最高合法 WRITE、阶段 5 的 GMU 650／HUB 200 MHz 配置及 START 后 GMU 500 MHz 配置检查；RAW131 发布后仍自动复位，同内核零 RAW 对照持续可读十秒，最高依赖票编码、四字 FEATURE_CTRL ACK、RAW 发送时序及本机 TPL1 配置已修订并分别实测，仍在首条 RAW 附近自动复位，AHB 五项控制已按本机 KGSL 配置为 `0x1b12` 并读回，首条 RAW 附近仍失联，最近确认 loader v7 `idle`。`6cb0fc4` 空 powerup 对照也未取得 CP ACK，最近确认 loader 新启动。`5e63bb5` 普通 HFI 已收到 START ACK，逐次访问记录最后到 SQE 启动写前打印，未发布 CP_INIT；`0b45e55` 已通过普通模式 SQE 启用前全部配置及 100 个健康周期，GBIF halt／ACK 为 `0x8/0x3`、RBBM 为 `0/0`；`c7a5661` 已将两项 halt 清零并读回，`f3fc4a1` 的普通 CB0 ACTLR 已严格读回 `0x303`，stall 对照仍失联；`b295f97` 实读 SQE 继承值为 0，写 3 对照仍未采到下一次读取，六项常开时钟中 CXO_AON 主机启用位为 0，`9cc044c` 的写入仍读回 0 并在阶段 5 停止，`b17112a` 已恢复只读基线；`be205eb` 已通过 SQE／AQE 共 35 页的预期 PA 和完整属性校验，仍最后到 SQE 写前打印，回退 Android 后已软件恢复 A 槽；`27372d1` 的早期 NS TLB 同步已返回 status 0，后续仍失联。`1782511` 已按主线取消普通模式首次 SQE 前的 HWCG 改写、保留继承值，仍最后采到 SQE 写前打印；`8b87aa9` 的实际 STR／DSB RAM 标记已实测，均未采到，最后仍为原写前日志；`b7230db` 已取得零值访问的 STR／DSB 三条标记、读回 0 和十秒健康结果，随后主动 USB reboot 恢复；写 1／3 后的启动处理与首次取指仍待定位。最近确认 v7 `idle`，现按[普通 HFI／直接 ring 诊断](2026-10-25-ordinary-ring-probe.md)继续核对取指前提；恢复耗时的测量边界见恢复记录第 31 节，详见[恢复记录](../progress/2026-10-25-gpu-resume-review.md)。
+原会话结束时设备仍以 `xnuloader` 枚举，但 `getvar`、`oem log`、`stage`、`reboot` 全部 60～90 秒无回包。本轮接手后由用户按键恢复到 LK，安装 v7 并通过 USB 验收。此后逐次实验的结果：
+
+- 最近的 HFI 布局及 VRB／RAW131 实验仍自动复位；随后 ARC CX／MX 读取完成；完整时钟候选在 CX 写 3 后仍读回 0。
+- 随后已完成 CX／MX 最高合法 WRITE、阶段 5 的 GMU 650／HUB 200 MHz 配置及 START 后 GMU 500 MHz 配置检查。
+- RAW131 发布后仍自动复位，同内核零 RAW 对照持续可读十秒。最高依赖票编码、四字 FEATURE_CTRL ACK、RAW 发送时序及本机 TPL1 配置已修订并分别实测，仍在首条 RAW 附近自动复位。
+- AHB 五项控制已按本机 KGSL 配置为 `0x1b12` 并读回，首条 RAW 附近仍失联，最近确认 loader v7 `idle`。
+- `6cb0fc4` 空 powerup 对照也未取得 CP ACK，最近确认 loader 新启动。
+- `5e63bb5` 普通 HFI 已收到 START ACK，逐次访问记录最后到 SQE 启动写前打印，未发布 CP_INIT。
+- `0b45e55` 已通过普通模式 SQE 启用前全部配置及 100 个健康周期，GBIF halt／ACK 为 `0x8/0x3`、RBBM 为 `0/0`；`c7a5661` 已将两项 halt 清零并读回。
+- `f3fc4a1` 的普通 CB0 ACTLR 已严格读回 `0x303`，stall 对照仍失联。
+- `b295f97` 实读 SQE 继承值为 0，写 3 对照仍未采到下一次读取，六项常开时钟中 CXO_AON 主机启用位为 0。
+- `9cc044c` 的写入仍读回 0 并在阶段 5 停止，`b17112a` 已恢复只读基线。
+- `be205eb` 已通过 SQE／AQE 共 35 页的预期 PA 和完整属性校验，仍最后到 SQE 写前打印，回退 Android 后已软件恢复 A 槽。
+- `27372d1` 的早期 NS TLB 同步已返回 status 0，后续仍失联。
+- `1782511` 已按主线取消普通模式首次 SQE 前的 HWCG 改写、保留继承值，仍最后采到 SQE 写前打印。
+- `8b87aa9` 的实际 STR／DSB RAM 标记已实测，均未采到，最后仍为原写前日志。
+- `b7230db` 已取得零值访问的 STR／DSB 三条标记、读回 0 和十秒健康结果，随后主动 USB reboot 恢复；写 1／3 后的启动处理与首次取指仍待定位。
+- 最近确认 v7 `idle`，现按[普通 HFI／直接 ring 诊断](2026-10-25-ordinary-ring-probe.md)继续核对取指前提。恢复耗时的测量边界见恢复记录第 31 节，详见[恢复记录](../progress/2026-10-25-gpu-resume-review.md)。
 
 进入 LK 后 `fastboot devices` 显示 LK 的目标设备，`product` 为 `annibale`。LK 里发 `reboot` 约 17 秒回到 loader（`product: xnuloader`）。
 
@@ -113,7 +130,20 @@ Metal 侧断在发现链第一步：`IOAcceleratorES` 默认不带 `MetalPluginN
 ## 7. 下一步执行顺序
 
 1. 重新确认 loader v7 的 build-id 和 `idle` 状态；3b、START、阶段 15／16 和后续自动复位结果见[恢复记录](../progress/2026-10-25-gpu-resume-review.md)。
-2. 本机运行设备树为 gen8_0_1、chip ID `0x44050001`。GMU revision 和 160 MHz 最低点已修正，fault stall、默认 CB0 提前配置及 GCC GEMNOC 对照仍在 RAW131 索引发布后复位；零 RAW 的 setup-only 对照已稳定运行 10 秒。HFI 队列布局与 VRB 已按实际驱动修正，真机仍复位；ARC CX、MX 读取响应均为 0，写后读回与请求 3 不符，当前票值语义仍需确认。`0eaa5e0` 主机电源请求和 `0813b2f` GMU／HUB 时钟已实现并通过主机检查与构建；阶段 5 在电源读回验证处停止，MX、PLL／RCG 未写入。ACTIVE TCS1 对照也读到 0 并停止；`09778fe` 最高合法 WRITE 诊断完成 CX10／MX9 请求；`98b40e3` 按 PLL 字段定义修订 L 校验，阶段 5 的 LOCK／RCG 配置通过。`51c09c1` 完整阶段 17 已确认 START 后 500 MHz 配置及阶段 15／16，通过全部 CP 配置后仍在 RAW131 发布后复位；同内核零 RAW 对照十秒持续可读。后续已修订依赖票高四位、FEATURE_CTRL 第四字 error 校验、producer 与通知间的暂停及本机 TPL1 bit20，分别实测后仍复位；五个功能 ACK 均为 data 0／error 0。全局 ucode 权限和 MEM_ALLOC 回包构造与实际模块一致。`5c99f63` 的五路 AHB 超时配置已完成阶段 5 读回及阶段 17 对照，仍失联后确认新启动。`6cb0fc4` 空表发布已实测，仍在首条 RAW 附近失联后确认新启动。接着实施精确 A830 主线的普通 HFI／直接 ring 冷启动诊断；同次启动保持单一提交模式。ARC 读回语义另行核对。Android TZ 日志加密，已有复位诊断未确定原因。
+2. 本机运行设备树为 gen8_0_1、chip ID `0x44050001`。以下为逐项诊断结果：
+   - GMU revision 和 160 MHz 最低点已修正，fault stall、默认 CB0 提前配置及 GCC GEMNOC 对照仍在 RAW131 索引发布后复位；零 RAW 的 setup-only 对照已稳定运行 10 秒。
+   - HFI 队列布局与 VRB 已按实际驱动修正，真机仍复位；ARC CX、MX 读取响应均为 0，写后读回与请求 3 不符，当前票值语义仍需确认。
+   - `0eaa5e0` 主机电源请求和 `0813b2f` GMU／HUB 时钟已实现并通过主机检查与构建；阶段 5 在电源读回验证处停止，MX、PLL／RCG 未写入。
+   - ACTIVE TCS1 对照也读到 0 并停止；`09778fe` 最高合法 WRITE 诊断完成 CX10／MX9 请求。
+   - `98b40e3` 按 PLL 字段定义修订 L 校验，阶段 5 的 LOCK／RCG 配置通过。
+   - `51c09c1` 完整阶段 17 已确认 START 后 500 MHz 配置及阶段 15／16，通过全部 CP 配置后仍在 RAW131 发布后复位；同内核零 RAW 对照十秒持续可读。
+   - 后续已修订依赖票高四位、FEATURE_CTRL 第四字 error 校验、producer 与通知间的暂停及本机 TPL1 bit20，分别实测后仍复位；五个功能 ACK 均为 data 0／error 0。
+   - 全局 ucode 权限和 MEM_ALLOC 回包构造与实际模块一致。
+   - `5c99f63` 的五路 AHB 超时配置已完成阶段 5 读回及阶段 17 对照，仍失联后确认新启动。
+   - `6cb0fc4` 空表发布已实测，仍在首条 RAW 附近失联后确认新启动。
+   - 接着实施精确 A830 主线的普通 HFI／直接 ring 冷启动诊断；同次启动保持单一提交模式。
+   - ARC 读回语义另行核对。
+   - Android TZ 日志加密，已有复位诊断未确定原因。
 3. 按 `oem ramdisk` → stage 小根盘 → stage payload → `oem run` 的顺序执行，保留完整日志和输入清单。自动复位或 USB 复位均须观察断开、重新枚举与状态；A 槽重试耗尽会启动 B 槽 Android。
 4. CP 初始化通过后逐步验证 zap、scratch、标准 context、用户态 shader 和桌面绘制；A830 BO 映射、C ABI 分派及阶段 23 服务发布已在 `31979ad` 实现，主机检查与 XNU 构建通过，真机验证待完成。
 5. cpufreq 修复继续独立验证；当前 GPU 实验未增加 `cpufreq=1`。

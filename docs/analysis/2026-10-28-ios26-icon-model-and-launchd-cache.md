@@ -13,7 +13,10 @@
 
 ## 2. 差集：16.5 的 388 条与 26 的 31 条
 
-16.5 那份 working payload 的 job 生成走 `userland/build.sh` 的 `IOS_JOBS` 加 `mkjobs.py --rest`。`--rest` 只有 `REST=1` 时才生效，默认不带。默认的 `IOS_JOBS` 是 21 条（`notifyd`、`cfprefsd`×2、`logd`、`syslogd`、`distnoted`、`diagnosticd`、`fseventsd`、`containermanagerd`×2、`runningboardd`、`backboardd`、`mobile.usermanagerd`、`mobilegestalt.xpc`、`lsd`、`powerd`、`analyticsd`、`logd_helper`、`iconservicesagent`、`pluginkit.pkd`、`SpringBoard`），加 `wifid` 是 22 条；`--rest` 把 491 个 LaunchDaemon 与 12 个 LaunchAngel 里剩下的、带 MachServices 且程序在盘的全部加上，产物是 388 条。
+16.5 那份 working payload 的 job 生成走 `userland/build.sh` 的 `IOS_JOBS` 加 `mkjobs.py --rest`。`--rest` 只有 `REST=1` 时才生效，默认不带。
+
+- 默认的 `IOS_JOBS` 是 21 条（`notifyd`、`cfprefsd`×2、`logd`、`syslogd`、`distnoted`、`diagnosticd`、`fseventsd`、`containermanagerd`×2、`runningboardd`、`backboardd`、`mobile.usermanagerd`、`mobilegestalt.xpc`、`lsd`、`powerd`、`analyticsd`、`logd_helper`、`iconservicesagent`、`pluginkit.pkd`、`SpringBoard`），加 `wifid` 是 22 条。
+- `--rest` 把 491 个 LaunchDaemon 与 12 个 LaunchAngel 里剩下的、带 MachServices 且程序在盘的全部加上，产物是 388 条。
 
 直接证据在 `docs/progress/evidence/2026-10-25-codex-gpu-resume/kernel-queue-wait-s23-auto-default/run/s002.log`：启动时会打印 `/redwood/LaunchDaemons` 的内容，去重后 388 个 `.plist`。同一份日志里 `com.apple.mobile.installd` 是 `launching: ipc (mach)` 拉起在 `user/501` 域，也就是它不在那 21 条显式清单里，是被 `lsd` 或别人问起来才起的。`--rest` 保留 MachServices、删掉 `RunAtLoad`／`KeepAlive`／`StartInterval` 与其余启动触发器，所以「388 条」只说明登记条目数，说明不了同时运行的进程数。
 
@@ -114,7 +117,12 @@ iOS 26 的 launchd 不扫描 `LaunchDaemons` 目录，任务与扩展记录都�
 
 以后不要再把这三条当成待办。`com.apple.duetexpertd`（98,672 字节、33 项 `MachServices`，含 `proactive.HomeScreenSuggestion.xpc` 与 `proactive.SuggestedPages`）属于另一类：程序在盘上，但它在 `mkjobs.py` 的 `DENY` 里，是策略上排除，不进缺口统计。
 
-本轮只补 `linkd`。`appprotectiond.read` 与 `accountsd` 各差一个量级以上，且每补一个都是一个变量；两者的程序都在盘上，后补只是加 plist 的事。这两项常被当成同一个进程提供的，实测不是：`com.apple.duetactivityscheduler` 是 `com.apple.dasd`（`/usr/libexec/dasd`，2,572,640 字节）的 `MachServices`，`com.apple.coreduetd.context` 是 `com.apple.contextstored`（`CoreDuetContext.framework/Resources/contextstored`，106,256 字节）的。`com.apple.coreduetd` 自己（`/usr/libexec/coreduetd`，361,696 字节）提供的是 knowledge、people、pairedsync 那一组，不含这两个名字。三个程序的 plist 与程序都在，所以都不是抽取缺口；`dasd` 一启动就会接管后台调度，副作用面比另外两个大。`com.apple.duetexpertd` 也在镜像里（`/usr/libexec/duetexpertd`，98,672 字节，33 项 `MachServices`），它在 `mkjobs.py` 的 DENY 里。
+本轮只补 `linkd`。`appprotectiond.read` 与 `accountsd` 各差一个量级以上，且每补一个都是一个变量；两者的程序都在盘上，后补只是加 plist 的事。
+
+- 这两项常被当成同一个进程提供的，实测不是：`com.apple.duetactivityscheduler` 是 `com.apple.dasd`（`/usr/libexec/dasd`，2,572,640 字节）的 `MachServices`，`com.apple.coreduetd.context` 是 `com.apple.contextstored`（`CoreDuetContext.framework/Resources/contextstored`，106,256 字节）的。
+- `com.apple.coreduetd` 自己（`/usr/libexec/coreduetd`，361,696 字节）提供的是 knowledge、people、pairedsync 那一组，不含这两个名字。
+- 三个程序的 plist 与程序都在，所以都不是抽取缺口；`dasd` 一启动就会接管后台调度，副作用面比另外两个大。
+- `com.apple.duetexpertd` 也在镜像里（`/usr/libexec/duetexpertd`，98,672 字节，33 项 `MachServices`），它在 `mkjobs.py` 的 DENY 里。
 
 ## 10. 未验证
 

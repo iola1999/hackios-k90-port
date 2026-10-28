@@ -86,7 +86,7 @@ K90 真机工作仍处于早期启动验证阶段。当前最大的限制是缺�
 | F03 | 已闭环（kernel 75fb322 + 父仓，host 验收全过） | adreno / task-20 | tools/device-test.sh 重写同批入库：`tools/device-test.sh` F03 标记段，`getvar product 2>&1` 连退出码一起收，rc124 判超时、rc≠0 判死链（附首行错误原文）、product 含 xnuloader 判 loader 在位、is-userspace:yes 判 fastbootd、其余判 LK，类别变化才播报，PROBE_TRIES 可覆盖便于测试；宿主仿真用 stub 把应答写在 stderr（与真 fastboot 一致）跑通五输入（loader 在位/LK/fastbootd/rc3 失败/超时），日志 /tmp/task20/f03-f05-simulation.log |
 | F04 | 已闭环（kernel 75fb322 + 父仓，host 验收全过） | adreno / task-20 | kernel 75fb322：xnuloader/build.sh 按变体分产物（带 -DDIRECT_PHONE_PLAT 只写 loader-phone.efi，默认只写 loader.efi 并落同内容 loader-generic.efi 别名，trap 9 结构性不可能）；common/build.sh 经 conf 新增 LOADER_CFLAGS 把宏传给 loader 步骤，loader/images/mkpayload/mkxnuimg 逐步 die；验收：编译失败注入 rc1 且旧 boot.img mtime 不动，交替构建互不覆盖（phone 构建后 loader.efi 哈希不变、别名与主产物一致；注意本机工具链本身不可比特复现，同变体重编译哈希稳定在宿主从来不成立），记录 shim 证明 qemu 入口 EXTRA_CFLAGS 为空、annibale 入口宏生效，annibale 全量入口装载的是 loader-phone.efi（payload 内 phone 独有字符串命中），redwood 行为零变化 |
 | F05 | 已闭环（kernel 75fb322 + 父仓，host 验收全过） | adreno / task-20 | tools/device-test.sh 同批：`tools/device-test.sh` 入口加 pipefail；相关 grep 全部读尽管道替代 grep -q（40 万行 stub 流上旧形在 pipefail 下被 SIGPIPE 打成 141 把在位设备误报缺席，新形无恙，对照见同一仿真日志）；入口新增依赖汇总，fastboot/adb/timeout 与 xnu-annibale-log.img 缺哪个报哪个一次性列全后 exit 1，剥 PATH 实测 MISSING 行正确 |
-| F06 | 按设计 | Lead | RAM-only 零持久化 + stage-system.sh --yes 用户同意门是既定裁决；"分配与并发"层面的重设计暂缓（同意门在，风险受控） |
+| F06 | 按设计 | Lead | RAM-only 零持久化 + stage-system.sh --yes 用户同意门是既定裁决；「分配与并发」层面的重设计暂缓（同意门在，风险受控） |
 | F07 | 已闭环 | mesa / task-21 | 已审查入库：trials 分级口径段+事实 1/2/7 观测/归属两级、playbook 间接指纹+boot_a 取证标注当前不可用+行 C 指纹说明+四阶段分级段、hw-map GOP 待验证注（随本次父仓提交） |
 | F08 | 已闭环 | mesa / task-21 | 已审查入库：mesa-rebase §9.1 收紧到符号名称层+§10.3 GL 观察项排期、内核审计零风险→低（F02 收账点）+Mini 两行改判、porting-plan 间接指纹+UEFI 构建输入记录待办、gpu-plan 状态对齐实现期、README 上游状态行（Lead 补批）（随本次父仓提交） |
 
@@ -107,7 +107,7 @@ K90 真机工作仍处于早期启动验证阶段。当前最大的限制是缺�
 
 位置：`hackios-xnu-kernel/xnuloader/loader.c:2964–2999`，`rdfile_load():482–491`。
 
-`run_kernel()` 取得已申请的连续内存后，在 2985 行调用 `rdfile_load()`。该函数立即对整个目标范围执行 `memset`，随后分块读取和复制镜像。检查 `win_size` 是否足以容纳镜像、设备树和预留空间的条件，直到 2997 行才执行。因此，当最大连续空闲块小于 system 镜像需要的空间时，函数可能先覆盖已申请范围之外的内存，之后才输出容量不足。
+`run_kernel()` 取得已申请的连续内存后，在 2985 行调用 `rdfile_load()`。该函数立即对整个目标范围执行 `memset`，随后分块读取和复制镜像。检查 `win_size` 是否足以容纳镜像、设备树和预留空间的条件，直到 2997 行才执行。因此，如果最大连续空闲块小于 system 镜像需要的空间，函数可能先覆盖已申请范围之外的内存，之后才输出容量不足。
 
 主机分支模拟使用原始 2964–2999 行的控制流程，设置已申请窗口为 256 MiB、system 镜像为 2,492,219,392 字节，并把实际加载替换成只记录范围的函数。结果是先调用越界加载，再返回容量不足。模拟没有分配或写入越界内存。日志在 `logs/rdfile-order-simulation.log`。
 
@@ -129,7 +129,12 @@ K90 真机工作仍处于早期启动验证阶段。当前最大的限制是缺�
 
 位置：`hackios-xnu-kernel/xnu/files/bsd/dev/redwood_input.c:60–85`；旧驱动入口的 `redwood_soc_is_sm8750()` 调用；`docs/progress/2026-10-23-offline-prep.md:49`。
 
-当前函数读取物理地址 `0x01fc0000` 的低 16 位，与 618 比较。注释把 `drivers/soc/qcom/socinfo-tcsr.c` 和 `TCSR_ID_MASK` 作为依据。此次公开源码核对未找到该文件或宏；实际 Linux `socinfo.c` 从 SMEM 的 `SMEM_HW_SW_BUILD_ID` 读取 `info->id`，`qcom,ids.h` 将 SM8750 的 SoC ID 定义为 618。设备树中的 `qcom,msm-id=<0x26a ...>` 能确认所声明的 SoC ID，仍需另外确认硬件寄存器地址、字段和编号之间的对应关系。[Linux socinfo 实现](https://linux.googlesource.com/linux/kernel/git/torvalds/linux/+/refs/heads/master/drivers/soc/qcom/socinfo.c)、[SoC ID 定义](https://linux.googlesource.com/linux/kernel/git/torvalds/linux/+/refs/heads/master/include/dt-bindings/arm/qcom,ids.h)。
+当前函数读取物理地址 `0x01fc0000` 的低 16 位，与 618 比较。
+
+- 注释把 `drivers/soc/qcom/socinfo-tcsr.c` 和 `TCSR_ID_MASK` 作为依据。此次公开源码核对未找到该文件或宏。
+- 实际 Linux `socinfo.c` 从 SMEM 的 `SMEM_HW_SW_BUILD_ID` 读取 `info->id`，`qcom,ids.h` 将 SM8750 的 SoC ID 定义为 618。
+- 设备树中的 `qcom,msm-id=<0x26a ...>` 能确认所声明的 SoC ID，仍需另外确认硬件寄存器地址、字段和编号之间的对应关系。
+- 来源：[Linux socinfo 实现](https://linux.googlesource.com/linux/kernel/git/torvalds/linux/+/refs/heads/master/drivers/soc/qcom/socinfo.c)、[SoC ID 定义](https://linux.googlesource.com/linux/kernel/git/torvalds/linux/+/refs/heads/master/include/dt-bindings/arm/qcom,ids.h)。
 
 代码还明确规定：映射失败时令 `number=0`，返回 false。未知读值同样返回 false。调用方随后继续旧驱动流程，因此识别失效会失去保护。QEMU 的成功回归只能覆盖 QEMU 上该分支的结果，无法确认 K90 能命中 618。
 

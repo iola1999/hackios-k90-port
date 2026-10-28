@@ -44,7 +44,12 @@ probe   /usr/bin/xcrun -sdk iphoneos clang -arch arm64e -miphoneos-version-min=2
 
 工具链（`:40-45`）：一个 venv 里的 meson 1.12.1 加 homebrew 的 ninja，bison 排在系统那个前面（前端的 parser 要它），三者可用 `AIR_VENV`／`AIR_BISON`／`AIR_NINJA` 覆盖。今天实测都在：`/tmp/mesa-rebase/venv/bin/meson --version` 给 1.12.1，`/opt/homebrew/opt/bison/bin/bison` 在，`ninja` 是 `/opt/homebrew/bin/ninja` 的 1.13.2。venv 在 `/tmp` 下，重启或清理之后就没有了；宿主另有 meson 1.12.1（miniconda 那份），版本相同。
 
-交叉构建配置 `out/ios26-resume/mesa-arm64e/cross.ini`：c／cpp／objc 都是 Xcode toolchain 的 clang 加 `-arch arm64e -isysroot <Xcode>/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS27.1.sdk -miphoneos-version-min=26.0`，ar／ranlib／strip 取自同一个 toolchain，`pkg-config = /usr/bin/false`；`[host_machine]` 是 `system = darwin`、`subsystem = ios`、`cpu_family = aarch64`、`cpu = arm64e`；`needs_exe_wrapper = true`。构建选项在同目录 `cmd_line.txt`：`buildtype = release`、`prefix = /redwood`、`gallium-drivers = softpipe,freedreno`、`freedreno-kmds = msm`、`osmesa = true`、`llvm = disabled`、`gles2 = enabled`、`shader-cache = disabled`、`build-tests = false`。
+交叉构建配置 `out/ios26-resume/mesa-arm64e/cross.ini`：
+
+- c／cpp／objc 都是 Xcode toolchain 的 clang 加 `-arch arm64e -isysroot <Xcode>/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS27.1.sdk -miphoneos-version-min=26.0`。
+- ar／ranlib／strip 取自同一个 toolchain，`pkg-config = /usr/bin/false`。
+- `[host_machine]` 是 `system = darwin`、`subsystem = ios`、`cpu_family = aarch64`、`cpu = arm64e`；`needs_exe_wrapper = true`。
+- 构建选项在同目录 `cmd_line.txt`：`buildtype = release`、`prefix = /redwood`、`gallium-drivers = softpipe,freedreno`、`freedreno-kmds = msm`、`osmesa = true`、`llvm = disabled`、`gles2 = enabled`、`shader-cache = disabled`、`build-tests = false`。
 
 `--check` 是只读模式（`:58-78`，只算摘要并打印，不复制、不构建、不写文件）。今天跑的结果：三个 `FILES` 两侧一致（没有任何 `out of sync` 行），`LIB` 是 13,956,392 字节、sha256 前 16 位 `0c9b9a9f5063b971`。独立算过 `tools/mesa/air/` 那三个文件：`air_metal.c` `e85482501842ee83`、`air_metal.h` `762dc822c13c6877`、`air_to_nir.c` `35b6f62ef90982f9`，与 `air-build-record.json` 里的 `source_sha256` 和 `tree_sha256` 六个值逐一相同。
 
@@ -71,7 +76,9 @@ probe   /usr/bin/xcrun -sdk iphoneos clang -arch arm64e -miphoneos-version-min=2
 
 ## 5. 可复现性的边界
 
-- Mesa 那个库不是逐字可复现的，仓库里有实测记录。`tools/mk-mesa.sh:32-37`：「This build is NOT reproducible byte for byte, so do not compare one of its outputs with another by hash. Measured on 20 October: two builds from the same source tree, the second with build-softpipe-freedreno deleted first, gave different libOSMesa.8.dylib and air_run -- same size to the byte, 9 132 774 of 14 855 048 bytes different in the library and 4 171 752 of 9 789 824 in air_run, with 5 of the 6 named text symbols at new addresses.」那是容器那条 Mesa 构建的实测；宿主这条 arm64e meson 构建是不是同样性质，这轮没有验证。
+- Mesa 那个库不是逐字可复现的，仓库里有实测记录。`tools/mk-mesa.sh:32-37` 的注释原文：
+  - 「This build is NOT reproducible byte for byte, so do not compare one of its outputs with another by hash. Measured on 20 October: two builds from the same source tree, the second with build-softpipe-freedreno deleted first, gave different libOSMesa.8.dylib and air_run -- same size to the byte, 9 132 774 of 14 855 048 bytes different in the library and 4 171 752 of 9 789 824 in air_run, with 5 of the 6 named text symbols at new addresses.」
+  - 那是容器那条 Mesa 构建的实测；宿主这条 arm64e meson 构建是不是同样性质，这轮没有验证。
 - 这轮能说的是：`ninja -C build -n src/gallium/drivers/freedreno/libredwoodair.dylib` 干跑报 6 步待做，含重新编 `src/freedreno/common/libfreedreno_common.a.p/freedreno_uuid.c.o`、重链 `libgallium.a` 与 `libfreedreno_common.a`、重链 dylib。今天跑一次真构建会重新链接，产物哈希与 `d7b9ced5` 相同的概率低。这一条没有实测，因为实测会覆盖装车那份。
 - 由此得到 baseline 闸的一个方向性读法：**产物哈希相同可以推出源相同，产物哈希不同推不出源不同**。重编 AIR 之后哈希与 `d7b9ced5` 不同，第一处置是核 `air-build-record.json` 的 `source_sha256` 与 `tree_sha256` 两侧六个值，两侧一致就说明库是按当前源编的，哈希变了来自布局；两侧不一致才是真的不同步。当成污染停下会浪费一轮。
 - 驱动那三个产物的可复现性这轮没有实测：`manifest.json` 记了命令行、九个源摘要、cwd 与签名方式，输入不变则输出应当不变，但「应当」这一步没有跑第二次来验证，而验证会写 round 目录。
@@ -90,7 +97,11 @@ probe   /usr/bin/xcrun -sdk iphoneos clang -arch arm64e -miphoneos-version-min=2
 
 ## 7. 两个操作上的危险
 
-- `build-air.py` 不带 `--check` 时会就地覆盖 `OUT`，也就是 `out/ios26-resume/bbmetal-device/libredwoodair.dylib`。`OUT` 是硬编码的，没有环境变量能改。roundb 的产物身份不能变（round C 复用 roundb 已核的 apfs，device 的 baseline 闸也指着 `d7b9ced5`）。**硬性前置：任何真构建之前，先把 `out/ios26-resume/bbmetal-device/` 整个目录备份到 git 忽略的目录。不做这一步就不许跑。** 具体做法（task-7 第二次运行前实际执行过一遍）：`cp -Rp out/ios26-resume/bbmetal-device/. docs/progress/evidence/k90auto/bbmetal-device-backup-<标识>/`，`-p` 保留时间戳，末尾的 `/.` 连隐藏文件一起拷；拷完立刻核四个关键文件的哈希与 live 一致（`libredwoodair.dylib` `d7b9ced5a115c08c`、`libredwoodmetal.dylib` `9d66dd367d09af4d`、`root.apfs` `e36caefb25f09e6e`、`manifest.json`），并记下文件数与体积（那次是 129 个文件、38 MB）。已存在的备份：`docs/progress/evidence/k90auto/bbmetal-device-backup-run2/`。重编之后 `build-air.py` 自己会重写 `air-build-record.json` 的 `library_bytes` 与 `library_sha256`，而 device 那个 baseline 闸期望的 `air_sha256` 要按 lead 的裁定另行更新，不能用 `ALLOW_DRIVER_CHANGE=1` 绕过。
+- `build-air.py` 不带 `--check` 时会就地覆盖 `OUT`，也就是 `out/ios26-resume/bbmetal-device/libredwoodair.dylib`。`OUT` 是硬编码的，没有环境变量能改。roundb 的产物身份不能变（round C 复用 roundb 已核的 apfs，device 的 baseline 闸也指着 `d7b9ced5`）。
+  - **硬性前置：任何真构建之前，先把 `out/ios26-resume/bbmetal-device/` 整个目录备份到 git 忽略的目录。不做这一步就不许跑。**
+  - 具体做法（task-7 第二次运行前实际执行过一遍）：`cp -Rp out/ios26-resume/bbmetal-device/. docs/progress/evidence/k90auto/bbmetal-device-backup-<标识>/`，`-p` 保留时间戳，末尾的 `/.` 连隐藏文件一起拷；拷完立刻核四个关键文件的哈希与 live 一致（`libredwoodair.dylib` `d7b9ced5a115c08c`、`libredwoodmetal.dylib` `9d66dd367d09af4d`、`root.apfs` `e36caefb25f09e6e`、`manifest.json`），并记下文件数与体积（那次是 129 个文件、38 MB）。
+  - 已存在的备份：`docs/progress/evidence/k90auto/bbmetal-device-backup-run2/`。
+  - 重编之后 `build-air.py` 自己会重写 `air-build-record.json` 的 `library_bytes` 与 `library_sha256`，而 device 那个 baseline 闸期望的 `air_sha256` 要按 lead 的裁定另行更新，不能用 `ALLOW_DRIVER_CHANGE=1` 绕过。
 - `package.py` 写 round 目录里的产物、`root.apfs` 与 `manifest.json`，`main()` 一开头断言 BASE 的四个哈希（`:167-170`），BASE 变了它拒绝跑。这个脚本属于 device 的跑轮流程，改完驱动要它出产物，先跟 device 约。device 打包或跑轮期间不要运行任何会写 `out/ios26-resume/` 或 `userland/obj/` 的命令，`build.sh` 也在其中（它写 `userland/obj/`，`:232` 有 `rm -rf root`）。只读复核不受此限：`build-air.py --check`、`ninja -n` 干跑、`shasum`、`codesign -dv`、`otool`。
 
 ## 8. round D 的前置结论

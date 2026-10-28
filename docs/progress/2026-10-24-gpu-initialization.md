@@ -62,7 +62,11 @@ SCM 初始化按厂商标准 SMC64 调用处理 availability、A6 中断续调�
 
 ## 6. SMMU 分配修正与 loader 重启
 
-根据本机 DT 与[厂商分配实现](https://github.com/OnePlusOSS/android_kernel_oneplus_sm8750/blob/6028f47faddaa27700f8dd3a1d83906ea8f27170/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c#L471-L489)，GMU 改用 context2、SID5 精确匹配。S2CR 按厂商设置 SHCFG=NSH、PRIVCFG=DEFAULT，TRANS=`0x302`、FAULT=`0x20300`。修正后的内核 `out/handoff-mach-gpu-memory4` SHA-256 为 `d5ad22daa1ad07f101d0d08ed97e410ac9a26973f03894cb0fe6a4284b40e878`，构建和对应主机测试通过。真机第 9 阶段已通过，S2CR 回读 `0x302`，128 个 4 KiB 映射验证完成，退出后的 context 关闭和 TLB 同步均成功。本轮同时修正 context、mask、SHCFG，并在冷重启后验证；各项对前次异常的独立影响尚未拆分。
+根据本机 DT 与[厂商分配实现](https://github.com/OnePlusOSS/android_kernel_oneplus_sm8750/blob/6028f47faddaa27700f8dd3a1d83906ea8f27170/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c#L471-L489)，GMU 改用 context2、SID5 精确匹配。S2CR 按厂商设置 SHCFG=NSH、PRIVCFG=DEFAULT，TRANS=`0x302`、FAULT=`0x20300`。
+
+- 修正后的内核 `out/handoff-mach-gpu-memory4` SHA-256 为 `d5ad22daa1ad07f101d0d08ed97e410ac9a26973f03894cb0fe6a4284b40e878`，构建和对应主机测试通过。
+- 真机第 9 阶段已通过，S2CR 回读 `0x302`，128 个 4 KiB 映射验证完成，退出后的 context 关闭和 TLB 同步均成功。
+- 本轮同时修正 context、mask、SHCFG，并在冷重启后验证；各项对前次异常的独立影响尚未拆分。
 
 随后第 10 阶段成功加载 gen80000 GMU 固件，逐段读回共 `0x15a50` 字节，内核正常返回 loader。首次 GMU 执行、HFI 应答和 GPU 绘制继续分别验收。
 

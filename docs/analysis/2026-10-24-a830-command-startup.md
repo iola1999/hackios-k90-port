@@ -16,7 +16,11 @@
 
 厂商 [`adreno_gpu_core_gen8_0_0`](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno-gpulist.h#L2932-L2973) 明确选择 `adreno_gen8_hwsched_gpudev`，并配置 AQE、LPAC、12 MiB GMEM 和 `gen80000_*` 固件。该路径已有配套的 AQE 基址设置、GMU 内存申请协议和 CP 原始命令提交。当前普通 HFI 初始化通过后，按这条调用链继续实现，可以逐项对照本芯片的厂商配置。
 
-厂商的[首次启动](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_hwsched.c#L824-L867)、[HFI 启动](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_hwsched_hfi.c#L2209-L2357)和 [GPU 启动](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_hwsched.c#L570-L634)按以下顺序执行：
+厂商的以下三段代码按顺序执行：
+
+- 首次启动：[adreno_gen8_hwsched.c L824-L867](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_hwsched.c#L824-L867)
+- HFI 启动：[adreno_gen8_hwsched_hfi.c L2209-L2357](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_hwsched_hfi.c#L2209-L2357)
+- GPU 启动：[adreno_gen8_hwsched.c L570-L634](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_hwsched.c#L570-L634)
 
 1. 读取 SQE、AQE，分配 powerup register list，准备 GMU 内存并启动 GMU。
 2. 发送性能表、带宽表及特性配置；在 `CORE_FW_START` 之前启用 HWSCHED。厂商还配置 KPROF 等特性，最小实现需要逐项核对裁减条件。
@@ -36,7 +40,9 @@
 | `gen80000_aqe.fw` | 25044 字节 | 跳过前 4 字节，映射剩余 25040 字节 |
 | `gen80000_zap.mbn` | 12088 字节，ELF32，小端，3 个 program header | 提取 metadata，通过 PAS 装载可重定位段 |
 
-[`adreno_get_firmware()`](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno.c#L73-L104) 将 SQE/AQE 分配为 `GPUREADONLY | UCODE`；[`_iommu_get_protection_flags()`](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/kgsl_iommu.c#L104-L124) 据此生成只读、可执行映射。powerup list 使用 privileged、读写、不可执行映射。普通 ring 的[分配代码](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_ringbuffer.c#L123-L138)使用 privileged、只读、不可执行映射；HWSCHED 请求的缓冲区仍按各自 flags 处理。
+- [`adreno_get_firmware()`](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno.c#L73-L104) 将 SQE/AQE 分配为 `GPUREADONLY | UCODE`；[`_iommu_get_protection_flags()`](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/kgsl_iommu.c#L104-L124) 据此生成只读、可执行映射。
+- powerup list 使用 privileged、读写、不可执行映射。
+- 普通 ring 的[分配代码](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_ringbuffer.c#L123-L138)使用 privileged、只读、不可执行映射；HWSCHED 请求的缓冲区仍按各自 flags 处理。
 
 下表保留 2026-10-24 调研的 4 KiB stage-1 叶子页候选属性，采用 NC、outer-shareable、AF、nG，且 MAIR index 0 为 Normal Non-cacheable。数值只含属性，不含物理地址，由[厂商 LPAE 权限转换](https://github.com/OnePlusOSS/android_kernel_oneplus_sm8750/blob/6028f47faddaa27700f8dd3a1d83906ea8f27170/drivers/iommu/io-pgtable-arm-common.c#L238-L299)推导。后续实际配置以生产实现和第 9 节的设备验收为准。
 
@@ -60,9 +66,16 @@ TYPE7(CP_ME_INIT, 7), 0x14b, 3, 0x20000000, 2,
 pwrup_iova_lo, pwrup_iova_hi, BIT(31)
 ```
 
-powerup list 包含锁和计数头、静态寄存器对，以及带 pipe ID 的动态三元组。[`gen8_start()`](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8.c#L1301-L1540) 设置非上下文寄存器、保护范围、APRIV、SECVID 和时钟门控后，再[读取寄存器生成列表](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8.c#L1031-L1181)；CP 初始化必须引用有效的 GPU 地址。HWSCHED 的[原始命令提交](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_hwsched_hfi.c#L2359-L2449)先检查 ACK，再等待 `GPU_CX_BUSY_STATUS.bit23=0`，超时为 200 ms。
+powerup list 包含锁和计数头、静态寄存器对，以及带 pipe ID 的动态三元组。
 
-[`gen8_hwsched_cp_init()`](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_hwsched_hfi.c#L2432-L2452) 在 CP 初始化成功后加载 zap，随后发送 `CP_SET_SECURE_MODE(0)`。本机 DT 中 zap 预留区为 `0x9b09a000`、大小 `0x2000`，与[厂商预留区](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/kernel_platform/qcom/opensource/devicetree/qcom/sun.dtsi#L3862-L3865)和 [`zap-shader` 引用](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-devicetree/gpu/sun-gpu.dtsi#L89-L91)一致。当前 MBN 的解析结果和认证顺序如下：
+- [`gen8_start()`](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8.c#L1301-L1540) 设置非上下文寄存器、保护范围、APRIV、SECVID 和时钟门控后，再[读取寄存器生成列表](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8.c#L1031-L1181)；CP 初始化必须引用有效的 GPU 地址。
+- HWSCHED 的[原始命令提交](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_hwsched_hfi.c#L2359-L2449)先检查 ACK，再等待 `GPU_CX_BUSY_STATUS.bit23=0`，超时为 200 ms。
+
+[`gen8_hwsched_cp_init()`](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_hwsched_hfi.c#L2432-L2452) 在 CP 初始化成功后加载 zap，随后发送 `CP_SET_SECURE_MODE(0)`。
+
+- 本机 DT 中 zap 预留区为 `0x9b09a000`、大小 `0x2000`，与[厂商预留区](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/kernel_platform/qcom/opensource/devicetree/qcom/sun.dtsi#L3862-L3865)和 [`zap-shader` 引用](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-devicetree/gpu/sun-gpu.dtsi#L89-L91)一致。
+
+当前 MBN 的解析结果和认证顺序如下：
 
 1. metadata 由文件开头 `0x94` 字节和文件 `0x2000` 处的 hash 段 `0xf38` 字节拼接，总长 `0xfcc`。hash 位于第三个 program header，按段类型识别。[MDT/MBN metadata 解析](https://github.com/OnePlusOSS/android_kernel_oneplus_sm8750/blob/6028f47faddaa27700f8dd3a1d83906ea8f27170/drivers/soc/qcom/mdt_loader.c#L163-L237)说明该格式。
 2. 唯一 `PT_LOAD` 位于文件 `0x1000`，`p_paddr=0x1000`，`p_filesz=p_memsz=0x3b4`，带 relocatable 标志。按最低加载地址重定位到预留区起点，页对齐后的装载范围为 `0x1000`。

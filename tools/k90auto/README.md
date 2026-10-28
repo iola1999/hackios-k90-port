@@ -25,7 +25,11 @@ python3 tools/k90auto/gestures.py docs/progress/evidence/k90auto/kernel-NAME-LAB
 ```
 
 - `build-kernel.py` 只构建已提交的内容，未提交的修改不会进入内核。
-- `make-payload.py` 的固定参数包括触摸屏（`touchscreen=2`）、音量键与电源键（`buttons=1`）和电量计（`battery=1`）。固定参数中，CPU 部分可用环境变量 `CPU_ARGS` 替换（默认 `cpus=2 bootcpu=7 small_cores_after=0`），GPU 档位上限用 `GPU_SPEED` 设置（即 `adreno8_speed`，默认 3）：1 固定 160 MHz；2、3 时内核按 GPU 负载和触摸在 160 MHz 与 222 MHz 或 342 MHz 之间切换（内核 `ffca661` 起，`34209c1`～`2957405` 固定请求该档）。`34209c1` 之前的内核只支持 1。系统盘由环境变量 `SYSTEM` 指定（工作区相对路径，默认 `hackios-xnu-kernel/userland/system.apfs`）；超过 0xffffffff 字节的镜像还要给 `SYSTEM_WINDOW`（十六进制字节数，32 MiB 对齐），两者写进 `manifest.json`，`run-auto.py` 据此改用 `hackios-xnu-kernel/tools/stage-system.sh` 按 256 MiB 分块上传。
+- `make-payload.py` 的固定参数包括触摸屏（`touchscreen=2`）、音量键与电源键（`buttons=1`）和电量计（`battery=1`）。
+  - CPU 部分可用环境变量 `CPU_ARGS` 替换（默认 `cpus=2 bootcpu=7 small_cores_after=0`）。
+  - GPU 档位上限用 `GPU_SPEED` 设置（即 `adreno8_speed`，默认 3）：1 固定 160 MHz；2、3 时内核按 GPU 负载和触摸在 160 MHz 与 222 MHz 或 342 MHz 之间切换（内核 `ffca661` 起，`34209c1`～`2957405` 固定请求该档）。
+  - `34209c1` 之前的内核只支持 1。
+  - 系统盘由环境变量 `SYSTEM` 指定（工作区相对路径，默认 `hackios-xnu-kernel/userland/system.apfs`）；超过 0xffffffff 字节的镜像还要给 `SYSTEM_WINDOW`（十六进制字节数，32 MiB 对齐），两者写进 `manifest.json`，`run-auto.py` 据此改用 `hackios-xnu-kernel/tools/stage-system.sh` 按 256 MiB 分块上传。
 - `run-queue.sh` 依次运行各目录，每轮默认 420 s，100 s 起每 3 s 截图一次，每 20 s 拉一次日志（`RUN_SECONDS`、`RUN_TIMING` 可改）。USB 重启后若退回 Android B 槽，自动调用 `recover-loader.py` 切回 loader A 槽；loader 不处于 idle 时停止整个队列。每轮结束都把设备带回 idle 的 loader：`oem stop` 只是请求，loader 要等内核静默满自己的 50 秒才把结果报成 `hung-held`，所以收尾在 stop 之后按秒轮询状态（`K90_STOP_WAIT`，默认 70 秒），离开 running 后按状态名保存 loader 持有的日志再复位；内核始终不应答时不复位（loader 会拒绝），保存 `running.log` 并以非零退出交给主机复位。复位前的状态记在 `reboot.json` 的 `left` 字段，复位可能快过一次轮询，因此判定条件是 loader 重新应答 idle 且 RAM 系统盘为空，不要求观察到断开。
 - `gestures.py` 按手势统计主动画的帧间隔：控制中心下拉取首帧起 1.8 s，翻页取首帧起 600 ms，输出 p50／p95／最长间隔、超过 18 ms 的比例、帧率、触摸到首帧的时间和窗口服务器每帧绘制时间。需要在 EXTRA BOOT-ARGS 中加 `touch_lat=1 glslow=3000`。
 - `summary.py` 每轮输出一行：内核提交、关键启动参数、实际运行秒数、panic 次数、动画窗口帧率、显示驱动每帧耗时、GL 帧耗时 p50／p90、帧间隔分布（低于 18 ms、18～35 ms、更长）、大核最高温度、最低档时间占比、截图数与异常截图数、崩溃记录数（数内核报的进程退出行；2026-10-28 修正前该列数的是日志里 `ReportCrash` 这个名字的出现次数，修正前各轮的值不是崩溃计数）。
@@ -80,4 +84,9 @@ python3 tools/k90auto/ui-health.py docs/progress/evidence/k90auto/RUN/device-*.l
 python3 tools/k90auto/package.py          # 从工作区根目录运行
 ```
 
-产物仍写在 `hackios-xnu-kernel/out/ios26-resume/bbmetal-device/`（`root.apfs`、两个库、`manifest.json`、构建日志），该目录 Git 忽略；`jobs/` 与 `rc.jobs.desktop` 跟着脚本放在 `tools/k90auto/` 下并纳入版本管理。AIR 库不在这里编译，脚本只取该目录里 ninja 构建的 `libredwoodair.dylib` 并用 `codesign -dv` 断言它带 adhoc 签名，漏签名会让 dyld 拒绝加载、整轮退回 CPU 合成。脚本对基线根盘、三个冻结库、变更文件集合、登记断言都做硬校验，任何一项不符直接退出。AIR 库只被复制、不在这里编译，所以打包前先确认目录里那份是哪一版：带逐帧计时的插桩库会在日志里多打 `perf frames` 行，要干净库就按 `out/ios26-resume/mesa-arm64e/manifest.json` 里记录的命令从无插桩源树重编，不要直接沿用上一位留下的文件。`JOBS_SOURCE` 可换掉根盘里的 `etc/rc.jobs`（例如诊断轮用 `jobs/rc.jobs.ccdrag`）。
+产物仍写在 `hackios-xnu-kernel/out/ios26-resume/bbmetal-device/`（`root.apfs`、两个库、`manifest.json`、构建日志），该目录 Git 忽略；`jobs/` 与 `rc.jobs.desktop` 跟着脚本放在 `tools/k90auto/` 下并纳入版本管理。
+
+- AIR 库不在这里编译，脚本只取该目录里 ninja 构建的 `libredwoodair.dylib` 并用 `codesign -dv` 断言它带 adhoc 签名，漏签名会让 dyld 拒绝加载、整轮退回 CPU 合成。
+- 脚本对基线根盘、三个冻结库、变更文件集合、登记断言都做硬校验，任何一项不符直接退出。
+- AIR 库只被复制、不在这里编译，所以打包前先确认目录里那份是哪一版：带逐帧计时的插桩库会在日志里多打 `perf frames` 行，要干净库就按 `out/ios26-resume/mesa-arm64e/manifest.json` 里记录的命令从无插桩源树重编，不要直接沿用上一位留下的文件。
+- `JOBS_SOURCE` 可换掉根盘里的 `etc/rc.jobs`（例如诊断轮用 `jobs/rc.jobs.ccdrag`）。

@@ -13,7 +13,12 @@
 
 ## 2. 厂商调用链（本文作者已核对）
 
-kind 与回复。kind 枚举在 `adreno_hfi.h` L150-L246，kind 5 即 `HFI_MEMKIND_CSW_PRIV_SECURE`（特权 secure 抢占记录）。[adreno_gen8_hwsched_hfi.c](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_hwsched_hfi.c) 的 `get_mem_alloc_entry` 把 `HFI_MEMFLAG_GFX_SECURE` 转成 `KGSL_MEMFLAGS_SECURE`（L1491-L1492），默认 kind 走 `kgsl_allocate_global`（L1534-L1535）；`process_mem_alloc` 回填 `gpu_addr`、`gmu_addr`、`host_mem_handle`（L1571-L1592），`mem_alloc_reply` 写回复 cmdq（L1594-L1617）；`send_start_msg`（L1664 起）表明 host 在等待 START 最终 ACK 期间持续处理 MEM_ALLOC。
+kind 与回复。kind 枚举在 `adreno_hfi.h` L150-L246，kind 5 即 `HFI_MEMKIND_CSW_PRIV_SECURE`（特权 secure 抢占记录）。厂商实现在 [adreno_gen8_hwsched_hfi.c](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/adreno_gen8_hwsched_hfi.c)：
+
+- `get_mem_alloc_entry` 把 `HFI_MEMFLAG_GFX_SECURE` 转成 `KGSL_MEMFLAGS_SECURE`（L1491-L1492），默认 kind 走 `kgsl_allocate_global`（L1534-L1535）。
+- `process_mem_alloc` 回填 `gpu_addr`、`gmu_addr`、`host_mem_handle`（L1571-L1592）。
+- `mem_alloc_reply` 写回复 cmdq（L1594-L1617）。
+- `send_start_msg`（L1664 起）表明 host 在等待 START 最终 ACK 期间持续处理 MEM_ALLOC。
 
 数据页归属。`kgsl_sharedmem.c` 的 `kgsl_allocate_global`（L1945）在 secure 标志下转入 `kgsl_allocate_secure_global`（L1951-L1952）→ L1908 → `kgsl_alloc_secure_pages`（L1669）→ `kgsl_lock_sgt`（L1717）→ `hyp_assign_table`（L596-L624 内 L604）→ secure_buffer 批量 `qcom_scm_assign_mem_regions` → MP_ASSIGN（pinned 副本 `vendor-secure_buffer.c` L486-L599、L386-L389）。是否存在 `gh_rm_needs_hyp_assign` 运行时分支由 Astra 报告核对。
 
@@ -23,13 +28,22 @@ secure 域在 probe 期建立，早于 kind-5。`kgsl_iommu.c` 的 `iommu_probe_
 
 表页归属。`vendor-qcom-io-pgtable-alloc.c`：`io_pgtable_hyp_assign_page`（L30-L47）对每张表页调用 `qcom_scm_assign_mem`，目标权限 {HLOS RW, secure VMID R}；`qcom_io_pgtable_alloc_page`（L205-L229）禁止 atomic 与 secure 组合（`BUG_ON`），共享失败即漏页不回收。`vendor-qcom-io-pgtable-arm.c` 的 `qcom_arm_lpae_map_pages`（L521 起）在写入末尾 `wmb()` 发布（L555）。`vendor-secure_buffer.c` 有对已处理批次的回滚尝试（L396-L448）与「归属不明页不再由 HLOS 访问」约束（L483-L484），此两段 Astra 报告核对，本文作者未逐段复读。
 
-CB 寄存器顺序。`vendor-arm-smmu.c` `arm_smmu_write_context_bank`（L1176-L1255）：先写 SCTLR=0，再 CBA2R（16-bit VMID）→ CBAR（8-bit VMID 写入处）→ TCR2/TCR（源码注释要求 TCR 先于 TTBR，影响 ASID 高位行为）→ TTBR0/TTBR1（AArch64 用 64 位写）→ MAIR → SCTLR。ACTLR 由 qcom impl 的 init 回调在 domain 初始化中先行写入：MiCode [arm-smmu-qcom.c](https://github.com/MiCode/Xiaomi_Kernel_OpenSource/blob/f66f8c8bcbe38044fab61d44ea7f7c224f82b3ea/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c) `qsmmuv500_init_cb`（L2643-L2660）写 ACTLR 后 `iommu_flush_iotlb_all`。固定设备树的 ACTLR 表仅一条 `<0x000 0x3ff 0x32B>`（`msm-arm-smmu-sun.dtsi` L60-L62，注释「All CBs of GFX: +15 deep PF」），该值有固定来源但本方案未授权当前 XNU 写入；SID2 的 ACTLR 命中条件与安全世界要求值未知。
+CB 寄存器顺序。`vendor-arm-smmu.c` `arm_smmu_write_context_bank`（L1176-L1255）：先写 SCTLR=0，再 CBA2R（16-bit VMID）→ CBAR（8-bit VMID 写入处）→ TCR2/TCR（源码注释要求 TCR 先于 TTBR，影响 ASID 高位行为）→ TTBR0/TTBR1（AArch64 用 64 位写）→ MAIR → SCTLR。
+
+- ACTLR 由 qcom impl 的 init 回调在 domain 初始化中先行写入：MiCode [arm-smmu-qcom.c](https://github.com/MiCode/Xiaomi_Kernel_OpenSource/blob/f66f8c8bcbe38044fab61d44ea7f7c224f82b3ea/drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c) `qsmmuv500_init_cb`（L2643-L2660）写 ACTLR 后 `iommu_flush_iotlb_all`。
+- 固定设备树的 ACTLR 表仅一条 `<0x000 0x3ff 0x32B>`（`msm-arm-smmu-sun.dtsi` L60-L62，注释「All CBs of GFX: +15 deep PF」），该值有固定来源但本方案未授权当前 XNU 写入。
+- SID2 的 ACTLR 命中条件与安全世界要求值未知。
 
 aperture。kgsl 侧 aperture 仅两处：user CB（`kgsl_iommu.c` L2609）与 LPAC CB（L2615），经 `kgsl_set_smmu_aperture`（L1443-L1460）调用 `qcom_scm_kgsl_set_smmu_aperture`（L1451，L1453 重试一次），服务于普通 GPU/LPAC 的 per-process 页表切换；secure attach 路径没有该调用，与主 agent 裁决一致。本轮未找到 secure attach 专用的独立 aperture 命令。
 
 ## 3. CB 与 SID 相容性（本文作者已核对）
 
-`gfx3d_secure` 静态声明：pinned 副本 `sun-gpu.dtsi` L156-L159，compatible `"qcom,smmu-kgsl-cb"`，`iommus = <&kgsl_smmu 0x2 0x000>`（GPU SMMU 上 SID2/mask0），DMA disabled；DTS 声明 SID，未声明 CB 编号。MiCode `arm-smmu-qcom.c` 的 `qcom_adreno_smmu_is_gpu_device`（L395-L413）以 fwspec SID∈{0,1} 识别 GPU，`qcom_adreno_smmu_alloc_context_bank`（L471-L489）对 GPU 限定位图 [0,2)，其余设备从 CB2 起按 attach 顺序动态分配，SID2 secure 与 GMU 都走后者。结论：GPU 的 CB0/CB1 保留与 CB3 候选在静态与分配规则两层都无冲突；CB3 的成立条件是 GMU 已占 CB2、CB3 无其他已知占用、且安全世界无隐藏保留（第三项 HLOS 无查询接口）。SMR 匹配槽、SID、CB 是三个独立编号空间，debug 用例 `iommus <&kgsl_smmu 0x7 0x0>` 给 SID7/mask0，推不出 CB7。K90 实际加载的 DT/驱动/固件组合与本机静态声明的一致性、以及 Android 侧 secure attach 实际分到的 CB，属真机或已存日志采集项，本轮未采集。
+`gfx3d_secure` 静态声明：pinned 副本 `sun-gpu.dtsi` L156-L159，compatible `"qcom,smmu-kgsl-cb"`，`iommus = <&kgsl_smmu 0x2 0x000>`（GPU SMMU 上 SID2/mask0），DMA disabled；DTS 声明 SID，未声明 CB 编号。
+
+- 分配规则：MiCode `arm-smmu-qcom.c` 的 `qcom_adreno_smmu_is_gpu_device`（L395-L413）以 fwspec SID∈{0,1} 识别 GPU，`qcom_adreno_smmu_alloc_context_bank`（L471-L489）对 GPU 限定位图 [0,2)，其余设备从 CB2 起按 attach 顺序动态分配，SID2 secure 与 GMU 都走后者。
+- 结论：GPU 的 CB0/CB1 保留与 CB3 候选在静态与分配规则两层都无冲突；CB3 的成立条件是 GMU 已占 CB2、CB3 无其他已知占用、且安全世界无隐藏保留（第三项 HLOS 无查询接口）。
+- SMR 匹配槽、SID、CB 是三个独立编号空间，debug 用例 `iommus <&kgsl_smmu 0x7 0x0>` 给 SID7/mask0，推不出 CB7。
+- K90 实际加载的 DT/驱动/固件组合与本机静态声明的一致性、以及 Android 侧 secure attach 实际分到的 CB，属真机或已存日志采集项，本轮未采集。
 
 ## 4. XNU 差距清单（Astra 报告行号，HEAD `5c5616e`；标注者为报告）
 

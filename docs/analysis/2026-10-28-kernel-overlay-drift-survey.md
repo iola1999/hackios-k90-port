@@ -134,7 +134,7 @@ git -C out/xnu12377 show ac9718fb1af618d5ce8678d0dc6e8a58f252216f:bsd/conf/files
 
 ### 4.6 一个值的形状不符合手里那一支的编码规则时，先查它属于哪一支
 
-实例是 EXC_GUARD 的 `flavor=0x43`。文件描述符那一支的 flavor 是 `1u << 0` 到 `1u << 6`（`out/xnu12377/bsd/sys/guarded.h:104-110`），按它去套会把 `0x43` 读成三个 bit 的组合，进而判成字段归属不明。它实际属于 mach port 那一支：`out/xnu12377/osfmk/mach/port.h:637` 是 `kGUARD_EXC_DESCRIPTOR_VIOLATION = 67`，单个枚举值，而 `:616-618` 的注释正好解释了那些稀疏取值——「Note: these had been designed as bitfields, hence the weird spaced values, but are truly an enum, please add new values in the "holes".」
+实例是 EXC_GUARD 的 `flavor=0x43`。文件描述符那一支的 flavor 是 `1u << 0` 到 `1u << 6`（`out/xnu12377/bsd/sys/guarded.h:104-110`），按它去套会把 `0x43` 读成三个 bit 的组合，进而判成字段归属不明。它实际属于 mach port 那一支：`out/xnu12377/osfmk/mach/port.h:637` 是 `kGUARD_EXC_DESCRIPTOR_VIOLATION = 67`，单个枚举值，而 `:616-618` 的注释正好解释了那些稀疏取值——「Note: these had been designed as bitfields, hence the weird spaced values, but are truly an enum, please add new values in the 『holes』.」
 
 字段布局有两处树内来源：`out/xnu12377/osfmk/kern/exc_guard.h:74` 的注释表画出 `[63:61] GUARD_TYPE_MACH_PORT | [60:32] flavor | [31:0] target`，`:187-192` 是三个编码宏（type 移 61、flavor 移 32 并取 `0x1fffffff`、target 取低 32 位），`:58-63` 是三个解码宏。类型表在 `:67` 到 `:183`，八个值从 `GUARD_TYPE_NONE 0x0` 到 `GUARD_TYPE_FROZEN_SWAPIN 0x7`。
 
@@ -142,13 +142,23 @@ git -C out/xnu12377 show ac9718fb1af618d5ce8678d0dc6e8a58f252216f:bsd/conf/files
 
 ### 4.7 mach IPC 与 guard 异常这一类枚举，先搜构建树的 doc 目录
 
-`out/xnu12377/doc/mach_ipc/` 下有四份文档：`guard_exceptions.md`（21,908 字节）、`ipc_security_concepts.md`、`kmsg.md`、`port_types.md`。`guard_exceptions.md` 按码值逐条列出 ReportCrash 名字、Target meaning 与 Payload meaning。`:283-291` 那一节的标题就是 `### kGUARD_EXC_DESCRIPTOR_VIOLATION 0x00000043`，与日志里的 `flavor=0x43` 逐字对得上，并且给出 Target meaning 是「The IPC space policy」（所以 `target=0x800407` 装的是 IPC space policy，不是端口名）、Payload meaning 是 `(violation_type << 56) | aux`（按它解 `subcode=0x300000000000011` 得 `violation_type = 0x03`、`aux = 0x11`，即 17）。
+`out/xnu12377/doc/mach_ipc/` 下有四份文档：`guard_exceptions.md`（21,908 字节）、`ipc_security_concepts.md`、`kmsg.md`、`port_types.md`。
+
+- `guard_exceptions.md` 按码值逐条列出 ReportCrash 名字、Target meaning 与 Payload meaning。
+- `:283-291` 那一节的标题就是 `### kGUARD_EXC_DESCRIPTOR_VIOLATION 0x00000043`，与日志里的 `flavor=0x43` 逐字对得上。
+- 该节给出 Target meaning 是「The IPC space policy」（所以 `target=0x800407` 装的是 IPC space policy，不是端口名）。
+- Payload meaning 是 `(violation_type << 56) | aux`（按它解 `subcode=0x300000000000011` 得 `violation_type = 0x03`、`aux = 0x11`，即 17）。
 
 规则：**遇到这一类枚举先搜构建树的 `doc/`。** 它是树内来源，而此前查这一类值一直在树外找（公开文档、记忆里的枚举形状），树外找会得到形状相近而取值不同的另一支。
 
 ## 5. 两个结论与它们的查法
 
-**`c2ccc7c` 那处改动在跑的内核里。** round C 跑的内核 sha256 是 `cf1502f5632284af4ab11d182f62913663f7205ec4376f4abc0f274f834b2492`，四条依据里最强的一条是行为依据：round C 的 `s008.log:18970` 写着 `watching kern.redwood.frames from 3611`，3611 正是那一轮 `tl: v` 的最大帧号，所以那个 sysctl 在跑的内核里存在。另外三条是 `git show --stat c2ccc7c` 在外层仓库能解析、它改的正是 `xnu/files/iokit/Kernel/MiniIOMobileFramebuffer.cpp`（2 处插入，2026-10-28 05:29:27）；overlay 那份的 `:46` 有 `extern "C" uint32_t redwood_frames_shown;`、`:1015` 有 `redwood_frames_shown = fSwapsShown;`；构建树那份与 overlay 那份 `cmp` 逐位相同（61,915 B），inode 不同，mtime 05:31，而 round C 的构建时间是 13:28:58 到 13:29:03。
+**`c2ccc7c` 那处改动在跑的内核里。** round C 跑的内核 sha256 是 `cf1502f5632284af4ab11d182f62913663f7205ec4376f4abc0f274f834b2492`。四条依据：
+
+- 行为依据（最强）：round C 的 `s008.log:18970` 写着 `watching kern.redwood.frames from 3611`，3611 正是那一轮 `tl: v` 的最大帧号，所以那个 sysctl 在跑的内核里存在。
+- `git show --stat c2ccc7c` 在外层仓库能解析，它改的正是 `xnu/files/iokit/Kernel/MiniIOMobileFramebuffer.cpp`（2 处插入，2026-10-28 05:29:27）。
+- overlay 那份的 `:46` 有 `extern "C" uint32_t redwood_frames_shown;`、`:1015` 有 `redwood_frames_shown = fSwapsShown;`。
+- 构建树那份与 overlay 那份 `cmp` 逐位相同（61,915 B），inode 不同，mtime 05:31，而 round C 的构建时间是 13:28:58 到 13:29:03。
 
 这四条分三类：文件同一性（`cmp` 与 mtime）、仓库提交、运行时行为。前两类可以被「构建了但没刷进去」骗过，第三类不能。引用一个改动有没有生效时要说清用的是哪一类。
 

@@ -89,7 +89,19 @@ fastboot -s xnuloader oem log
 fastboot -s xnuloader get_staged /tmp/hackios-stop2.log
 ```
 
-分类结论只用三档：host-stop banner（内核停止轮询打印「the host asked for the end of the run: back to the loader」，`loader_return.c` L513-L540）未见，此时抓取不完整与内核未执行停止回调两种情况无法区分；banner 已见、无冷复位保留打印（park 未确证）；出现「requires host cold reset」打印（park 确证）。两轮补采的适用状态是 loader 判定 hung 之前的 running：此时 `oem log` 读内核实时环形缓冲。判定 hung 后实时环形缓冲指针已清空（`loader.c` L2517），HUNG 分支的 `write_logs` 已把挂死判定时刻的快照组装进暂存（L3578），直接 `get_staged` 可取到该快照；再次执行 `oem log` 走 `compose_logs(NULL, 0)`（L327-L347，分支 L4035-L4041），清空暂存、只复制 loader 日志，快照被覆盖，run002 取回的 32,767 字节 loader 串行日志与该覆盖行为一致。loader `hung` 状态本身只表示判定内核无响应，不足以单独支持 park 结论。分类以实际取回内容为准，截断记录为截断。行号固定于 `hackios-xnu-kernel` 提交 `ec53bac`。
+分类结论只用三档：
+
+- host-stop banner（内核停止轮询打印「the host asked for the end of the run: back to the loader」，`loader_return.c` L513-L540）未见，此时抓取不完整与内核未执行停止回调两种情况无法区分。
+- banner 已见、无冷复位保留打印（park 未确证）。
+- 出现「requires host cold reset」打印（park 确证）。
+
+读取路径：
+
+- 两轮补采的适用状态是 loader 判定 hung 之前的 running：此时 `oem log` 读内核实时环形缓冲。
+- 判定 hung 后实时环形缓冲指针已清空（`loader.c` L2517），HUNG 分支的 `write_logs` 已把挂死判定时刻的快照组装进暂存（L3578），直接 `get_staged` 可取到该快照。
+- 再次执行 `oem log` 走 `compose_logs(NULL, 0)`（L327-L347，分支 L4035-L4041），清空暂存、只复制 loader 日志，快照被覆盖，run002 取回的 32,767 字节 loader 串行日志与该覆盖行为一致。
+- loader `hung` 状态本身只表示判定内核无响应，不足以单独支持 park 结论。分类以实际取回内容为准，截断记录为截断。
+- 行号固定于 `hackios-xnu-kernel` 提交 `ec53bac`。
 
 ## 6. 故障定位与恢复
 

@@ -40,7 +40,7 @@ roundb 装车的 AIR 库带逐帧计时插桩，日志里有三帧按阶段拆�
 - 内核 `hackios-xnu-kernel/out/xnu12377/iokit/Kernel/MiniIOMobileFramebuffer.cpp:169-175` 的 `micros()` 是 `absolutetime_to_nanoseconds(absolute, &ns); return ns / 1000;`，返回值是微秒。`tl: s`（`:838`）与 `tl: v`（`:1017`）都经它。
 - 插桩 `draw-perf.patch` 的 `fd_perf_us()` 是 `return mach_absolute_time() / 1000;`，返回值是 tick 数除以 1000，没有过 `absolutetime_to_nanoseconds`。
 
-所以两侧之比等于每 tick 的纳秒数，也就是 `mach_timebase_info` 的 `numer / denom`。patch 的注释写着「The clock is mach_absolute_time over 1000, the one the kernel's "tl:" lines use, so a line here lines up with tl: s, tl: Q and tl: v in the same log」，前半句对：钟确实是同一个。后半句错在单位：`ticks / 1000` 只有在时基是 1 GHz 时才等于微秒。
+所以两侧之比等于每 tick 的纳秒数，也就是 `mach_timebase_info` 的 `numer / denom`。patch 的注释写着「The clock is mach_absolute_time over 1000, the one the kernel's 『tl:』 lines use, so a line here lines up with tl: s, tl: Q and tl: v in the same log」，前半句对：钟确实是同一个。后半句错在单位：`ticks / 1000` 只有在时基是 1 GHz 时才等于微秒。
 
 ### 2.1 从时钟换算推出来
 
@@ -323,7 +323,11 @@ pass 0 max 0; calls 7 in (condition 0, multi 0) us
 
 **分辨率与「0 意味着什么」。** 一个单位是 52.08 微秒，所以任何字段打出 0 表示这一段低于 52.08 微秒，不表示代码没走到。`client`、`sync`、`pass` 三项在 28 条里全是 0，其中 `pass` 的 0 可以排除「走到了但低于分辨率」：`pass` 夹住的 `pipe->flush` 就是 `fd_context_flush`，而同一窗口里 `submit` 是 19 到 25 个单位、0.99 到 1.30 毫秒，`submit` 的区间整个在 `pass` 里面，`pass` 不可能比它小。所以 `tc_flush` 这条路径没有走到，随之 `tc_sync_msg`（`sync`）与客户端 draw 路径（`client`）也没有走到。
 
-这个推断有源码支撑，而且是故意设计成这样的：`hackios-xnu-kernel/tools/mesa/air/air_metal.c:320` 是 `device->pipe = device->screen->context_create(device->screen, NULL, 0)`，`:314-319` 的注释写明「Flags zero on purpose -- not PIPE_CONTEXT_PREFER_THREADED, so there is no Gallium worker thread between this library and the driver. A map held across a dispatch (rwa_buffer_map) is a direct mapping of the kernel's buffer only while that is true.」`freedreno_context.c` 在 flags 不带 `PIPE_CONTEXT_PREFER_THREADED` 时直接返回原 context，所以 `pipe` 就是裸的 `fd_context`。**客户端那一侧的插桩在这个配置下是死的，而且是为了让 `rwa_buffer_map` 能直接映射内核 buffer 才必须如此。** [差距分析](2026-10-28-ios26-perf-gap.md) §2.6 从代码独立读到同一条，两处可以互引。
+这个推断有源码支撑，而且是故意设计成这样的：
+
+- `hackios-xnu-kernel/tools/mesa/air/air_metal.c:320` 是 `device->pipe = device->screen->context_create(device->screen, NULL, 0)`，`:314-319` 的注释写明「Flags zero on purpose -- not PIPE_CONTEXT_PREFER_THREADED, so there is no Gallium worker thread between this library and the driver. A map held across a dispatch (rwa_buffer_map) is a direct mapping of the kernel's buffer only while that is true.」
+- `freedreno_context.c` 在 flags 不带 `PIPE_CONTEXT_PREFER_THREADED` 时直接返回原 context，所以 `pipe` 就是裸的 `fd_context`。
+- **客户端那一侧的插桩在这个配置下是死的，而且是为了让 `rwa_buffer_map` 能直接映射内核 buffer 才必须如此。** [差距分析](2026-10-28-ios26-perf-gap.md) §2.6 从代码独立读到同一条，两处可以互引。
 
 **`client 0` 读不成「客户端从没等过」**，`perf client ` 那个家族两轮 0 条也是同一个原因：`fd_perf_close(&fd_perf_client)` 在 `:659-661` 遇到 `!f->draws` 就提前返回，客户端一侧没有 draw 计数就永远不会打那一行。要把客户端一侧读出来需要另一处计时点，现有 patch 里没有；而那处计时点不能加在线程化上下文里，因为这个配置下它不在路径上。
 

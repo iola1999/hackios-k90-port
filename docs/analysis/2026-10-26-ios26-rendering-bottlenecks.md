@@ -29,7 +29,14 @@ QoS 轮的首手势实际生成时长为 228.088 ms，profile 轮为 293.902 ms�
 
 420 秒截图仍为桌面第一页，本轮横向翻页未通过；540 秒截图显示控制中心，灰色图标、白色组件、黑色壁纸和控制中心背景异常仍存在。QoS 先保留为实验输入，下一轮单独检查主线程优先级及完整手势处理。输入吞吐改善与显示正确性分别验收。
 
-共享内核的 `ustacks_task` 已增加独立 `ustate:` 行，在 `splsched → thread_lock` 内读取 state、block_hint、sched_pri、base_pri、req_base_pri，解锁后输出，原用户栈格式保持不变。`TH_WAIT` 配合 hint 4 可识别端口发送等待，配合 hint `0xa` 可识别用户锁等待；后者还需用户调用链确认具体锁。`TH_RUN` 仍包含执行中与运行队列中的线程。8796／12377 字段和锁序已核对。12377 构建已通过，产物 SHA-256 为 `6b7f1665fa6ce5a39b43e79a849dc08216b23406cf66f4d033987054de1bb871`，20,208,608 字节；相对 CPU-order 产物的 20 项实际输入仅变更 `user_exception_trace.c`。8796 构建也已通过，产物为 `b6bbf613bf24bbbc694a074bd1ca90d457fb25000b16c6be4d9a6eb3c6ce7e06`，15,491,024 字节。12377 的 `q26-ustate-boot` 已运行 60 秒并正常返回，三次采样均取得独立状态行，输入主线程在读等待，三项优先级均为 31；8796 尚未运行新增诊断。
+共享内核的 `ustacks_task` 已增加独立 `ustate:` 行，在 `splsched → thread_lock` 内读取 state、block_hint、sched_pri、base_pri、req_base_pri，解锁后输出，原用户栈格式保持不变。
+
+- `TH_WAIT` 配合 hint 4 可识别端口发送等待，配合 hint `0xa` 可识别用户锁等待；后者还需用户调用链确认具体锁。
+- `TH_RUN` 仍包含执行中与运行队列中的线程。
+- 8796／12377 字段和锁序已核对。
+- 12377 构建已通过，产物 SHA-256 为 `6b7f1665fa6ce5a39b43e79a849dc08216b23406cf66f4d033987054de1bb871`，20,208,608 字节；相对 CPU-order 产物的 20 项实际输入仅变更 `user_exception_trace.c`。
+- 8796 构建也已通过，产物为 `b6bbf613bf24bbbc694a074bd1ca90d457fb25000b16c6be4d9a6eb3c6ce7e06`，15,491,024 字节。
+- 12377 的 `q26-ustate-boot` 已运行 60 秒并正常返回，三次采样均取得独立状态行，输入主线程在读等待，三项优先级均为 31；8796 尚未运行新增诊断。
 
 后续输入对照先使用 `kernel12377-ustate` 与未修改的 profile 根盘，在首个手势附近采集主线程状态，再换仅主线程请求 QoS 的根盘。后者为 `out/ios26-resume/input26-main-qos-root/root.apfs`，SHA-256 `beff35588ed850b4bd1dcd9de5719da281c1e111e907e58ce900e91dcdc4c585`，仅替换输入程序为 `5d682cc3729a9cd1d1f142453456dcee3ca1b334a63fbdc6c6408f7db0394e49`，回调队列配置保持原样。两轮需使用相同采样参数，随后再组合已验证的输入和显示改动。该对照尚未运行。
 
@@ -49,13 +56,30 @@ QoS 轮的首手势实际生成时长为 228.088 ms，profile 轮为 293.902 ms�
 
 灰色占位另有明确条件：`IFConcreteImage ICRIconLayer` 要求可用 Metal device 和分层数据。普通应用经 `SBHIconServicesOptionsForImageOptions` 执行 `(options & 3) ^ 1`，不会提供允许平面图回退的 bit 2；通用占位路径则设置该位。平面图片已经生成仍可能没有普通图标层。
 
-系统已有平面图选择。`SBIconImageView shouldForceBitmapImages` 在非 Glass 外观下检查对象的平面图偏好、方形图标、真实低电量模式或 thermalState；结果经 bit 4 选择 `makeIconLayerFromImageWithInfo:...`。正常低电量模式探针已编译并签名，通过 powerd 原生 XPC 设置和读回状态。`q26-native-lpm` 对照运行 600 秒并正常返回：根盘 SHA-256 为 `8399f0563d648ef390e3c0ec23d7af52bfb8dd2b8488bee304c7b4827677b29a`，从 profile 冻结盘派生，只新增 probe 与一条后台任务；进程启动后 240 秒查询并保存原值、开启低电量模式，500 秒恢复，非法原值或读数不一致就跳过设置。原手势时序保持不变。保存恢复守卫和五条流程主机测试通过，客体在进程启动后 240.017 秒开始操作，原始 native／notify 状态均为 0；powerd 接受开启请求，两项读回均为 1，输出 `LPM_SET_VERIFIED value=1`。进程启动后 500.054 秒请求恢复，powerd 接受关闭请求，native／notify 均读回 0，输出 `LPM_RESTORE_VERIFIED value=0`，503.441 秒结束。该轮与主机构建重叠，只用于状态和显示检查，不作性能对照。420 秒同页截图中，profile 轮 11 个灰色应用图标已有 8 个显示内容：Weather、Stocks、Find My、Podcasts、Preview、Translate、Tips、AppleVisionPro；Home、Journal、Triangle 仍为灰色，壁纸仍为黑色。恢复后的 570 秒截图为第一页，应用图标全部有内容，两个组件仍为白色，壁纸仍为黑色。追加 Home 和左滑操作因脚本启动较晚，在约 554.36 秒连续执行，未成功回到第二页；本轮没有取得该页恢复前后的对应截图。默认图标策略暂不修改。
+系统已有平面图选择。`SBIconImageView shouldForceBitmapImages` 在非 Glass 外观下检查对象的平面图偏好、方形图标、真实低电量模式或 thermalState；结果经 bit 4 选择 `makeIconLayerFromImageWithInfo:...`。正常低电量模式探针已编译并签名，通过 powerd 原生 XPC 设置和读回状态。
+
+- `q26-native-lpm` 对照运行 600 秒并正常返回：根盘 SHA-256 为 `8399f0563d648ef390e3c0ec23d7af52bfb8dd2b8488bee304c7b4827677b29a`，从 profile 冻结盘派生，只新增 probe 与一条后台任务；进程启动后 240 秒查询并保存原值、开启低电量模式，500 秒恢复，非法原值或读数不一致就跳过设置。原手势时序保持不变。
+- 保存恢复守卫和五条流程主机测试通过，客体在进程启动后 240.017 秒开始操作，原始 native／notify 状态均为 0；powerd 接受开启请求，两项读回均为 1，输出 `LPM_SET_VERIFIED value=1`。
+- 进程启动后 500.054 秒请求恢复，powerd 接受关闭请求，native／notify 均读回 0，输出 `LPM_RESTORE_VERIFIED value=0`，503.441 秒结束。
+- 该轮与主机构建重叠，只用于状态和显示检查，不作性能对照。
+- 420 秒同页截图中，profile 轮 11 个灰色应用图标已有 8 个显示内容：Weather、Stocks、Find My、Podcasts、Preview、Translate、Tips、AppleVisionPro；Home、Journal、Triangle 仍为灰色，壁纸仍为黑色。
+- 恢复后的 570 秒截图为第一页，应用图标全部有内容，两个组件仍为白色，壁纸仍为黑色。
+- 追加 Home 和左滑操作因脚本启动较晚，在约 554.36 秒连续执行，未成功回到第二页；本轮没有取得该页恢复前后的对应截图。
+- 默认图标策略暂不修改。
 
 23G90 的 `SBIconImageView lowPowerModeDidChange:` 在开启状态直接返回，关闭才调用图标更新。开启低电量模式后，已有图标不会由该通知回调主动重建；新建或正常重新加载的非 Glass 图标仍可选择 bitmap。截图没有变化还需核对图标是否重建及 Glass 状态。该对照保持默认图标策略，GPU 路线继续独立验收。
 
 `q26-bitmap-observe` 从 LPM 根盘单独增加只读观察库，保持原方法返回，600 秒运行正常结束，低电量模式已验证恢复为 0。守卫确认 23G90、iPhone18,3／V57AP、方法 encoding、IMP 地址和入口字节后安装成功。关闭状态的 16 条记录均为 `original=0 hasGlass=0 lowPower=0`；开启状态的 16 条记录均为 `original=1 hasGlass=0 lowPower=1`，外观类均为 `SBHLightIconImageAppearance`，包含 Clock 子类。本轮为图标路径选择取得了运行结果；仍不能从这些有限样本推导所有图标的行为。
 
-`inject_sb26.c` 已加入候选：仅在真实 Metal 设备缺失且图标为非 Glass 外观时选择现有平面图路径，保留系统原返回为 YES 的情况及有 Metal 设备的路径。设备按进程首次需要时查询一次，返回对象立即释放；首次查询后才注册设备的场景需重启 SpringBoard。原方法、外观方法的指纹和 encoding 均检查，缺项保持原行为。主机分支和 64 路并发 once／release 检查、arm64e 编译与签名验证通过。候选保持低电量设置，`q26-software-icons` 的独立 600 秒对照已正常结束，根盘 SHA-256 为 `c4dcfffe9621fe1ef76dd5134d2b219615bdbb5de7510df8d129bd642c61b330`，相对 profile 仅替换 SB26 库；420 秒截图成功翻到第二页，profile 轮 11 个灰色应用图标中有 8 个显示内容，剩余 Home、Journal、Triangle 和黑色壁纸继续排查。日志确认全部指纹校验通过，`software_icons_installed=1`，真实 Metal 查询为 0。首个手势的首读至末条派发仍为 1892.266 ms，输入等待尚未解决。已将验证过的 SB26 库更新到默认 obj（SHA-256 `b95b22df74099770b1e43a5e8b2ad82e6a56eeeaa478fd1e5f9d33ed41225b98`）；正式根盘仍保留原文件，后续组合验证后再重建。
+`inject_sb26.c` 已加入候选：仅在真实 Metal 设备缺失且图标为非 Glass 外观时选择现有平面图路径，保留系统原返回为 YES 的情况及有 Metal 设备的路径。
+
+- 设备按进程首次需要时查询一次，返回对象立即释放；首次查询后才注册设备的场景需重启 SpringBoard。
+- 原方法、外观方法的指纹和 encoding 均检查，缺项保持原行为。
+- 主机分支和 64 路并发 once／release 检查、arm64e 编译与签名验证通过。
+- 候选保持低电量设置，`q26-software-icons` 的独立 600 秒对照已正常结束，根盘 SHA-256 为 `c4dcfffe9621fe1ef76dd5134d2b219615bdbb5de7510df8d129bd642c61b330`，相对 profile 仅替换 SB26 库；420 秒截图成功翻到第二页，profile 轮 11 个灰色应用图标中有 8 个显示内容，剩余 Home、Journal、Triangle 和黑色壁纸继续排查。
+- 日志确认全部指纹校验通过，`software_icons_installed=1`，真实 Metal 查询为 0。
+- 首个手势的首读至末条派发仍为 1892.266 ms，输入等待尚未解决。
+- 已将验证过的 SB26 库更新到默认 obj（SHA-256 `b95b22df74099770b1e43a5e8b2ad82e6a56eeeaa478fd1e5f9d33ed41225b98`）；正式根盘仍保留原文件，后续组合验证后再重建。
 
 ## 3. 壁纸与组件服务
 
@@ -75,15 +99,42 @@ QoS 轮的首手势实际生成时长为 228.088 ms，profile 轮为 293.902 ms�
 Metal 已完成一项独立的资源生命周期修正：记录 Work 后保留其引用的 pipeline、附件、buffer、texture 和 sampler，Work 析构时释放，防止编码结束后资源提前销毁。主机生命周期测试通过，删除 retain、删除 release、重复 retain 的三项变异均被测试发现；arm64e 动态库编译与严格签名检查通过，SHA-256 为 `7ef04a648d15759068363ec233f9f56c3c2449353ccddb5a49439a99bd8f8221`。该检查尚未覆盖 GPU fence 和 encoder 绑定至 Work 记录之间的生命周期，blit 与系统 Metal 渲染仍待实现和验收。
 
 
-blit 的首个子集已写入源码：buffer 到 buffer，以及同格式、单采样 2D／2D-array 纹理之间的区域复制。编码器把参数记录到原 Work 列表，commit 按已有顺序调用 Gallium `resource_copy_region` 并等待 fence，资源沿用 Work 的引用保留。跨设备、越界、重叠区域及带 argument-buffer 编码的 buffer 均报告错误；深度／模板、压缩纹理与 buffer／texture 互拷仍未实现。ObjC 库和后端隔离构建通过。softpipe C 测试覆盖 12 次 buffer 请求（3 次完成）和 20 次 texture 请求（4 次完成），其余非法输入按预期拒绝；BGRA8 与 RGBA16Float 的 array slice、origin、row pitch、偏移、哨兵及同资源不重叠复制检查通过。生产 ObjC encoder／executor 的主机测试通过 5 次 buffer 和 1 次 texture 后端调用，覆盖延迟执行、提交顺序、同列表依赖和提前释放；提前执行及丢失 source offset 的临时变体分别被断言检测到。默认系统 Metal 配置未启用，K90 GPU 执行待验证。
+blit 的首个子集已写入源码：buffer 到 buffer，以及同格式、单采样 2D／2D-array 纹理之间的区域复制。
+
+- 编码器把参数记录到原 Work 列表，commit 按已有顺序调用 Gallium `resource_copy_region` 并等待 fence，资源沿用 Work 的引用保留。
+- 跨设备、越界、重叠区域及带 argument-buffer 编码的 buffer 均报告错误；深度／模板、压缩纹理与 buffer／texture 互拷仍未实现。
+- ObjC 库和后端隔离构建通过。
+- softpipe C 测试覆盖 12 次 buffer 请求（3 次完成）和 20 次 texture 请求（4 次完成），其余非法输入按预期拒绝；BGRA8 与 RGBA16Float 的 array slice、origin、row pitch、偏移、哨兵及同资源不重叠复制检查通过。
+- 生产 ObjC encoder／executor 的主机测试通过 5 次 buffer 和 1 次 texture 后端调用，覆盖延迟执行、提交顺序、同列表依赖和提前释放；提前执行及丢失 source offset 的临时变体分别被断言检测到。
+- 默认系统 Metal 配置未启用，K90 GPU 执行待验证。
 
 
-最终 Metal 产物 SHA-256 为 `e2c9dd833df1fd92cadc51b3faab830d04c10ab9e5423c9a44cba91bdb834745`（arm64e），Mesa 后端为 `cdf4eaba82a0ddc91a59cd20ad24b88fd2a497d0ae010fd6dcbc69c33d8e5471`（arm64），两者 minOS 均为 26。Xcode 链接器拒绝 arm64e 探针直接链接当前 arm64 后端。随后 `q26-rwa-dlopen` 使用独立 arm64e 探针运行 60 秒并正常返回，探针仅链接 libSystem，在 `dlopen` 阶段被 23G90 dyld 拒绝，错误为 `have arm64, need arm64e`；设备创建和复制均未执行。独立 arm64e Mesa／AIR 及依赖现已完整构建，产物 SHA-256 为 `8e2f34c257f5f737d203f067a8c7334deb722ac46641f18c92d0c92adcf67b4b`，13,932,752 字节，包含 33 个 `rwa_*` 导出；723 个目标对象及 23 个静态库中的 722 个成员均为 arm64e／iOS／minOS 26。原 16.5 产物保留。构建记录见 `out/ios26-resume/mesa-arm64e/manifest.json`。`q26-rwa-arm64e` 仅替换旧探针根盘中的后端库，45 秒日志确认 `dlopen` 与全部符号解析成功，后端为 softpipe；257 字节的 `src=29 → dst=53` 复制返回 0，读回、目标周边哨兵、源内容与资源清理检查均通过。该结果覆盖 arm64e C 接口，A830 执行仍待验证。后续需再次验证加载、复制、Metal 私有 ABI 和 A830 执行。构建脚本、两套配置、源码、测试日志及产物已归档至 `out/ios26-resume/metal-blit/`，manifest 另记录 588 个外部构建输入的哈希。
+最终 Metal 产物 SHA-256 为 `e2c9dd833df1fd92cadc51b3faab830d04c10ab9e5423c9a44cba91bdb834745`（arm64e），Mesa 后端为 `cdf4eaba82a0ddc91a59cd20ad24b88fd2a497d0ae010fd6dcbc69c33d8e5471`（arm64），两者 minOS 均为 26。
+
+- Xcode 链接器拒绝 arm64e 探针直接链接当前 arm64 后端。
+- 随后 `q26-rwa-dlopen` 使用独立 arm64e 探针运行 60 秒并正常返回，探针仅链接 libSystem，在 `dlopen` 阶段被 23G90 dyld 拒绝，错误为 `have arm64, need arm64e`；设备创建和复制均未执行。
+- 独立 arm64e Mesa／AIR 及依赖现已完整构建，产物 SHA-256 为 `8e2f34c257f5f737d203f067a8c7334deb722ac46641f18c92d0c92adcf67b4b`，13,932,752 字节，包含 33 个 `rwa_*` 导出；723 个目标对象及 23 个静态库中的 722 个成员均为 arm64e／iOS／minOS 26。
+- 原 16.5 产物保留。
+- 构建记录见 `out/ios26-resume/mesa-arm64e/manifest.json`。
+- `q26-rwa-arm64e` 仅替换旧探针根盘中的后端库，45 秒日志确认 `dlopen` 与全部符号解析成功，后端为 softpipe；257 字节的 `src=29 → dst=53` 复制返回 0，读回、目标周边哨兵、源内容与资源清理检查均通过。
+- 该结果覆盖 arm64e C 接口，A830 执行仍待验证。
+- 后续需再次验证加载、复制、Metal 私有 ABI 和 A830 执行。
+- 构建脚本、两套配置、源码、测试日志及产物已归档至 `out/ios26-resume/metal-blit/`，manifest 另记录 588 个外部构建输入的哈希。
 
 
-随后 `q26-metal-runtime` 使用同一 arm64e 后端和已签名 Metal 候选，在 23G90 运行 60 秒并正常返回。探针直接实例化 `RedwoodMetalDevice`，未注册系统默认设备；实际 `_MTLDevice` 大小为 656 字节，创建了真实 `RedwoodMetalCommandQueue`、`RedwoodMetalCommandBuffer` 和 `RedwoodMetalBlitEncoder`。buffer 依赖复制为 `29 → 53 → 101` 偏移，两个目标在 commit 前保持哨兵，commit 后逐字节读回正确；19×11 的 BGRA8／RGBA16Float 纹理使用不同上传和读回行距，区域内容和行尾填充均通过。共 4 次复制、3 个 command buffer，wait 后状态均为 4（Completed），error 为 nil，日志最终输出 PASS。该轮仍为 softpipe；着色器、IOSurface 导入、系统默认设备注册和 GPU 执行尚未覆盖。运行清单为 `out/ios26-resume/q26-metal-runtime-manifest.json`。
+随后 `q26-metal-runtime` 使用同一 arm64e 后端和已签名 Metal 候选，在 23G90 运行 60 秒并正常返回。
+
+- 探针直接实例化 `RedwoodMetalDevice`，未注册系统默认设备；实际 `_MTLDevice` 大小为 656 字节，创建了真实 `RedwoodMetalCommandQueue`、`RedwoodMetalCommandBuffer` 和 `RedwoodMetalBlitEncoder`。
+- buffer 依赖复制为 `29 → 53 → 101` 偏移，两个目标在 commit 前保持哨兵，commit 后逐字节读回正确；19×11 的 BGRA8／RGBA16Float 纹理使用不同上传和读回行距，区域内容和行尾填充均通过。
+- 共 4 次复制、3 个 command buffer，wait 后状态均为 4（Completed），error 为 nil，日志最终输出 PASS。
+- 该轮仍为 softpipe；着色器、IOSurface 导入、系统默认设备注册和 GPU 执行尚未覆盖。运行清单为 `out/ios26-resume/q26-metal-runtime-manifest.json`。
 
 
-原始 `q26-metal-pipeline` 与带采样的重复轮均在首次 compute commit 中输出 `Unknown NIR opcode: u2f16`，随后探针产生 corpse；创建 pipeline 已通过，计算尚未提交到后端。失败位于 softpipe 的 NIR→TGSI 编译。独立候选为无原生 FP16 的软件后端增加转换处理，保留 half 的舍入和存储语义；未覆盖的 half 运算明确拒绝，freedreno 路径保持原有处理。候选 `ab8ff6a468cad95c965c3bf4e31c32d2ef70669834c12e4573a88ca461767704` 的 `q26-metal-half` 运行 90 秒正常返回，同一探针完成 1 次 compute、2 次 draw、1 次 blit 和 3 个 command buffer。8×8 RGBA16Float 计算结果、系统 AppleMetalGLRenderer 的常色／纹理绘制、四个附件与复制目标的内容及行尾填充均通过；后端仍为 softpipe。完整输入和运行日志位于 `out/ios26-resume/metal-half/` 与 `q26-metal-half-manifest.json`，A830 提交、IOSurface 和跨进程同步仍待验证。
+原始 `q26-metal-pipeline` 与带采样的重复轮均在首次 compute commit 中输出 `Unknown NIR opcode: u2f16`，随后探针产生 corpse；创建 pipeline 已通过，计算尚未提交到后端。失败位于 softpipe 的 NIR→TGSI 编译。
+
+- 独立候选为无原生 FP16 的软件后端增加转换处理，保留 half 的舍入和存储语义；未覆盖的 half 运算明确拒绝，freedreno 路径保持原有处理。
+- 候选 `ab8ff6a468cad95c965c3bf4e31c32d2ef70669834c12e4573a88ca461767704` 的 `q26-metal-half` 运行 90 秒正常返回，同一探针完成 1 次 compute、2 次 draw、1 次 blit 和 3 个 command buffer。
+- 8×8 RGBA16Float 计算结果、系统 AppleMetalGLRenderer 的常色／纹理绘制、四个附件与复制目标的内容及行尾填充均通过；后端仍为 softpipe。
+- 完整输入和运行日志位于 `out/ios26-resume/metal-half/` 与 `q26-metal-half-manifest.json`，A830 提交、IOSurface 和跨进程同步仍待验证。
 
 AIR 前端另增加 23G90 的 `air.get_read_sampler` 及相应 2D 读取参数解析，保持旧签名。真实 QuartzCore `read_write_surf_compute` 在主机 softpipe 完成 187 个像素复制，60 个目标边界像素与 187 个源像素保持不变；旧前端对同一输入因缺少 intrinsic 失败。两个实际 fragment 的动态 LOD 在 NIR 中保留，16.5 旧读取着色器的 NIR 与改动前相同。任意 sampler、非零 offset 等未覆盖形式明确拒绝；该前端改动尚未进入已测 arm64e 候选，记录位于 `out/ios26-resume/read-sampler-host/manifest.json`。

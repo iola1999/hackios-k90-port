@@ -109,7 +109,12 @@ Android 的 GMU、SQE、AQE 文件长度和 SHA-256 与当前实验输入完全�
 
 内核 `out/handoff-mach-min160` 为 19215576 字节，SHA-256 `f03b75d485c55fe1fd30cdb2fe202c4c65186ad2f805197ea9b4dfd5e1ec57ca`；payload 为 `out/handoff-min160-s17.bin`，28435976 字节，SHA-256 `0774ac4b1588b20d40b3fc7833422b531dde03e462174d491557b37bbb34b89c`。真机确认 160 MHz、vote `0x320201`，START 和 DCVS ACK 均通过；阶段 17 再次在 RAW131 索引 `344` 发布后复位，约 26.1 秒返回 v7 `idle`。
 
-提交 `2446329` 增加 `adreno8_gpu_stall=1` 诊断，仅将 GPU CB0／CB3 的 SCTLR 从 `0x27` 改为 `0xa7`，GMU CB2 保持 `0x27`，CFIE 保持清零。3a、3b 仍要求完整值严格读回，故障检查、停止提交及资源保留继续生效。4 KiB／16 KiB 的 SMMU、translation、handoff、service 及相关回归通过；service 覆盖 21 场景与 stall 开关，新增控制位变异及路由前后校验变异均被发现。真机阶段 17 已确认 CB0／CB3 的 `0xa7` 读回，RAW131 数据及生产者索引 `344` 发布后仍自动复位，约 26.14 秒返回 v7 `idle`，没有取得 HFI ACK 或故障寄存器报告。内核 `out/handoff-mach-gpu-stall` 为 19215648 字节，SHA-256 `837895617ad88c37e3c9fb5b35e96a57fd6f7ef8ad2228925803eea0ba7736e0`；payload `out/handoff-gpu-stall-s17-stall.bin` 为 28436056 字节，SHA-256 `5ace4666adff358a5e3aac4f85d4accbca313c199e3c12df66ab7aa2d05bfe76`。
+提交 `2446329` 增加 `adreno8_gpu_stall=1` 诊断，仅将 GPU CB0／CB3 的 SCTLR 从 `0x27` 改为 `0xa7`，GMU CB2 保持 `0x27`，CFIE 保持清零。3a、3b 仍要求完整值严格读回，故障检查、停止提交及资源保留继续生效。
+
+- 4 KiB／16 KiB 的 SMMU、translation、handoff、service 及相关回归通过；service 覆盖 21 场景与 stall 开关，新增控制位变异及路由前后校验变异均被发现。
+- 真机阶段 17 已确认 CB0／CB3 的 `0xa7` 读回，RAW131 数据及生产者索引 `344` 发布后仍自动复位，约 26.14 秒返回 v7 `idle`，没有取得 HFI ACK 或故障寄存器报告。
+
+内核 `out/handoff-mach-gpu-stall` 为 19215648 字节，SHA-256 `837895617ad88c37e3c9fb5b35e96a57fd6f7ef8ad2228925803eea0ba7736e0`；payload `out/handoff-gpu-stall-s17-stall.bin` 为 28436056 字节，SHA-256 `5ace4666adff358a5e3aac4f85d4accbca313c199e3c12df66ab7aa2d05bfe76`。
 
 ## 12. 后续对照与启动前提
 

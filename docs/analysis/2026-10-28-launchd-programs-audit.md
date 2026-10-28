@@ -68,7 +68,11 @@ OS 卷命名空间里但清单没有的 6 个：`/usr/local/bin/cellularcertd`�
 
 1 个 plist 没有程序键：`com.apple.jetsamproperties.V57.plist`，是配置项。
 
-还有一类容易被误判成缺口：**服务名与 job 名不同**。`com.apple.duetactivityscheduler` 没有以它命名的 plist，但它是 `com.apple.dasd` 的一项 `MachServices`（程序 `/usr/libexec/dasd`，2,572,640 字节，在盘上）；`com.apple.coreduetd.context` 由 `com.apple.contextstored` 提供（`CoreDuetContext.framework/Resources/contextstored`，106,256 字节，在盘上），而 `com.apple.coreduetd`（`/usr/libexec/coreduetd`，361,696 字节，在盘上）提供的是 `knowledge`、`people`、`pairedsync` 这另一组名字。所以判定某个服务缺不缺，不能按服务名找同名 plist，要先把每个 plist 的 `MachServices` 列全再反查；`tools/check-launchd-programs.py --service NAME` 做的就是这一步。
+还有一类容易被误判成缺口：**服务名与 job 名不同**。
+
+- `com.apple.duetactivityscheduler` 没有以它命名的 plist，但它是 `com.apple.dasd` 的一项 `MachServices`（程序 `/usr/libexec/dasd`，2,572,640 字节，在盘上）。
+- `com.apple.coreduetd.context` 由 `com.apple.contextstored` 提供（`CoreDuetContext.framework/Resources/contextstored`，106,256 字节，在盘上），而 `com.apple.coreduetd`（`/usr/libexec/coreduetd`，361,696 字节，在盘上）提供的是 `knowledge`、`people`、`pairedsync` 这另一组名字。
+- 所以判定某个服务缺不缺，不能按服务名找同名 plist，要先把每个 plist 的 `MachServices` 列全再反查；`tools/check-launchd-programs.py --service NAME` 做的就是这一步。
 
 另有一种「策略上排除」：`com.apple.duetexpertd`（`/usr/libexec/duetexpertd`，98,672 字节，33 项 `MachServices`，其中 `com.apple.proactive.HomeScreenSuggestion.xpc` 与 `com.apple.proactive.SuggestedPages` 与桌面建议相关）程序在盘上，但它在 `userland/mkjobs.py` 的 `DENY` 里，从来没起过。它不进本文的缺口统计。
 

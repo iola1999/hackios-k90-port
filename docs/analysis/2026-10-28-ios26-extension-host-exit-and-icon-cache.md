@@ -45,7 +45,38 @@ lsprobe t=60 workspace=258 workspace_extensions=296
 
 `/private/var` 是每次开机从骨架重建的内存盘，骨架里只有 `/private/var/mobile/Containers`、`/Data`、`/Shared` 三个空目录（`out/ios26-resume/air-arm64e-device/on/root/etc/var.skel:86-88`），`Data/Application` 与 `Data/PluginKitPlugin` 都不在骨架里。运行到 60 秒时 `Data/Application` 下已有 240 项，LaunchServices 看到 258 个应用与 296 个扩展，`IconState.plist` 也已存在。**mobile 侧这几个目录是运行时填上的；system 侧那四个 `-1`（`containers_system`、`posterboard_dir`、`pluginkit_dir`、`files_staged`）才是骨架里根本没有的。**
 
-宿主退出的直接记录在同一轮：**4 条 `Process[<pid>] crashed: <comm>. Too many corpses being created.`**（快照重叠已去重），出自 `bsd/kern/kern_exit.c:2188`，即 `task_mark_corpse()` 返回了 `KERN_NO_SPACE`／`KERN_NOT_SUPPORTED`／`KERN_TERMINATED` 以外的错误，进程名只有三个——`BarcodeScannerWi` 2 次、`CalculatorWidget` 1 次、`LauncherControlE` 1 次。宿主被拉起过，然后崩掉，corpse 名额被耗尽。**但崩溃的是少数**：同一轮 t=300 的进程表里有 67 个进程，小组件与扩展宿主一片在跑——`WeatherWidget`、`WeatherIntents`、`TipsWidget`、`SleepWidgetExtension`、`TVRemoteWidgetExtension`、`ScreenTimeWidgetExtension`、`BooksWidgetExtension`、`CalendarWidgetExtension`、`BatteriesAvocadoWidgetExtension`、`HomeWidget`、`HomeWidgetLockScreen`、`HomeEnergyWidgetsExtension`、`FindMyWidgetPeople`、`GeneralMapsWidget`、`HealthBalanceWidgetExtension`、`AdaptiveMusicWidget`、`AdaptiveMusicControl`、`MobileNotes` 的 widget 与 intents 两个扩展、`MapKit.SnapshotService`、`MobileInstallationHelperService`。所以现象是「少数宿主崩溃，多数在跑」；宿主活着而小组件不显示，问题在布局与登记，不在宿主能不能启动。
+宿主退出的直接记录在同一轮：**4 条 `Process[<pid>] crashed: <comm>. Too many corpses being created.`**（快照重叠已去重），出自 `bsd/kern/kern_exit.c:2188`，即 `task_mark_corpse()` 返回了 `KERN_NO_SPACE`／`KERN_NOT_SUPPORTED`／`KERN_TERMINATED` 以外的错误，进程名只有三个：
+
+| 进程名 | 次数 |
+|---|---|
+| `BarcodeScannerWi` | 2 |
+| `CalculatorWidget` | 1 |
+| `LauncherControlE` | 1 |
+
+宿主被拉起过，然后崩掉，corpse 名额被耗尽。**但崩溃的是少数**：同一轮 t=300 的进程表里有 67 个进程，小组件与扩展宿主一片在跑：
+
+- `WeatherWidget`
+- `WeatherIntents`
+- `TipsWidget`
+- `SleepWidgetExtension`
+- `TVRemoteWidgetExtension`
+- `ScreenTimeWidgetExtension`
+- `BooksWidgetExtension`
+- `CalendarWidgetExtension`
+- `BatteriesAvocadoWidgetExtension`
+- `HomeWidget`
+- `HomeWidgetLockScreen`
+- `HomeEnergyWidgetsExtension`
+- `FindMyWidgetPeople`
+- `GeneralMapsWidget`
+- `HealthBalanceWidgetExtension`
+- `AdaptiveMusicWidget`
+- `AdaptiveMusicControl`
+- `MobileNotes` 的 widget 与 intents 两个扩展
+- `MapKit.SnapshotService`
+- `MobileInstallationHelperService`
+
+现象是「少数宿主崩溃，多数在跑」；宿主活着而小组件不显示，问题在布局与登记，不在宿主能不能启动。
 
 同一轮的 watchdog 违反按扩展分开（去掉快照重复后共 22 条，涉及 7 个扩展）：`com.apple.stocks.widget` 7、`com.apple.AdaptiveMusicApp.AdaptiveMusicControl` 6、`ScreenTimeWidgetExtension` 2、`PassbookWidgets` 2、`FitnessWidget` 2、`AccessibilityControlsExtension` 2、`BooksWidget` 1。分布集中在两个扩展上，`stocks.widget` 与 `AdaptiveMusicControl` 合计 13 条，占 59%。
 
@@ -71,7 +102,46 @@ lsprobe t=60 workspace=258 workspace_extensions=296
 | 11 | 文件提供者（`fileprovider-nonui` 6、`fileprovider-actionsui` 2、`fileprovider-ui`、`DocumentManager.Service`、`fskit.fsmodule`） | 按需 |
 | 2 | 壁纸（`com.apple.posterkit.provider`：`InfographPoster.appex`、`MonogramPosterExtension.appex`） | 选中 poster 相关时才走 |
 
-会被 SpringBoard／`chronod` 主动要内容的只有 33 条 widgetkit 加 2 条 posterkit，共 **35 条，35 个不同宿主**：`CalculatorWidget`、`HomeWidget`、`SleepWidgetExtension`、`TypeToSiriWidgetExtension`、`AdaptiveMusicWidget`、`AdaptiveMusicControl`、`BarcodeScannerWidgetExtension`、`BatteriesWidgetExtension`、`BatteriesAvocadoWidgetExtension`、`CalendarWidgetExtension`、`FindMyWidgetItems`、`FitnessWidget`、`HealthBalanceWidget`、`ScreenTimeWidgetExtension`、`PrintCenterWidgetExtension`、`PeopleWidget_iOSExtension`、`GCWidgets`、`TVRemoteWidgetExtension`、`TrackingUIServiceWidgetExtension`、`VPNAppIntentWidgetExtension`、`AccessibilityControlsExtension`、`ControlCenterControlsExtension`、`ToggleAirplaneModeExtension`、`ToggleCellularDataModeExtension`、`WiFiSettingsControlsExtension`、`WirelessModemSettingsControlsExtension`、`PersonalHotspotControlExtension`、`SoundAndHapticsControls`、`MusicRecognitionControls`、`BatterySettingsIntentsExtension`、`DefaultAppsSettingsIntentsExtension`、`GeneralSettingsIntentsExtension`、`NotificationsSettingsExtension`、`IntelligenceIntentsExtension`、`AirDropSettingsIntentsExtension`、`MessagesSettingsWidgetKitExtension`、`InfographPoster`、`MonogramPosterExtension`。
+会被 SpringBoard／`chronod` 主动要内容的只有 33 条 widgetkit 加 2 条 posterkit，共 **35 条，35 个不同宿主**：
+
+- `CalculatorWidget`
+- `HomeWidget`
+- `SleepWidgetExtension`
+- `TypeToSiriWidgetExtension`
+- `AdaptiveMusicWidget`
+- `AdaptiveMusicControl`
+- `BarcodeScannerWidgetExtension`
+- `BatteriesWidgetExtension`
+- `BatteriesAvocadoWidgetExtension`
+- `CalendarWidgetExtension`
+- `FindMyWidgetItems`
+- `FitnessWidget`
+- `HealthBalanceWidget`
+- `ScreenTimeWidgetExtension`
+- `PrintCenterWidgetExtension`
+- `PeopleWidget_iOSExtension`
+- `GCWidgets`
+- `TVRemoteWidgetExtension`
+- `TrackingUIServiceWidgetExtension`
+- `VPNAppIntentWidgetExtension`
+- `AccessibilityControlsExtension`
+- `ControlCenterControlsExtension`
+- `ToggleAirplaneModeExtension`
+- `ToggleCellularDataModeExtension`
+- `WiFiSettingsControlsExtension`
+- `WirelessModemSettingsControlsExtension`
+- `PersonalHotspotControlExtension`
+- `SoundAndHapticsControls`
+- `MusicRecognitionControls`
+- `BatterySettingsIntentsExtension`
+- `DefaultAppsSettingsIntentsExtension`
+- `GeneralSettingsIntentsExtension`
+- `NotificationsSettingsExtension`
+- `IntelligenceIntentsExtension`
+- `AirDropSettingsIntentsExtension`
+- `MessagesSettingsWidgetKitExtension`
+- `InfographPoster`
+- `MonogramPosterExtension`
 
 这份清单的第二个用途：降级时正好是这 35 条要摘掉，其余 698 条不参与「起了就退」。
 

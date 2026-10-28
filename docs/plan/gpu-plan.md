@@ -1,4 +1,4 @@
-# GPU 计划（SM8750 / Adreno 830 "sun"）— 离线调研 2026-10
+# GPU 计划（SM8750 / Adreno 830「sun」）— 离线调研 2026-10
 
 状态更新（2026-10-24）：按用户最新要求整理后暂停。采样定位到 `softpipe` 软件着色器耗时；普通 GMU/HFI 初始化与最低档 DCVS 已实测。后续第 14 阶段改为 HWSCHED START，完成 7 项普通内存分配后因缺少 kind 5 安全资源实现停止，GPU 命令与渲染尚未执行。本机使用 `gen80000_*`、12 MiB GMEM。当前设备已恢复 iOS 16.5 软件桌面；用户允许升级至 iOS 17 或更新版本。最新状态见[HWSCHED 实测](../progress/2026-10-24-gpu-execution.md)，恢复顺序和版本选择见[暂停计划](2026-10-24-gpu-handoff.md)。下文保留平台调研，上游支持范围仍需按本机配置独立验证。
 
@@ -7,9 +7,9 @@
 ## 1. redwood（SM7375 / Adreno 642L≈a660）GPU 链路盘点
 
 ### 1.1 内核 `bsd/dev/redwood_adreno.c`：22 步上电阶梯 + 常驻服务
-- **不是常规驱动，是步进式探测机**：`adreno=N` 执行步骤 1..N 后停；每步"先说再碰、读先于写、失败即止"，专为"hypervisor 不喜欢就静默复位"的真机环境设计。配套 loader 侧旁路日志（`bootcpu=N`、`adreno_pause/fine/watch`）。
+- **不是常规驱动，是步进式探测机**：`adreno=N` 执行步骤 1..N 后停；每步「先说再碰、读先于写、失败即止」，专为「hypervisor 不喜欢就静默复位」的真机环境设计。配套 loader 侧旁路日志（`bootcpu=N`、`adreno_pause/fine/watch`）。
 - 阶梯主干：①GCC 时钟 + cmd_db 扫 RPMh 资源名（gfx.lvl/cx.lvl/mx.lvl）②qfprom 读 speed bin ③GPUCC ④CX GDSC 上电 ⑤时钟 + DFS 频率计数器实测 ⑥–⑦GMU/GBIF 寄存器 ⑧–⑨GPU-SMMU 识别 + CB ⑩GMU 内存读写自测 ⑪–⑫⑲ TZ（qcom_scm，GPU PAS 13）验签/加载 **a660_zap.mdt** ⑬自建 SMMU 页表（39-bit、3 级、4K 页、**单 ctx0 全局 aspace**）⑭灌 **a660_gmu.bin** ⑮放 GMU reset ⑯RPMh 链路 + HFI 队列 ⑰HFI 要表 + GX 上电（`adreno_speed=1..3` = speed bin）⑱GX CB + ring + **a660_sqe.fw** ⑳开 CP ㉑退出 secure ㉒三色填充直写面板（`MiniIOMobileFramebufferShow`）。
-- **微码**：安卓 `/vendor/firmware/a660_{gmu.bin,sqe.fw,zap.mdt,zap.b00-02}` → boot image `fw-gpu/`（`userland/build.sh` 打包；缺则 "THE GPU IS NOT STARTED"）。
+- **微码**：安卓 `/vendor/firmware/a660_{gmu.bin,sqe.fw,zap.mdt,zap.b00-02}` → boot image `fw-gpu/`（`userland/build.sh` 打包；缺则「THE GPU IS NOT STARTED」）。
 - boot-args 全集：`gpu=1`（开机点亮并常驻）、`adreno=N`、`adreno_only/skip/pause/fine/watch/return`、`adreno_keep=1`（做完 21 步不停电，交 RedwoodGPU 服务）、`adreno_blind/stream1`、`adreno_speed`、`gpu_recover=1`（挂死提交→GX 半区复位续命）、`gpu_log`、`gpu_va=0/1/2`（VA 描述/护栏页）、`gpu_cached`、`display_probe=1`。
 - 地址分配器仿 msm：`msm_gem_get_iova` 语义，first-fit + coalesce（`gpu_free[1024]`），**所有 client 共享 ctx0** （一个程序 shader 能摸到别人的 buffer——driver 明确不防）。
 
@@ -21,15 +21,25 @@
 ### 1.3 iOS 侧怎么被喂（关键结论）
 - **Apple GPU HAL 整个绕开，不补丁、不替换**：IOGPU/AGXMetal* 不参与（实测对 IOAcceleratorES 用 Apple 的 type-1 open 得 `kIOReturnUnsupported`，路死）。
 - 显示/共享缓冲：**MiniIOSurface.kext 替身**（iOS 16.5 用户态反推协议，选择子/结构布局照抄）+ **MiniIOMobileFramebuffer 替身**（swap=把图层像素 CPU 拷进 loader 留下的 fb，vsync=定时器）。
-- **GL**：fork 的 Mesa gallium freedreno/ir3 编 darwin（`freedreno-darwin.patch`、`osmesa-es-profile`、3 个 ir3 补丁），libdrm 由 `tools/mesa/redwood-drm/redwood_drm.c` 桩替（IOServiceOpen→RedwoodGPU）。README 定案一句：**"OpenGL ES for CoreAnimation"** —— CA 渲进 IOSurface，MiniIMF 拷屏。App 的 GLES 也走这条（`src/eagl.c`+`redwood_gl.h`+`gl_osmesa.c`）。
+- **GL**：fork 的 Mesa gallium freedreno/ir3 编 darwin（`freedreno-darwin.patch`、`osmesa-es-profile`、3 个 ir3 补丁），libdrm 由 `tools/mesa/redwood-drm/redwood_drm.c` 桩替（IOServiceOpen→RedwoodGPU）。README 定案一句：**「OpenGL ES for CoreAnimation」** —— CA 渲进 IOSurface，MiniIMF 拷屏。App 的 GLES 也走这条（`src/eagl.c`+`redwood_gl.h`+`gl_osmesa.c`）。
 - **Metal（进行中）**：`src/redwoodmetal.m` 用 `MTLAddDevice` 只测出 4 个必答方法注册 device（自声明类继承 `_MTLDevice`、`MTLDeviceSPI` 运行时 class_addProtocol 糊过 conformsToProtocol）；buffer=GEM+IOConnectMapMemory64；compute/render/depth/arg-buffer 编码器都有；shader 编译 = **AIR→NIR→ir3** 自研前端（`tools/mesa/air`，`libredwoodair.dylib`，`docs/air.md` 分别记录 456 模块中 321 个入口编译为机器码、30 个入口在旧设备 GPU 完成执行；K90 的 Metal 路径尚未实测）。iOS 16 的 metallib/用户态二进制不改。
 - 用户态注入只有 libredwood{,-tweaks,-app}.dylib（SpringBoard 等杂症），**GPU 相关无 iOS 侧 patch**。
 
 ## 2. SM8750 / Adreno 830（gen8）与 a6xx 的破坏性差异
 
 ### 2.1 上游现状（实查）
-- **torvalds/linux master 已有 a8xx**：`288a9320`（2025-11-18，"drm/msm/adreno: Introduce A8x GPU Support"，作者日期）+ 后续；`a8xx_gpu.c` 1372 行 + `a8xx_preempt.c`，**复用 a6xx 的 GMU/HFI/SCM 框架**（a6xx_gmu.c 里 a8xx 分支）。catalog `a8xx_gpus[]`：`0x44070001`(gen80100 fw，21MB GMEM，无 zap)、`0x44050a01`(gen80200 fw **+ gen80200_aqe.fw**，18MB GMEM，无 zapfw)、`0x44010000`(gen80300 fw，zap=gen80300_zap.mbn)。本机 DT 为 `qcom,chipid=0x44050000`、compatible `qcom,adreno-gpu-gen8-0-0`。本机 Android 日志和厂商 `adreno_gpu_core_gen8_0_0` 配置均选择 `gen80000_*`，不能从 chipid 的相似前缀推定固件兼容。
-- **Mesa/freedreno a8xx（2026-10-23 两轮 GitLab API 实查 main=27.0.0-devel）：包含 A8xx Vulkan 与 GL 实现，K90 尚未实测**。turnip（已迁 `src/freedreno/vulkan`，tu 统一 CHIP 模板）A8XX 分岔密集（`tu_device_entrypoints_a8xx`、`CHIP >= A8XX` 的 viewport/blend/rast 发射），A8xx 修复提交持续到 2026-10-22；本次未取得 K90 的一致性测试与持续运行结果。上游 devinfo（`freedreno_devices.py`）收有 A8XX gen1/gen2 条目，chipid 勘误补丁（Rob Clark 48be91d1，随 25.3 分发）把我们这颗 **0x44050000** 修成 0xffff44050000 "Adreno (TM) 830"（另有 830v1=0x44050001/KGSL 口径）——归属坐实。社区栈 whitebelyash turnip/gen8（tu_v20.2 起）实测 Adreno 830 Vulkan 可跑，部分已上游化。**gallium GL 非零**（「零」是大写串 grep 的假阴性）：`fd6_hw.h` 已 include `a8xx_enums/perfcntrs/descriptors.xml.h`；a6xx 路径已 CHIP 模板化并有 `CHIP >= A8XX` 运行时分支（2ee0a5e6 "Indirect buffer needs WFM on a8xx+" 2026-07-17、779cdb8e "Fix query barriers for gen8+" 2026-07-15）；a8xx devinfo 带 gallium gmem/BV 参数（`gmem_vpc_bv_pos_buf_size`）。这些代码确认实现存在，真机执行范围仍需独立验证。但**无 deqp/CI 农场佐证、无"GL gen8 完成"官方声明**，可用性未证实。当前 Mesa 已构建为 26.2.5；先完成 A830 内核提交，再优先评估 Metal→metal2vulkan→Turnip，现有 GLES 保留为验证与恢复路径。
+- **torvalds/linux master 已有 a8xx**：`288a9320`（2025-11-18，「drm/msm/adreno: Introduce A8x GPU Support」，作者日期）+ 后续；`a8xx_gpu.c` 1372 行 + `a8xx_preempt.c`，**复用 a6xx 的 GMU/HFI/SCM 框架**（a6xx_gmu.c 里 a8xx 分支）。catalog `a8xx_gpus[]` 收录三档：
+  - `0x44070001`：gen80100 fw，21MB GMEM，无 zap。
+  - `0x44050a01`：gen80200 fw **+ gen80200_aqe.fw**，18MB GMEM，无 zapfw。
+  - `0x44010000`：gen80300 fw，zap=gen80300_zap.mbn。
+  - 本机 DT 为 `qcom,chipid=0x44050000`、compatible `qcom,adreno-gpu-gen8-0-0`。本机 Android 日志和厂商 `adreno_gpu_core_gen8_0_0` 配置均选择 `gen80000_*`，不能从 chipid 的相似前缀推定固件兼容。
+- **Mesa/freedreno a8xx（2026-10-23 两轮 GitLab API 实查 main=27.0.0-devel）：包含 A8xx Vulkan 与 GL 实现，K90 尚未实测**。
+  - turnip（已迁 `src/freedreno/vulkan`，tu 统一 CHIP 模板）A8XX 分岔密集（`tu_device_entrypoints_a8xx`、`CHIP >= A8XX` 的 viewport/blend/rast 发射），A8xx 修复提交持续到 2026-10-22；本次未取得 K90 的一致性测试与持续运行结果。
+  - 上游 devinfo（`freedreno_devices.py`）收有 A8XX gen1/gen2 条目，chipid 勘误补丁（Rob Clark 48be91d1，随 25.3 分发）把我们这颗 **0x44050000** 修成 0xffff44050000「Adreno (TM) 830」（另有 830v1=0x44050001/KGSL 口径），归属坐实。
+  - 社区栈 whitebelyash turnip/gen8（tu_v20.2 起）实测 Adreno 830 Vulkan 可跑，部分已上游化。
+  - **gallium GL 非零**（「零」是大写串 grep 的假阴性）：`fd6_hw.h` 已 include `a8xx_enums/perfcntrs/descriptors.xml.h`；a6xx 路径已 CHIP 模板化并有 `CHIP >= A8XX` 运行时分支（2ee0a5e6「Indirect buffer needs WFM on a8xx+」2026-07-17、779cdb8e「Fix query barriers for gen8+」2026-07-15）；a8xx devinfo 带 gallium gmem/BV 参数（`gmem_vpc_bv_pos_buf_size`）。
+  - 这些代码确认实现存在，真机执行范围仍需独立验证。但**无 deqp/CI 农场佐证、无「GL gen8 完成」官方声明**，可用性未证实。
+  - 当前 Mesa 已构建为 26.2.5；先完成 A830 内核提交，再优先评估 Metal→metal2vulkan→Turnip，现有 GLES 保留为验证与恢复路径。
 - **固件来源**：已取得 linux-firmware 的 `gen80000_gmu.bin`、`gen80000_sqe.fw`、`gen80000_aqe.fw` 和 `qcom/sm8750/gen80000_zap.mbn`，保留许可、通知与文件哈希。版本来源和与手机固件的核对边界见 [固件说明](../../hackios-xnu-userland/firmware-gen8/README.md)。本机启动兼容性按分阶段实验验证。
 
 ### 2.2 gen8 相对 a6xx（redwood代码能直接复用的边界之外）
@@ -40,7 +50,7 @@
 5. **AQE 微码**：本机 gen80000 同时提供 AQE 和 SQE 固件；加载顺序及寄存器按厂商 gen8.0.0 实现核对。
 6. preempt/上下文切换格式变：CP_CONTEXT_SWITCH_SMMU_INFO + preempt_level/SKIP_SAVE_RESTORE（PPT 机制仍在，但我们仍可用单 ctx0 绕过）。
 7. LLC slice 编程（`a8xx_llc_activate`，llcc-qcom 接口）；GBIF halt 多一个 RBBM_GBIF_HALT；UBWC mode 5；厂商 gen8.0.0 配置的 GMEM 为 12 MiB。
-8. **供电**：CX GDSC 挪进 gpucc 窗口（0x3d99080，非redwood的 gpucc+0x106c 语义映射）；**GX 域独立成 gxclkctl@3d68024**；RPMh 名 `gfx.lvl` 仍在（cmd-db **0x81c60000**+0x20000，redwood是 0x80860000，驱动本来就扫 SMEM 魔数，可移植）。好消息：GMU+HFI+RPMh+SCM 的"世界观"没变，redwood 22 步阶梯**结构**可平移，常数全换。
+8. **供电**：CX GDSC 挪进 gpucc 窗口（0x3d99080，非redwood的 gpucc+0x106c 语义映射）；**GX 域独立成 gxclkctl@3d68024**；RPMh 名 `gfx.lvl` 仍在（cmd-db **0x81c60000**+0x20000，redwood是 0x80860000，驱动本来就扫 SMEM 魔数，可移植）。好消息：GMU+HFI+RPMh+SCM 的「世界观」没变，redwood 22 步阶梯**结构**可平移，常数全换。
 
 ### 2.3 SM8750 GPU 地址表（拆自 /tmp/hw_check.dts，均安全可抄）
 | 块 | 基址 | 大小 | 备注 |

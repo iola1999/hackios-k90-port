@@ -8,7 +8,7 @@
 
 ### 1.1 链路形态
 
-WCN6750 **不是 PCIe 设备**：射频 + WPSS（SoC 内 Hexagon DSP，`qcom,wpss@8a00000`，PAS=6）。应用侧只做"PIL 起 DSP → 跟固件对话"，全程无 PCIe/MHI：
+WCN6750 **不是 PCIe 设备**：射频 + WPSS（SoC 内 Hexagon DSP，`qcom,wpss@8a00000`，PAS=6）。应用侧只做「PIL 起 DSP → 跟固件对话」，全程无 PCIe/MHI：
 
 ```
 PIL/TrustZone 加载 wpss 固件 → SMP2P/IPCC 门铃 → GLINK(IPCRTR) 通道
@@ -17,7 +17,7 @@ PIL/TrustZone 加载 wpss 固件 → SMP2P/IPCC 门铃 → GLINK(IPCRTR) 通道
   → WMI/CE 跑数据面 → en0
 ```
 
-中断默认**不用**（每毫秒轮询 ring），`wifi_irq=1` 走"radio 的 MSI 经其 SMMU context 到 GIC"（lx_bus 侧）。
+中断默认**不用**（每毫秒轮询 ring），`wifi_irq=1` 走「radio 的 MSI 经其 SMMU context 到 GIC」（lx_bus 侧）。
 
 ### 1.2 文件职责（bsd/dev/，均为裸寄存器 + boot-arg 风格，无 IOKit 框架）
 
@@ -70,7 +70,13 @@ SMEM `0x80900000+2MB`（WPSS 条目 13）与其锁 `0x1f43000`、IPCC `0x408000`
 
 ### 2.4 IOMMU
 
-原厂设备树与主线 `sm8750.dtsi` 将根端口 RID `0` 映射到 SID `0x1400`，端点 RID `0x100` 映射到 SID `0x1401`。当前端点为 bus 1／device 0／function 0，DMA 域应按端点 SID 核对；还需检查 PCIe PARF 的 RID→SID 转换配置，2026-10-27 实测 PARF bypass=1，哈希索引 `0x15` 的链经过 22 个表项后回到 `0x6e`，RID `0x100` 未出现；本轮没有验证实际输出 SID，当前驱动尚未配置这一转换。PCIe 视口 IOVA 窗为 `0x98000000+0x80000000`（geometry），cnss_pci0 fastmap 为 `0x98000000+0x18010000`；页表与 DMA 缓冲分配仍需核对 cnss_wlan_mem 等保留区。 本地厂商设备树定义 PCIe QTB `0x016cd000+0x1000` 覆盖 SID `0x1400..0x17ff`，IOVA 宽度为 32 位，并带有 `qcom,opt-out-tbu-halting`。IOVA 选择需满足该宽度并避开已有映射，SMMU 页表还需支持分配到的高位物理 RAM；现有 redwood 的 SID `0x1c00`／mask 1 和 context 选择不能直接套用。具体来源、待读取字段与写入前提见[下一步](../progress/2026-10-26-wifi-pcie-survey.md#6-sidapps-smmu-与固件下载前置)。
+原厂设备树与主线 `sm8750.dtsi` 将根端口 RID `0` 映射到 SID `0x1400`，端点 RID `0x100` 映射到 SID `0x1401`。当前端点为 bus 1／device 0／function 0，DMA 域应按端点 SID 核对。
+
+- RID→SID 转换：需检查 PCIe PARF 的 RID→SID 转换配置。2026-10-27 实测 PARF bypass=1，哈希索引 `0x15` 的链经过 22 个表项后回到 `0x6e`，RID `0x100` 未出现；本轮没有验证实际输出 SID，当前驱动尚未配置这一转换。
+- IOVA 窗：PCIe 视口 IOVA 窗为 `0x98000000+0x80000000`（geometry），cnss_pci0 fastmap 为 `0x98000000+0x18010000`；页表与 DMA 缓冲分配仍需核对 cnss_wlan_mem 等保留区。
+- 本地厂商设备树定义 PCIe QTB `0x016cd000+0x1000` 覆盖 SID `0x1400..0x17ff`，IOVA 宽度为 32 位，并带有 `qcom,opt-out-tbu-halting`。
+- IOVA 选择需满足该宽度并避开已有映射，SMMU 页表还需支持分配到的高位物理 RAM；现有 redwood 的 SID `0x1c00`／mask 1 和 context 选择不能直接套用。
+- 具体来源、待读取字段与写入前提见[下一步](../progress/2026-10-26-wifi-pcie-survey.md#6-sidapps-smmu-与固件下载前置)。
 
 ### 2.5 与redwood的结构性差异总结
 
@@ -100,28 +106,28 @@ SMEM `0x80900000+2MB`（WPSS 条目 13）与其锁 `0x1f43000`、IPCC `0x408000`
 
 ## 4. 最小可行路线排序
 
-原则：沿用redwood"分步 boot-arg + 先读后写"打法；每步独立可验证；先证明总线，再证明固件，最后才是 802.11。
+原则：沿用redwood「分步 boot-arg + 先读后写」打法；每步独立可验证；先证明总线，再证明固件，最后才是 802.11。
 
 | 步 | 内容 | 新增/改动 | 难度 | 盲写比例 |
 |---|---|---|---|---|
 | 0 | **（2026-10-26 完成，内核 `fadb3a2`，见 [PCIe 勘察与上电记录](../progress/2026-10-26-wifi-pcie-survey.md)）PCIe link-up + 读 config space**（认出 0x17cb:0x1107）。gcc 双 gdsc + CRM + phy/elbi 上电、perst/clkreq GPIO、RC0 init、conf_apb 配置读。boot-arg `wifi_step=` 风格分步 `pcie=1..N` | 新 `redwood_pcie.c`（或 annibale_ 前缀） | 1–2 周 | 70% 可盲写（寄存器 Linux pci-msm/DT 全有）；**link-up 必须真机**（LK/UEFI 是否已占 RC0 要实测） |
 | 1 | **MHI host 最小子集**：stage 5 已确认 PBL；先核对 apps SMMU 可访问范围与目标 SID 匹配、实现 RID→SID 配置读回和有限 DMA 映射，再补 MHI 缓冲的停止／超时／返回保留。完成这些前置后执行 BHI/BAR0 握手、SBL 加载、state change、MHI reset/EDL、开 QMI+QRTR 通道 | 新 `redwood_mhi.c`（对照 Linux drivers/bus/mhi） | 1–2 周 | 大部分可盲写；失败态（SBL 不响应、需要 EDL 强制下载）必须真机 |
 | 2 | **固件下载 + WLFW 握手**：SBL→下载 FW（主体固件已可从 linux-firmware `ath12k/WCN7850/hw2.0/` 离线取得；同一 `amss.bin` 分 BHI／BHIe 两阶段下载，板级 BDF 变体待真机核对）；QMI WLFW：`redwood_wlfw` 逻辑平移，`mk-wlfw.sh` 改抽 **ath12k** 的 qmi 表；传输层 = `redwood_qmi.c` 换挂 QRTR-over-MHI（新 `redwood_mhi_qrtr.c`） | 改 wlfw + 新 mhi_qrtr + mk- 脚本改向 | ~1 周 | 握手报文可盲写；FW 文件与行为要真机 |
-| 3 | **数据面**：Plan A = 手写"最小 WMI 集"（scan/join/收发，仿 wlfw 替身思路），HAL ring 直对 BAR0（REO/TCL/TxDMA + RX ring）；Plan B = `mk-ath12k.sh` 把 wifi7 ath12k + LinuxKPI 全量搬进来（仿 mk-ath11k.sh，mhi/pci bus）。**先 Plan A 出联网，Plan B 做完整化** | 新 `redwood_wmi.c`/ring 代码，或新 mk- 脚本 + lx 补丁 | 2–6 周 | 结构可盲写；ring/中断/DMA 时序**基本靠真机磨**——"月级"就出在这步 |
+| 3 | **数据面**：Plan A = 手写「最小 WMI 集」（scan/join/收发，仿 wlfw 替身思路），HAL ring 直对 BAR0（REO/TCL/TxDMA + RX ring）；Plan B = `mk-ath12k.sh` 把 wifi7 ath12k + LinuxKPI 全量搬进来（仿 mk-ath11k.sh，mhi/pci bus）。**先 Plan A 出联网，Plan B 做完整化** | 新 `redwood_wmi.c`/ring 代码，或新 mk- 脚本 + lx 补丁 | 2–6 周 | 结构可盲写；ring/中断/DMA 时序**基本靠真机磨**——「月级」就出在这步 |
 | 4 | **en0 挂接**：redwood_net/apple80211/RedwoodWLAN 换 link 指到新 radio | 小改 | 天级 | 全盲写 |
 | 5 | （后置）BT：MHI HCI 或 SE14 UART 二选一（真机定）；BT 音频 | — | 周级 | — |
 
-到"2.4G 扫网+连接"总量：真机窗口累计 4–8 周。离线可先行完成：步 0–2 的代码 + 步 3 的结构骨架（约 2–3 周纯写码）。
+到「2.4G 扫网+连接」总量：真机窗口累计 4–8 周。离线可先行完成：步 0–2 的代码 + 步 3 的结构骨架（约 2–3 周纯写码）。
 
 ---
 
-## 5. 风险与放弃准则（"这轮不做 Wi-Fi"的触发条件）
+## 5. 风险与放弃准则（「这轮不做 Wi-Fi」的触发条件）
 
 1. **PCIe 起不来**：连续 3 个真机窗口 link-up 失败（PERST/时钟/上电序排查完仍无 LTSSM detect）→ 放弃本轮。嫌疑点：LK/UEFI 是否已初始化 RC0 并被安全态锁住；pcie_sm 序列与 bootargs 常量对不上。
 2. ~~固件不可得是硬前提~~ **已消解（2026-10-23）**：ath12k 主固件在 linux-firmware 拿得到；仅当板级 BDF 全部对不上且 vendor 分区加密读不出时才触发放弃。
-3. **MHI 下载成功但固件不 boot**（SBL 无 state change / QMI 服务不出）≥2 周 → 降级：本轮只做"能枚举到设备 + 读卡 ID"存档。
+3. **MHI 下载成功但固件不 boot**（SBL 无 state change / QMI 服务不出）≥2 周 → 降级：本轮只做「能枚举到设备 + 读卡 ID」存档。
 4. **SMMU/IOVA 冲突**：端点 SID `0x1401` 的路由或 context 配置失败或与 DisplayDxe/保留区撞窗 → DMA 不可用 → 放弃数据面，保留结论。
-5. **数据面 timebox**：步 3 开工 2 周无第一笔 TX 完成 → 砍到"QMI 握手通"为止。
+5. **数据面 timebox**：步 3 开工 2 周无第一笔 TX 完成 → 砍到「QMI 握手通」为止。
 6. 板级校准/BDF 缺失可能只有 2.4G 保守速率——可接受，不算失败。
 7. 兜底现状本来就成立：锁屏里程碑无 Wi-Fi 可交付（第一/第二里程碑不依赖它），放弃的代价是演示没有无线联网，不阻塞主线。
 

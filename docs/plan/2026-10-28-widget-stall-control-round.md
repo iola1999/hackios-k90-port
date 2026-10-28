@@ -163,7 +163,24 @@ redwood: proc ScreenTimeWidget pid 106 died on signal 9 code 1001
 
 按名字聚合（`kernel-12377-attr26-dasd`，唯一行 49 条、48 个不同名字，`com.apple.mobile` 两条是两次启动的两个容器）：
 
-`AdaptiveMusicCon`、`AdaptiveMusicWid`、`AppStoreWidgetsE`、`BarcodeScannerWi`、`BatteriesAvocado`、`BatteriesWidgetE`、`BatteriesWidgetI`、`BooksWidgetExten`、`CalendarWidgetEx`、`com.apple.mobile`×2、`ControlCenterCon`、`FindMyWidgetItem`、`FindMyWidgetPeop`、`GAXAppWidgetExte`、`GeneralMapsWidge`、`HealthBalanceWid`、`HealthMedication`、`HealthMentalHeal`、`HomeWidget`、`HomeWidgetLockSc`、`IntentsExtension`、`MirroredWidgetEx`、`MusicRecognition`、`MusicWidgets`、`NewsTag`、`NewsToday2`、`NewsTodayIntents`、`PassbookLockedWi`、`PhotosReliveWidg`、`RecordWidgetExte`、`RemindersIntents`、`RemindersWidgetE`、`SafariWidgetExte`、`ShortcutsWidgetE`、`SleepWidgetExten`、`Spotlight`、`SpringBoard`、`TipsWidget`、`ToggleAirplaneMo`、`TrackingUIServic`、`TranslationWidge`、`TVRemoteWidgetEx`、`TVWidgetExtensio`、`TypeToSiriWidget`、`VoiceMemosSettin`、`WeatherIntents`、`WeatherWidget`、`WidgetRenderer_D`。
+| 进程名 | 进程名 | 进程名 |
+|---|---|---|
+| `AdaptiveMusicCon` | `AdaptiveMusicWid` | `AppStoreWidgetsE` |
+| `BarcodeScannerWi` | `BatteriesAvocado` | `BatteriesWidgetE` |
+| `BatteriesWidgetI` | `BooksWidgetExten` | `CalendarWidgetEx` |
+| `com.apple.mobile`×2 | `ControlCenterCon` | `FindMyWidgetItem` |
+| `FindMyWidgetPeop` | `GAXAppWidgetExte` | `GeneralMapsWidge` |
+| `HealthBalanceWid` | `HealthMedication` | `HealthMentalHeal` |
+| `HomeWidget` | `HomeWidgetLockSc` | `IntentsExtension` |
+| `MirroredWidgetEx` | `MusicRecognition` | `MusicWidgets` |
+| `NewsTag` | `NewsToday2` | `NewsTodayIntents` |
+| `PassbookLockedWi` | `PhotosReliveWidg` | `RecordWidgetExte` |
+| `RemindersIntents` | `RemindersWidgetE` | `SafariWidgetExte` |
+| `ShortcutsWidgetE` | `SleepWidgetExten` | `Spotlight` |
+| `SpringBoard` | `TipsWidget` | `ToggleAirplaneMo` |
+| `TrackingUIServic` | `TranslationWidge` | `TVRemoteWidgetEx` |
+| `TVWidgetExtensio` | `TypeToSiriWidget` | `VoiceMemosSettin` |
+| `WeatherIntents` | `WeatherWidget` | `WidgetRenderer_D` |
 
 名单里除 `SpringBoard` 与 `WidgetRenderer_D` 之外都是扩展宿主，另有一个 `com.apple.mobile`（两个容器实例）。`chronod`、`pkd`、`installd`、`containermanag`、`lsd`、`iconservicesagent`、`replicatord`、`PosterBoard`、`backboardd` 都不在其中，`backboardd` 是上一毫秒 abort 的那个。这份名单与「`SpringBoard` 与扩展是 `backboardd` 的客户端」一致：渲染服务器 abort 之后，前台会话的客户端被一起结束。
 

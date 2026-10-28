@@ -1,13 +1,17 @@
 # REDMI K90（annibale）× HackiOS — 可行性分析与实测记录
 
-> 整理自 2026-10-22 会话；**2026-10-23 机型纠偏**：此前 KernelSU 开着"机型伪装"模块，把它上报成了 K90 Pro Max（25102RKBEC）。禁用重启后真实身份：**REDMI K90** （model **2510DRK44C**，代号 **annibale**；Pro Max 的代号是 **myron**，是另一款机器）。注意：SoC 结论**不受影响**——kernel 侧 `/sys/devices/soc0`（soc_id 618 / "SUN"）、本机 dtb（`model="Annibale based on SM8750"`，`msm-id=0x26a`=618）、GPU compatible （gen8-0-1=a830）与社区 TWRP 树（platform `sun`）四方独立一致 = **SM8750 属实**。受影响的是市场型号命名、以及凡**取自 Android props/display 的服务层数值**（如屏幕分辨率）需以禁用伪装后的读数为准，本文档相关处已就地修正。HyperOS / Android 16，build `BP2A.250605.031.A3`，KernelSU root，**当前活动槽 `_b`**。涉及工程：`hackios-xnu-kernel` + `hackios-xnu-userland`（OSEOX GANG 的 HackiOS，把 iOS 16.5 的 XNU 内核 + 未修改的 iOS 用户态跑在安卓手机 / QEMU 上）。
+> 整理自 2026-10-22 会话。**2026-10-23 机型纠偏**：此前 KernelSU 开着「机型伪装」模块，把它上报成了 K90 Pro Max（25102RKBEC）。禁用重启后真实身份：**REDMI K90** （model **2510DRK44C**，代号 **annibale**；Pro Max 的代号是 **myron**，是另一款机器）。
+>
+> - SoC 结论**不受影响**：kernel 侧 `/sys/devices/soc0`（soc_id 618 / 「SUN」）、本机 dtb（`model="Annibale based on SM8750"`，`msm-id=0x26a`=618）、GPU compatible （gen8-0-1=a830）与社区 TWRP 树（platform `sun`）四方独立一致 = **SM8750 属实**。
+> - 受影响的是市场型号命名、以及凡**取自 Android props/display 的服务层数值**（如屏幕分辨率）需以禁用伪装后的读数为准，本文档相关处已就地修正。
+> - HyperOS / Android 16，build `BP2A.250605.031.A3`，KernelSU root，**当前活动槽 `_b`**。涉及工程：`hackios-xnu-kernel` + `hackios-xnu-userland`（OSEOX GANG 的 HackiOS，把 iOS 16.5 的 XNU 内核 + 未修改的 iOS 用户态跑在安卓手机 / QEMU 上）。
 
 ---
 
 ## 1. 结论速览
 
 1. **可行性**：架构上无死结，同高通家族、GICv3+PSCI 骨架与 redwood 同路；但 778G→8 Elite 跨 4~5 代，**最大门槛是给 SM8750 做 UEFI**（Mu-Silicium 尚无 SM8750 平台包），GPU（Adreno 830 / Mesa 无 a8xx 后端）和 Wi-Fi（WCN785x = ath12k，非 ath11k）是第二梯队工作。第一阶段目标：无 GPU/无 Wi-Fi，framebuffer+触摸软渲染进锁屏（与 QEMU 形态等价）。
-2. **调试不需要格式化手机存储**：日常全部跑 RAM；持久化测试才需要"缩容 + 改 GPT"（非格式化）；唯一真正的清数据事件是解锁 bootloader 那一次。
+2. **调试不需要格式化手机存储**：日常全部跑 RAM；持久化测试才需要「缩容 + 改 GPT」（非格式化）；唯一真正的清数据事件是解锁 bootloader 那一次。
 3. **`fastboot boot` 实测通过**（此前存疑）：本机（K90）的 XBL fastboot 接受 `boot` 命令，发原厂 boot 镜像 `Sending/Booting OKAY`，手机随即正常回到 Android，无任何损伤。
 4. **分区备份完成且与 NAS 四月备份互证一致**：本地 123 个分区（全部 ≤2GiB）+ 6 个 LUN 的 GPT 头尾；与 NAS 旧备份共同的分区 113 个逐字节一致，6 个差异全部可解释（见 §4.3）。
 
@@ -43,7 +47,7 @@
 
 ## 4. `fastboot boot` 实测（本次会话核心验证）
 
-背景：此前"小米 fastboot 不支持 `fastboot boot`"是老机型（LK 时代）的传闻；redwood（POCO X5 Pro，同为小米系）的 `xl enter` 就是靠 `fastboot boot` 起 UEFI 的（[xl:88](../hackios-xnu-kernel/xl)，且注释提示 "刚进 fastboot 第一次 boot 偶尔不生效，需重试"）。本机（K90）上实测：
+背景：此前「小米 fastboot 不支持 `fastboot boot`」是老机型（LK 时代）的传闻；redwood（POCO X5 Pro，同为小米系）的 `xl enter` 就是靠 `fastboot boot` 起 UEFI 的（[xl:88](../hackios-xnu-kernel/xl)，且注释提示「刚进 fastboot 第一次 boot 偶尔不生效，需重试」）。本机（K90）上实测：
 
 ```text
 $ fastboot getvar unlocked            → unlocked: yes
@@ -53,7 +57,7 @@ $ fastboot boot boot_a.img            → Sending 'boot.img' (98304 KB)  OKAY [2
 ```
 
 - **协议层面完全支持**，一次 OKAY，无 redwood 的重试怪癖。产物：`fastboot-test/getvar-all.txt` （含 cpuid、Xiaomi token——**token 属认证信息，勿外传**）、`fastboot-test/fastboot-boot.txt`。
-- **一个诚实的保留项**：`boot_a` 与 `boot_b` 的内核字节级同版（6.6.77 GKI 同构建），因此本次测试无法区分"XBL 真正引导了暂存镜像"还是"回落到槽上镜像正常启动"。这个区分要等自制的 BootShim/UEFI 镜像——其特征（USB 上出现 `xnuloader` fastboot 设备）一眼可辨。按 HackiOS 的风险模型，「命令被拒」这一否决项已排除。
+- **一个诚实的保留项**：`boot_a` 与 `boot_b` 的内核字节级同版（6.6.77 GKI 同构建），因此本次测试无法区分「XBL 真正引导了暂存镜像」还是「回落到槽上镜像正常启动」。这个区分要等自制的 BootShim/UEFI 镜像——其特征（USB 上出现 `xnuloader` fastboot 设备）一眼可辨。按 HackiOS 的风险模型，「命令被拒」这一否决项已排除。
 - `getvar all` 还显示：`awu:yes`、`parallel-download-flash:yes`、擦除/逻辑块 4096（GPT dd 恢复按此对齐）。
 
 ## 5. 分区备份
@@ -79,14 +83,14 @@ $ fastboot boot boot_a.img            → Sending 'boot.img' (98304 KB)  OKAY [2
   | `init_boot_b` | KernelSU 刷入（4 月之后打的补丁）——KSU 只动活动槽 init_boot，与 boot_a/b 未变互相印证 |
   | `modemst1`/`modemst2` | 基带 NV/字库是运行时会写入的，活机备份必然变化 |
   | `persist`/`metadata`/`vm-persist` | 厂商守护进程状态 / dm-key 元数据 / Gunyah VM 状态，属动态数据 |
-- 4 个"NAS 缺失"（dbg、xbl_ramdump_a/b、xbl_sc_logs）是 NAS 当时有意跳过的日志区，本次已补。
+- 4 个「NAS 缺失」（dbg、xbl_ramdump_a/b、xbl_sc_logs）是 NAS 当时有意跳过的日志区，本次已补。
 - 结论：两份备份互为印证、可互为恢复源。恢复方法见 `../annibale-backup/README.md`。
 
 ## 6. 存储/格式化三档结论
 
 1. **日常调试：零写入**。镜像走 `xl ramdisk` 进 RAM，`/private/var` 是 ramfs；内核 UFS 驱动默认全部分区 `EROFS`（`redwood_ufs.c`："Without ufs_write=1 nothing writes at all"）。
 2. **入场写入（一次性/可逆）**：解锁 bootloader 清一次用户数据；（若 fastboot boot 实测后仍需刷）UEFI 只占 boot 分区——且 K90 有 A/B 双槽，可固定用空闲的 `_a` 槽做实验，`_b` 原样保留。
-3. **持久化测试（可选，非格式化）**：`var_store=1 ufs_write=1` 需要一块自己的分区——`userdata-carve.py` 用 Android 内核 ioctl 原地缩容 f2fs + 重写双份 GPT 切出 `darwin`。**K90 适配点**：本机 `/data` 是 **dm-default-key（inlinecrypt 加密）之上的 f2fs**，redwood 工具 "超级块裸奔在 flash"的前提不成立，脚本会拒收，需要改造；"缩容+改 GPT 必须在同一次 Android 会话内完成（防 fs_mgr 自动长大）"这条纪律依然适用。动手前先备份 GPT（已有）。
+3. **持久化测试（可选，非格式化）**：`var_store=1 ufs_write=1` 需要一块自己的分区——`userdata-carve.py` 用 Android 内核 ioctl 原地缩容 f2fs + 重写双份 GPT 切出 `darwin`。**K90 适配点**：本机 `/data` 是 **dm-default-key（inlinecrypt 加密）之上的 f2fs**，redwood 工具 「超级块裸奔在 flash」的前提不成立，脚本会拒收，需要改造；"缩容+改 GPT 必须在同一次 Android 会话内完成（防 fs_mgr 自动长大）"这条纪律依然适用。动手前先备份 GPT（已有）。
 
 ## 7. 移植工作分解（对应上游 docs/PORTING.md 五步，K90 具体化）
 

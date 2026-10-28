@@ -79,7 +79,17 @@ roundb 的 slide 为 `0xb05000`（display 按 `mach_msg2_trap` 偏移反推）�
 
 ## 8. 外部审阅文档的裁定
 
-[UI 冻结与 fence 超时假设](../analysis/2026-10-28-ui-freeze-fence-timeout-hypothesis.md)（外部审阅会话）的核心假设经三条独立证据退出：九轮 `did not finish the` 零命中且两轮覆盖判据（单份环可容纳时长大于约 20 秒快照间隔、并集逐点覆盖空洞时刻）全满足；代码上 fence 超时后下一次 dispatch 会再睡 2 秒 ioctl（`air_metal.c:2748`/`:3703`），而 freeze 轮 15 次 dump 无 ioctl 类 pc、无驱动区间 pc；freeze 轮提交速率稳定 27 次/秒直到突停。「3.02 秒 ≈ 2 秒超时 + 1 秒收尾」在代码里没有固定 1 秒等待，属相加巧合。chronod 不是 15 秒空洞触发源（`nochronod` 轮空洞仍在、间隔 15.0 秒），「补 appprotectiond」的 ①d 轮已取消。审阅文档 §5（日志环覆盖率）与 §8（判读收进脚本）的建议已落地为 `round-stats.py` 的 `fence timeouts`/`ring coverage`/`swap holes` 三段固定输出。
+[UI 冻结与 fence 超时假设](../analysis/2026-10-28-ui-freeze-fence-timeout-hypothesis.md)（外部审阅会话）的核心假设经三条独立证据退出：
+
+- 九轮 `did not finish the` 零命中，两轮覆盖判据全满足（单份环可容纳时长大于约 20 秒快照间隔、并集逐点覆盖空洞时刻）。
+- 代码上 fence 超时后下一次 dispatch 会再睡 2 秒 ioctl（`air_metal.c:2748`/`:3703`），而 freeze 轮 15 次 dump 无 ioctl 类 pc、无驱动区间 pc。
+- freeze 轮提交速率稳定 27 次/秒直到突停。
+
+同一份裁定还给出两条判读与一项落地：
+
+- 「3.02 秒 ≈ 2 秒超时 + 1 秒收尾」在代码里没有固定 1 秒等待，属相加巧合。
+- chronod 不是 15 秒空洞触发源（`nochronod` 轮空洞仍在、间隔 15.0 秒），「补 appprotectiond」的 ①d 轮已取消。
+- 审阅文档 §5（日志环覆盖率）与 §8（判读收进脚本）的建议已落地为 `round-stats.py` 的 `fence timeouts`/`ring coverage`/`swap holes` 三段固定输出。
 
 ## 9. 协议要点（新增部分，全文见运行协议）
 
@@ -102,11 +112,23 @@ roundb 的 slide 为 `0xb05000`（display 按 `mach_msg2_trap` 偏移反推）�
 
 本节收本文已确认的事实错误与作废结论，正文保持原样。判别方式：更正能在原句内改一个值、且该段论证结构不因此作废的，正文已 inline 更正（§2 与 §4 的「16 KiB」拷贝阈值已原地改为 65536 字节）；更正会让该段论证整体作废、或要改多处互相依赖的数的，列在本节。每条给原值、更正值、依据、承载细节的文档链接。
 
-- §2 SpringBoard 死亡代数。原值：「SpringBoard 14 代 pid（30、103、131、142、161、175、189、205、214、228、241、246、260、267）」。更正值：死亡 pid 集合 15 代（30、91、103、131、142、161、166、175、189、205、214、228、241、246、260），9/0 ×14、pid 161 一代 6/6；267 轮末存活未死，它的出处是 framewatch 的 dump 请求行与内核转储行的行中匹配。依据：device task-2 按 `redwood: proc SpringBoard pid <N> died on signal` 与 `redwood: SpringBoard pid <N> exited code -1` 两种行首匹配串实读唯一行，两集合一致；perf 按 exited 唯一行独立实读结果相同。不 inline 的理由：该句里 pid 列表、「各有 15 条 `exited code -1`」「每对间隔约 10 秒」三个数互相依赖，改一个要连着改另两个。细节见 [roundb 对齐](../analysis/2026-10-28-roundb-badaccess-alignment.md)。
+- §2 SpringBoard 死亡代数。
+  - 原值：「SpringBoard 14 代 pid（30、103、131、142、161、175、189、205、214、228、241、246、260、267）」。
+  - 更正值：死亡 pid 集合 15 代（30、91、103、131、142、161、166、175、189、205、214、228、241、246、260），9/0 ×14、pid 161 一代 6/6；267 轮末存活未死，它的出处是 framewatch 的 dump 请求行与内核转储行的行中匹配。
+  - 依据：device task-2 按 `redwood: proc SpringBoard pid <N> died on signal` 与 `redwood: SpringBoard pid <N> exited code -1` 两种行首匹配串实读唯一行，两集合一致；perf 按 exited 唯一行独立实读结果相同。
+  - 不 inline 的理由：该句里 pid 列表、「各有 15 条 `exited code -1`」「每对间隔约 10 秒」三个数互相依赖，改一个要连着改另两个。细节见 [roundb 对齐](../analysis/2026-10-28-roundb-badaccess-alignment.md)。
 - §2 周期方向。原值：「backboardd 先死 `11/11`（段错误），0.2～0.7 秒后 SpringBoard 死 `9/0`（被 SIGKILL），每对间隔约 10 秒」。更正值：稳态是 bbd 段错误 →约 10 秒后 sb 被杀 →0.2～0.97 秒后下代 bbd 段错误，后段 20/40/80 秒翻倍；0.2～0.7 秒（实测 0.2～0.97）是「sb 被杀 → 下代 bbd 段错误」方向，原文把两个方向混在一句里。依据：device task-2 逐对对齐 15 对死亡时刻。细节见 [roundb 对齐](../analysis/2026-10-28-roundb-badaccess-alignment.md)。
 - §3 slide。原值 `0xb05000`。更正值 `0xbc54000`。依据：lead 独立核过，roundb 日志里 `slide 0x…` 只有这一个取值、出现 239 次，`0xb05000` 零命中。细节见 [roundb memmove 归因](../analysis/2026-10-28-roundb-memmove-attribution.md)（perf task-13，进行中）。
 - §3 共享缓存上界。原值：「超出共享缓存上界 `0x2adb74640`」。更正值：该值是缓存 `__TEXT` 镜像区的上界，缓存真实映射区间是 `0x180000000..0x2c2cf4000`。依据：lead 独立核过。细节见 [roundb memmove 归因](../analysis/2026-10-28-roundb-memmove-attribution.md)（perf task-13，进行中）。
 - §3 两个 pc 的距离。原值「相距 0x10c」。更正值 `0x114`（`0x2b0fb5ad4 − 0x2b0fb59c0`）。依据：两个已记录 pc 值直接相减复算，lead 核过。细节见 [roundb memmove 归因](../analysis/2026-10-28-roundb-memmove-attribution.md)（perf task-13，进行中）。
 - §3 归属结论整体作废。原值：「该 pc 在缓存之上的私有映射里。候选：`libredwoodmetal.dylib`（241,488 字节）、`libredwoodair.dylib`（13,983,936 字节）、backboardd 主二进制。日志里没有各镜像的加载地址，现有数据判不了。」作废：pc 已定到 `libsystem_platform.dylib` 的 `_platform_memmove`（`+0x9c0` 是 `ldnp q2, q3, [x1]`、`+0xad4` 是 `ldr x6, [x1], #8`），待 perf task-13 复核。依据：lead 离线分析。细节见 [roundb memmove 归因](../analysis/2026-10-28-roundb-memmove-attribution.md)（perf task-13，进行中）。
 - §1 与 §6 的 P1。原值：「第一优先动作是定位 roundb 里 212 条 bad access 的共同 pc `0x2b0fb59c0` 属于哪个镜像」（§1）、「device 离线把 212 条 bad access 与 17 对重起时刻对齐」（§6）。更正值：重起对齐实测 15 对（物理事件 15 条与 15 次段错误 1:1，212 是跨快照求和的原始行数）；镜像归属已由离线分析回答（见上一条），P1 剩余部分是取 `lr` 与 `x0/x1/x2`。依据：device task-2 对齐与 lead 离线归因。细节见 [roundb 对齐](../analysis/2026-10-28-roundb-badaccess-alignment.md)。
-- §1 与 §2 旧冻结轮的时基混用。原值：「内容 131 秒定格、提交 273 秒停止」（§1）、「内容冻结（131 秒）与提交停止（273 秒）都在这之后」（§2）。更正值：提交停止的 273 秒是设备钟原值（该轮末次交换 `tl: s 3425 backboardd at 273031935`），轮内相对值是 126.3 秒；内容冻结的 131 秒来自截图轴（主机侧），本来就是轮内值，不改。真实先后是 settling (84.1, 105.9] → 提交停 126.3 秒 → 内容最后变化 (127.6, 131.1]，与 round C 同序，主机与设备钟的校准差在 3 秒以内。连带作废：由 273 减 131 得出的「内容冻结后提交又持续 142 秒」不成立。依据：device task-19 实测该轮设备钟零点 B≈146.7 秒，用 lsprobe 的 t=60 与 t=300 两行与最近的 `tl` µs 行夹逼，锚点差 239.5 秒对期望 240 秒。同一口径下 `tools/k90auto/jobs/rc.jobs.freeze:14-18` 注释里「3 秒洞每 15 秒从约 180 秒开始」的 180 也是设备钟，减 146.7 得轮内 33.3 秒，与 round C 和 round D 的周期洞起点 30.3／31.4 秒吻合；jobs 这一轮不动，那条注释等 round D 出结果后一并改。零点偏移不影响差值，所以 §2 那句「约 27 次/秒」与「提交在触摸结束后 25 秒才停」照旧成立。display 的 8 个 dump 时刻用墙钟锚，与 device 的 lsprobe 锚差 0.3 到 2 秒，settling 区间的结论不变。细节见 [round C 冻结形态](../analysis/2026-10-28-roundc-freeze-form.md)（device task-19，进行中）。
+- §1 与 §2 旧冻结轮的时基混用。
+  - 原值：「内容 131 秒定格、提交 273 秒停止」（§1）、「内容冻结（131 秒）与提交停止（273 秒）都在这之后」（§2）。
+  - 更正值：提交停止的 273 秒是设备钟原值（该轮末次交换 `tl: s 3425 backboardd at 273031935`），轮内相对值是 126.3 秒；内容冻结的 131 秒来自截图轴（主机侧），本来就是轮内值，不改。
+  - 真实先后是 settling (84.1, 105.9] → 提交停 126.3 秒 → 内容最后变化 (127.6, 131.1]，与 round C 同序，主机与设备钟的校准差在 3 秒以内。
+  - 连带作废：由 273 减 131 得出的「内容冻结后提交又持续 142 秒」不成立。
+  - 依据：device task-19 实测该轮设备钟零点 B≈146.7 秒，用 lsprobe 的 t=60 与 t=300 两行与最近的 `tl` µs 行夹逼，锚点差 239.5 秒对期望 240 秒。
+  - 同一口径下 `tools/k90auto/jobs/rc.jobs.freeze:14-18` 注释里「3 秒洞每 15 秒从约 180 秒开始」的 180 也是设备钟，减 146.7 得轮内 33.3 秒，与 round C 和 round D 的周期洞起点 30.3／31.4 秒吻合；jobs 这一轮不动，那条注释等 round D 出结果后一并改。
+  - 零点偏移不影响差值，所以 §2 那句「约 27 次/秒」与「提交在触摸结束后 25 秒才停」照旧成立。
+  - display 的 8 个 dump 时刻用墙钟锚，与 device 的 lsprobe 锚差 0.3 到 2 秒，settling 区间的结论不变。细节见 [round C 冻结形态](../analysis/2026-10-28-roundc-freeze-form.md)（device task-19，进行中）。

@@ -135,7 +135,21 @@ iOS 26 与 16.5 在这条链上的差别本轮查过，没有实质变化：`IO8
 
 先是两轮不碰蓝牙硬件的实验，都不改设备树，也不用给 BT 供电，因此没有挂死风险。第一轮即使一个字节都不回，也能拿到传输与三元组这两个答案。
 
-1. **注册控制套接字并记录**：内核注册 `com.apple.uart.bluetooth` 的 `kern_control`（构建机已确认它编进了 arm64 配置），`TIOCGETA`/`TIOCSETA` 正常应答，读到的字节全部打进日志、不回包；代码已提交（内核仓 `baa499c`，之后 `a48a496` 让连接与断开行带上累计计数、`01bc649` 去掉 16.5 线没有的 `ctl_enable`、`fc9c340` 每十秒打一行累计值、`1133be5` 打真实秒数、`eb7287b` 去掉 `ctl_bind` 回调，boot-arg `bt_probe=1`）。两棵树的差别：16.5 线 `xnu-8796.121.2` 的 `<sys/kern_control.h>` 直接给出 `ctl_bind` 等字段；设备真机用的 26 线 `xnu12377` 把这类字段放在 `<sys/kern_control_private.h>` 的 `KERNEL_PRIVATE` 段，公开结构里没有 `ctl_bind`，所以探针不注册 bind 回调（BlueTool 走 socket → `CTLIOCGINFO` → connect，`ctl_connect` 不需要它）。`eb7287b` 用 26 线 `BUILD/obj` 下的编译命令实测：本文件 0 warning 0 error，目标文件的 13 个未定义符号在同树已链接内核里全部能找到，套接字按 `BlueTool` 反汇编里读出的样子注册：`socket(PF_SYSTEM, SOCK_STREAM, SYSPROTO_CONTROL)`，用 `CTLIOCGINFO` 按名字取 ID 后 `connect`，`sc_unit` 为 0；boot-arg 把传输强制到 H4（`bt-transport-override`），payload 里放开 `bluetoothd` 与 `BlueTool`（`userland/mkjobs.py` 的 `DENY` 里有 `bluetooth` 与 `BTServer`）。这一轮的行数与时机要先跟 device 说清：探针在 BlueTool 与 bluetoothd 启动的头几秒出日志，而串口环在忙的时候只装得下约 15 秒（日志量约 65 KB/s，环 1 MB，快照 20 秒一次），所以探针另外每十秒打一行累计值，前十次 10 秒间隔、之后每分钟一行；即使一个客户端都没连、即使首发被挤掉，后面快照里仍能看到「探针起没起、有没有人连、发了多少字节」。一轮总量在 4 KB 以内（启动 1 行、每个客户端会话 6～10 行、累计行若干），连接与断开行也带累计计数。跑一轮，要采四个答案：`BlueTool` 实际选的传输编号、它要的三元组（platform/chipset/manufacturer）、覆盖脚本目录的实际路径、以及 26 的 `bluetoothd` 在组合未知时是退出重启还是继续。前两个决定后续设计，后两个决定要不要改系统镜像。
+1. **注册控制套接字并记录**：内核注册 `com.apple.uart.bluetooth` 的 `kern_control`（构建机已确认它编进了 arm64 配置），`TIOCGETA`/`TIOCSETA` 正常应答，读到的字节全部打进日志、不回包。
+
+   - 代码已提交（内核仓 `baa499c`，之后 `a48a496` 让连接与断开行带上累计计数、`01bc649` 去掉 16.5 线没有的 `ctl_enable`、`fc9c340` 每十秒打一行累计值、`1133be5` 打真实秒数、`eb7287b` 去掉 `ctl_bind` 回调，boot-arg `bt_probe=1`）。
+
+   - 两棵树的差别：16.5 线 `xnu-8796.121.2` 的 `<sys/kern_control.h>` 直接给出 `ctl_bind` 等字段；设备真机用的 26 线 `xnu12377` 把这类字段放在 `<sys/kern_control_private.h>` 的 `KERNEL_PRIVATE` 段，公开结构里没有 `ctl_bind`，所以探针不注册 bind 回调（BlueTool 走 socket → `CTLIOCGINFO` → connect，`ctl_connect` 不需要它）。
+
+   - `eb7287b` 用 26 线 `BUILD/obj` 下的编译命令实测：本文件 0 warning 0 error，目标文件的 13 个未定义符号在同树已链接内核里全部能找到。
+
+   - 套接字按 `BlueTool` 反汇编里读出的样子注册：`socket(PF_SYSTEM, SOCK_STREAM, SYSPROTO_CONTROL)`，用 `CTLIOCGINFO` 按名字取 ID 后 `connect`，`sc_unit` 为 0；boot-arg 把传输强制到 H4（`bt-transport-override`），payload 里放开 `bluetoothd` 与 `BlueTool`（`userland/mkjobs.py` 的 `DENY` 里有 `bluetooth` 与 `BTServer`）。
+
+   - 这一轮的行数与时机要先跟 device 说清：探针在 BlueTool 与 bluetoothd 启动的头几秒出日志，而串口环在忙的时候只装得下约 15 秒（日志量约 65 KB/s，环 1 MB，快照 20 秒一次），所以探针另外每十秒打一行累计值，前十次 10 秒间隔、之后每分钟一行；即使一个客户端都没连、即使首发被挤掉，后面快照里仍能看到「探针起没起、有没有人连、发了多少字节」。
+
+   - 一轮总量在 4 KB 以内（启动 1 行、每个客户端会话 6～10 行、累计行若干），连接与断开行也带累计计数。
+
+   - 跑一轮，要采四个答案：`BlueTool` 实际选的传输编号、它要的三元组（platform/chipset/manufacturer）、覆盖脚本目录的实际路径、以及 26 的 `bluetoothd` 在组合未知时是退出重启还是继续。前两个决定后续设计，后两个决定要不要改系统镜像。
 2. **第二轮再回包**：内核按表里的 Broadcom 身份回答 `Reset` 与 `Read_Local_Version`，对其余命令答成功，看 `bluetoothd` 是否活下来、随后的 HCI 序列长什么样。
 
 第三轮才碰硬件：SE14 上电、读 `0xFC00`/`0x19` 的芯片版本与 `0x23` 的板号，与分区里 `hmtbtfw20.ver` 对照，确认载体选对了。

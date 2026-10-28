@@ -38,7 +38,12 @@
 
 ## 3. GPU 驱动（adreno8）
 
-- **G1 高｜严格预检判据已放宽，已提交文档仍写「未放宽」**。位置：`xnu/files/bsd/dev/adreno8_smmu.c:475`（提交 `ec53bac`）；[预检门禁记录](../progress/2026-10-25-gpu-secure-preflight.md) 第 78、86、103 行；[总账](../plan/2026-10-23-tracking.md) 第 8 行。问题：`ec53bac` 把 CB3 `SCTLR` 判据从「非零即拒」改为只判 bit 0（M 位），另加路由视图命中数和 GMU 自有路由读回两项条件。父仓库已提交的 §12（`a05b96b`，早于 `ec53bac`）写的是「判据『非零即拒』保持不变、未放宽」，只有未跟踪的 [MiCode 调研记录](2026-10-25-micode-annibale-reference.md) 第 70 行提到判据已改。触发场景：按 run003 读数（CB3 `SCTLR`=`0x96cc51a`，bit 0 为 0；路由视图 hits 0；match 1 为 `0x80000005`/`0x302`，与 GMU 路由期望值一致），当前代码的预检会通过，`adreno8_secure_preflight=2` 时会实际发出 MP_ASSIGN；按文档操作的人会认为同样的设备状态仍会被拒绝。置信度：已验证（代码与 run003 日志数值对照）。建议：推送前在预检门禁记录与总账写明判据变更、生效提交，以及「run003 状态下预检会通过」；mode 2 放行时由负责人对新判据单独签署。
+- **G1 高｜严格预检判据已放宽，已提交文档仍写「未放宽」**。
+  - 位置：`xnu/files/bsd/dev/adreno8_smmu.c:475`（提交 `ec53bac`）；[预检门禁记录](../progress/2026-10-25-gpu-secure-preflight.md) 第 78、86、103 行；[总账](../plan/2026-10-23-tracking.md) 第 8 行。
+  - 问题：`ec53bac` 把 CB3 `SCTLR` 判据从「非零即拒」改为只判 bit 0（M 位），另加路由视图命中数和 GMU 自有路由读回两项条件。父仓库已提交的 §12（`a05b96b`，早于 `ec53bac`）写的是「判据『非零即拒』保持不变、未放宽」，只有未跟踪的 [MiCode 调研记录](2026-10-25-micode-annibale-reference.md) 第 70 行提到判据已改。
+  - 触发场景：按 run003 读数（CB3 `SCTLR`=`0x96cc51a`，bit 0 为 0；路由视图 hits 0；match 1 为 `0x80000005`/`0x302`，与 GMU 路由期望值一致），当前代码的预检会通过，`adreno8_secure_preflight=2` 时会实际发出 MP_ASSIGN；按文档操作的人会认为同样的设备状态仍会被拒绝。
+  - 置信度：已验证（代码与 run003 日志数值对照）。
+  - 建议：推送前在预检门禁记录与总账写明判据变更、生效提交，以及「run003 状态下预检会通过」；mode 2 放行时由负责人对新判据单独签署。
 - **G2 中｜测试无法发现 cache 清理被删除或挪位**。位置：`tools/test-adreno8-secure.py:105` 的 `assert(clean_at_call[call] >= 1)` 使用全局累计计数，任何一次表页或参数页清理都能让它成立。触发场景：以下变异在 secure、memory、handoff 三组测试中全部成功：删除 `adreno8_secure.c:137` 的参数页清理；把该清理挪到 `sources`/`extended` 写入之前；删除 `adreno8_secure.c:300` 的表页清理；删除 `adreno8_memory.c:151` 的数据页清理。只有同时删除 137 和 300 两处，secure 测试才失败。生产代码当前的顺序正确，问题只在测试。置信度：已验证（第一项变异复现过，并确认测试编译的是改动后的副本）。建议：mock 记录每次清理的地址和长度，假 SCM 入口断言「上次 SCM 之后有一次清理覆盖参数页前 672 字节」，并断言数据页和表页在各自批次之前清理过。
 - **G3 低｜启动探测读取 CB3 时没有范围检查**。位置：`adreno8_smmu.c:75`。`adreno8_smmu_layout` 只证明到 CB2 落在映射范围内，`adreno8_get` 不做越界检查。触发场景：IDR1 给出 `(pages + 4) * page > 0x40000` 的布局（例如 64 KiB 寄存器页）时，step 8 会读到映射块之外。当前设备 page 为 0x1000、pages 为 32，CB3 位于 0x23000，不受影响。预检入口 `adreno8_smmu.c:574` 起已有同样的检查。置信度：已验证（代码阅读）。
 - **G4 低｜mode 0 的注释与行为不符**。位置：`adreno8.c:36-40`、`adreno8_memory.c:176-178`。注释写「0 关闭，1 只做预检」，实际 `adreno8_memory.c:212` 先调用 `adreno8_secure_preflight` 再按模式分支，mode 0 与 mode 1 执行同一组 MMIO 读（CB3 `SCTLR`、全部 SMR、有效项的 S2CR、GMU 槽位），只差一行日志。handoff 测试和预检门禁记录 §1 都按这一行为编写，属于有意设计，需要改的是注释。置信度：已验证。
@@ -65,8 +70,20 @@
 
 ## 4. loader（xnuloader）
 
-- **L1 高｜USB 状态变化后 OUT 端点永久停用，loader 收不到任何命令**。位置：`xnuloader/loader.c:4059-4069`（`usb_lost_on_unconfirmed`）、`4195-4198`（`usb_rx`）、`4574-4596`（`usb_command_loop`）。触发场景：空闲命令循环中 `usb_rx` 一直挂着一个 OUT 接收；此时出现任一 DeviceStateChange（拔插线、主机总线复位、主机挂起后恢复），代码把 `usb_out_lost` 置 1 且之后不再清除；此后 `usb_rx` 只调用 `usb_wait(0xff)` 并返回 -1，空闲状态下 `usb_wait` 没有时间上限；`reboot`、`oem stop`、`oem log`、`upload` 都无法送达，只能长按按键复位。内核运行中同样适用。旧代码在拔插后会重新挂上接收。反编译仓库内固件的结果：`UsbDeviceHandleEvent` 每次进入 CONFIGURED（包括挂起恢复和复位后重新配置）都上报 Connected，进入 DETACHED 时上报 Disconnected；复位和断开会对活动端点发 DWC3 End Transfer，最多等 500 ms，完成后投递带原 buffer 的 Aborted 完成通知，映射为 Cancelled；End Transfer 超时则不投递；挂起恢复不取消传输。置信度：代码路径已验证（读代码并用提取的生产代码块在主机复现：拔线后 `lost=1`，重插后 `connected=1 lost=1`，下一条命令 `sends=0`）；固件行为来自反编译、未上机；主机触发挂起或复位的频率为推测。另外 `usb_rx` 第 4196 行注释「bounded and watchdog-feeding」在空闲状态下不成立，annibale 上 `wdt_arm` 也不启用看门狗（`loader.c:2768-2770`）。建议：匹配原 buffer 的 Cancelled 通知释放所有权并允许重新提交；没有先收到 Cancelled 的 Connected 继续等待原请求，既不重新提交也不标记停用；该规则需要上机验证。新 loader 部署后，[真机手册](../plan/device-test-playbook.md) §5 中「恢复 USB」一类操作需要按新行为改写。
-- **L2 中｜内核正常返回后可能误判为 held**。位置：`loader.c:3195-3210`（`lc_after_return`）；返回桩 `loader.c:1128-1141` 先写 `other_cpu_done`、`dsb sy`、`sev`，然后才发 CPU_OFF。触发场景：loader 看到 done 后立即进入 `lc_after_return`，对内核所在核心只查一次 AFFINITY_INFO；此时 PSCI 可能仍在处理 CPU_OFF 并回答 ON。TF-A 在断电流程完成后才把状态设为 OFF，Linux 的 `cpu_psci_cpu_kill` 因为同样的竞态轮询 100 ms。后果：正常返回被判为 `returned-held`，上传和运行命令全部被拒，跳过 `hc_take_back`，不收集录屏和录音，中断保持屏蔽，只能重启 loader 并重新上传约 2.4 GB 系统盘（约 62 秒）。旧代码从 `i=1` 开始查询，从未查过内核所在核心，没有历史实测数据。置信度：竞态由代码确认；真机发生概率为推测。建议：对每个核心有界轮询（100 ms 到 1 s）后再下结论。
+- **L1 高｜USB 状态变化后 OUT 端点永久停用，loader 收不到任何命令**。
+  - 位置：`xnuloader/loader.c:4059-4069`（`usb_lost_on_unconfirmed`）、`4195-4198`（`usb_rx`）、`4574-4596`（`usb_command_loop`）。
+  - 触发场景：空闲命令循环中 `usb_rx` 一直挂着一个 OUT 接收；此时出现任一 DeviceStateChange（拔插线、主机总线复位、主机挂起后恢复），代码把 `usb_out_lost` 置 1 且之后不再清除；此后 `usb_rx` 只调用 `usb_wait(0xff)` 并返回 -1，空闲状态下 `usb_wait` 没有时间上限；`reboot`、`oem stop`、`oem log`、`upload` 都无法送达，只能长按按键复位。内核运行中同样适用。旧代码在拔插后会重新挂上接收。
+  - 反编译仓库内固件的结果：`UsbDeviceHandleEvent` 每次进入 CONFIGURED（包括挂起恢复和复位后重新配置）都上报 Connected，进入 DETACHED 时上报 Disconnected；复位和断开会对活动端点发 DWC3 End Transfer，最多等 500 ms，完成后投递带原 buffer 的 Aborted 完成通知，映射为 Cancelled；End Transfer 超时则不投递；挂起恢复不取消传输。
+  - 置信度：代码路径已验证（读代码并用提取的生产代码块在主机复现：拔线后 `lost=1`，重插后 `connected=1 lost=1`，下一条命令 `sends=0`）；固件行为来自反编译、未上机；主机触发挂起或复位的频率为推测。
+  - 另外 `usb_rx` 第 4196 行注释「bounded and watchdog-feeding」在空闲状态下不成立，annibale 上 `wdt_arm` 也不启用看门狗（`loader.c:2768-2770`）。
+  - 建议：匹配原 buffer 的 Cancelled 通知释放所有权并允许重新提交；没有先收到 Cancelled 的 Connected 继续等待原请求，既不重新提交也不标记停用；该规则需要上机验证。
+  - 新 loader 部署后，[真机手册](../plan/device-test-playbook.md) §5 中「恢复 USB」一类操作需要按新行为改写。
+- **L2 中｜内核正常返回后可能误判为 held**。
+  - 位置：`loader.c:3195-3210`（`lc_after_return`）；返回桩 `loader.c:1128-1141` 先写 `other_cpu_done`、`dsb sy`、`sev`，然后才发 CPU_OFF。
+  - 触发场景：loader 看到 done 后立即进入 `lc_after_return`，对内核所在核心只查一次 AFFINITY_INFO；此时 PSCI 可能仍在处理 CPU_OFF 并回答 ON。TF-A 在断电流程完成后才把状态设为 OFF，Linux 的 `cpu_psci_cpu_kill` 因为同样的竞态轮询 100 ms。
+  - 后果：正常返回被判为 `returned-held`，上传和运行命令全部被拒，跳过 `hc_take_back`，不收集录屏和录音，中断保持屏蔽，只能重启 loader 并重新上传约 2.4 GB 系统盘（约 62 秒）。旧代码从 `i=1` 开始查询，从未查过内核所在核心，没有历史实测数据。
+  - 置信度：竞态由代码确认；真机发生概率为推测。
+  - 建议：对每个核心有界轮询（100 ms 到 1 s）后再下结论。
 - **L3 中｜违反 AGENTS.md §2 行数约定**。`loader.c` 从 4275 行增至 4750 行，净增 475 行（新增 628 行，其中约 208 行为注释）。文件头第 12-15 行只说明了为什么不重构整个文件，没有说明新增部分为什么不能拆。LC、LC-USB、LC-FB、LC-BID、LC-RETURN 各块本身可以独立编译，可以按 `platform_private.h` 的方式拆成单独文件、在同一编译单元中 `#include`，测试也能直接编译这些文件，不再需要用正则提取标记块。置信度：已验证。
 - **L4 中｜`--forbid-cmd` 的帮助文字写前缀语义，实现按键名匹配**。位置：`xnuloader/mkpayload.py:20,52`（帮助与说明）、`:101`（实现 `t == bad or t.startswith(bad + '=')`）。触发场景：按帮助文字理解写 `--forbid-cmd adreno8`，期望拦住全部 `adreno8_*` 参数，实际 `adreno8_keep=1` 能通过，退出码为 0。置信度：已验证（实测）。建议：统一帮助文字与实现，审批命令中逐个列出完整键名。
 - **L5 低｜3 秒超时会永久停用 IN 端点**。位置：`loader.c:4180-4182`。触发场景：live、held 或固件异常状态下，主机在 `upload`（`get_staged`）途中停顿超过 3 秒，本次会话之后所有应答都无法发送；命令仍会执行，`reboot` 仍然有效，但主机看不到回复。置信度：已验证（代码路径）。
@@ -93,7 +110,12 @@
 
 ## 5. UEFI 覆盖层与帧统计工具
 
-- **U1 中｜「payload 区域在内存图中保留」对 annibale 不成立**。位置：`uefi/files/Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/XnuLoader.h:5-6`、`XnuLoader.c:64`；`xnuloader/loader.c:47` 的 `PAYLOAD_MAX_SIZE` 注释有同样的假设。问题：Mu 树 `Platforms/Xiaomi/annibalePkg/Library/MemoryMapLib/MemoryMapLib.c` 没有 `0xF0000000` 条目（redwood overlay 中有，类型为 Reserv）；真机 loader 打印的内存图（[loader 调试数据](data/2026-10-23-loader-debug.txt) 第 85 行）中 `e3720000 - fc800000` 为 type 7，即空闲内存，覆盖整个 payload 区域。因此「区域可读」在 annibale 上成立，「区域被保留、BDS 之前不会被改写」不成立。触发场景：4 GiB 以下的分配增长到该区间，或有固定地址分配落入其中时，payload 会在 XnuLoader 读取前被改写；XnuLoader 只校验 magic 和长度，没有完整性校验。置信度：区域未保留已验证；实际被覆盖为推测，目前实测未出现。修正需要落在 annibalePkg，而 overlay 中目前没有 annibalePkg 的维护来源。
+- **U1 中｜「payload 区域在内存图中保留」对 annibale 不成立**。
+  - 位置：`uefi/files/Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/XnuLoader.h:5-6`、`XnuLoader.c:64`；`xnuloader/loader.c:47` 的 `PAYLOAD_MAX_SIZE` 注释有同样的假设。
+  - 问题：Mu 树 `Platforms/Xiaomi/annibalePkg/Library/MemoryMapLib/MemoryMapLib.c` 没有 `0xF0000000` 条目（redwood overlay 中有，类型为 Reserv）；真机 loader 打印的内存图（[loader 调试数据](data/2026-10-23-loader-debug.txt) 第 85 行）中 `e3720000 - fc800000` 为 type 7，即空闲内存，覆盖整个 payload 区域。因此「区域可读」在 annibale 上成立，「区域被保留、BDS 之前不会被改写」不成立。
+  - 触发场景：4 GiB 以下的分配增长到该区间，或有固定地址分配落入其中时，payload 会在 XnuLoader 读取前被改写；XnuLoader 只校验 magic 和长度，没有完整性校验。
+  - 置信度：区域未保留已验证；实际被覆盖为推测，目前实测未出现。
+  - 修正需要落在 annibalePkg，而 overlay 中目前没有 annibalePkg 的维护来源。
 - **U2 中｜在当前 Mu 树上运行 `uefi/export.sh` 会删除 overlay**。位置：`uefi/export.sh:7-14`。当前 Mu 的 HEAD 是本地提交 `87416d2`，BootManager.c 的改动已提交在其中，树中没有 `redwoodPkg`、`redwood.toml`、`Binaries/redwood`。运行该脚本会：把 BASE 写成上游不存在的 `87416d2`；把 patch 改写为只含未提交差异，丢失 BootManager.c 的改动并混入 XnuLoader.c/h；执行 `rm -rf files` 后在复制 `redwoodPkg` 时失败退出，overlay 已被删除。置信度：已验证（阅读脚本并核对 Mu 树状态，未实际执行）。建议：脚本开头加入拒绝条件，或在 README 中写明暂停使用。
 - **U3 中｜`tools/test-xnu-payload-terminal.py` 的场景缺少判别力**。位置：第 252-266 行。触发场景：对生产源码做以下变异，测试全部通过：删除 magic 判断；删除 MAX 上限；游标前进改为不按 16 字节对齐；游标固定前进 24 字节。原因是 missing_magic 场景的 Size 为 0，size_too_big 场景后面全是 0，所有条目长度都是 16 的倍数，loader.efi 前面从来没有需要跳过的条目。对照变异（删除越界检查、删除 Size==0 检查、`>` 改为 `>=`）能被检出。置信度：已验证。建议：坏 magic 和超长场景后面放一个合法的 loader.efi；增加「17 字节条目加 loader.efi」场景，并断言 loader.efi 的偏移。
 - **U4 中｜测试写死生产文件 sha256**。位置：`tools/test-xnu-payload-terminal.py:37-43,319-328`。改动 XnuLoader.c、XnuLoader.h 或 BootManagerLib.inf 的任意一个字节（包括注释），测试都会在断言之前退出，修改代码的人必须先改哈希常量才能用该测试检查改动；同一份内容因此有 overlay、Mu 文件、patch、哈希常量四处副本。默认被测根是 Git 忽略的本地 Mu 克隆，新克隆上会直接报 cannot read。置信度：已验证（追加一个字节后退出码为 1）。建议：改为比较 overlay 与被测根中的同名文件是否逐字节一致，inf 只保留第 346-348 行已有的内容检查。
@@ -111,7 +133,11 @@
 
 ## 6. 文档与总账
 
-- **D1 中｜文件名与正文中的「2026-10-25」实际发生在 2026-10-24**。涉及 [预检门禁记录](../progress/2026-10-25-gpu-secure-preflight.md)、[安全分配修订记录](../progress/2026-10-25-gpu-secure-revision.md)、[审查记录](2026-10-25-loader-review-findings.md)、[MiCode 调研记录](2026-10-25-micode-annibale-reference.md)、[安全翻译方案](2026-10-25-secure-translation-plan.md) 五个文件名及其标题，以及总账、交接计划、真机手册、[GPU 加速目标](../plan/gpu-acceleration-goal.md) 中的「10-25」时间标注。依据：两个仓库的全部提交时间都在 2026-10-24（+0800）；run003 记录的 epoch `1792813370` 换算为 2026-10-24 11:42:50 CST；本地 `evidence/2026-10-25-gpu-preflight/` 目录的修改时间为 2026-10-24 11:45。置信度：已验证。建议：由负责人决定改名还是在文档中注明；改名需要同步修改所有页内与跨文档链接、本地 evidence 目录名和 manifest 中的引用。
+- **D1 中｜文件名与正文中的「2026-10-25」实际发生在 2026-10-24**。
+  - 涉及 [预检门禁记录](../progress/2026-10-25-gpu-secure-preflight.md)、[安全分配修订记录](../progress/2026-10-25-gpu-secure-revision.md)、[审查记录](2026-10-25-loader-review-findings.md)、[MiCode 调研记录](2026-10-25-micode-annibale-reference.md)、[安全翻译方案](2026-10-25-secure-translation-plan.md) 五个文件名及其标题，以及总账、交接计划、真机手册、[GPU 加速目标](../plan/gpu-acceleration-goal.md) 中的「10-25」时间标注。
+  - 依据：两个仓库的全部提交时间都在 2026-10-24（+0800）；run003 记录的 epoch `1792813370` 换算为 2026-10-24 11:42:50 CST；本地 `evidence/2026-10-25-gpu-preflight/` 目录的修改时间为 2026-10-24 11:45。
+  - 置信度：已验证。
+  - 建议：由负责人决定改名还是在文档中注明；改名需要同步修改所有页内与跨文档链接、本地 evidence 目录名和 manifest 中的引用。
 - **D2 中｜失效链接**。位置：[交接计划](../plan/2026-10-24-gpu-handoff.md) 第 66 行（未提交修改）的 `[审查记录](2026-10-25-loader-review-findings.md)` 解析为 `docs/plan/` 下不存在的文件，应为 `../analysis/2026-10-25-loader-review-findings.md`。置信度：已验证（脚本检查全部变更文档的相对链接，只有这一处失效）。
 - **D3 中｜总账单条过长**。位置：[总账](../plan/2026-10-23-tracking.md) 第 8 行，单条 4434 字；推送前的 `origin/main` 版本中没有超过 800 字的行。AGENTS.md §5 要求总账「保持简练（一项一行），细节写进各条目链接的专门文档」。建议：压缩为当前状态加链接，过程细节留在预检门禁记录中。
 - **D4 中｜`ec53bac` 之后的内核提交没有进度记录**。`6983430`（收窄移交实验）、`90c4a25`、`06f9088`、`6a734f5`、`6259bd1`、`8064f7e`、`fd6d9ae`、`6012234`（MP_ASSIGN 逐批日志）、`313033a`（PAGE_SIZE 断言）、`795c1a6`（loader 生命周期）、`782b630`（build-id）、`2a78897`（mkpayload）、`08f73e7`（frames）、`c0716bf`（UEFI 同步）在 `docs/progress/` 中都没有对应记录。目前只有未提交的总账新增行按哈希提到 loader 第六轮和 parser `8907055`，审查记录 §5、§7 覆盖了部分内容。工作树中的 gitlink 已指向 `c0716bf`，而预检门禁记录与交接计划仍以 `bd8eca5`/`3ce4102` 作为当前内核。建议：提交 gitlink 前补一份进度记录，写明改动、测试与未验证项。
@@ -119,7 +145,7 @@
 - **D6 低｜真机手册中的 loader 行号与 HEAD 不符**。[真机手册](../plan/device-test-playbook.md) 第 91 行注明行号固定于 `ec53bac`；第 97 行的 `L3864` 和第 104 行的 `L4042-L4047` 没有注明提交，HEAD 中 `reboot` 分支位于 `loader.c:4498-4509`。gitlink 前移后读者会对照错误的位置。建议：改用函数名或分支名定位，或逐处注明提交。
 - **D7 低｜链接到 Git 忽略的归档目录**。总账第 11 行、审查记录 §7 等链接 `docs/analysis/local/` 下的文件，这些文件不随仓库分发，其他人点开会失效。原文已注明「归档目录，不随仓库分发」，结论也已写进仓库内文档，影响有限。
 - **D8 低｜目标文档与交接计划的系统盘边界需要确认**。[GPU 加速目标](../plan/gpu-acceleration-goal.md) §3 允许在满足条件时「按需扩大 userdata 中供本项目使用的写入空间、无需再次询问」；[交接计划](../plan/2026-10-24-gpu-handoff.md) §6 写「新的 userdata 授权不得直接沿用该方法……真机阶段全部留在 RAM」。两者不完全冲突，但哪一条优先需要负责人确认。
-- **D9 低｜写作规范**。按全局写作约定：总账第 11 行使用表情符号「🔵」；预检门禁记录第 49 行、目标文档第 62 行使用「兜底」，需写明实际操作；预检门禁记录第 104 行「负证据」；交接计划第 64 行「非性能基线」；真机手册第 91 行和预检门禁记录第 16-19、56 行使用破折号。
+- **D9 低｜写作规范**。按全局写作约定：总账第 11 行使用了表情符号（蓝色圆点）；预检门禁记录第 49 行、目标文档第 62 行使用「兜底」，需写明实际操作；预检门禁记录第 104 行「负证据」；交接计划第 64 行「非性能基线」；真机手册第 91 行和预检门禁记录第 16-19、56 行使用破折号。
 
 ## 7. 隐私与仓库卫生
 

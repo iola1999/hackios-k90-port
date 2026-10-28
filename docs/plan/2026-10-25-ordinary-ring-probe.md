@@ -8,7 +8,11 @@
 
 ## 2. 选择依据
 
-固定 Linux 提交 `efbda69d92e6a4822c5f2d09910f547872a9498d` 的 [catalog](https://github.com/torvalds/linux/blob/efbda69d92e6a4822c5f2d09910f547872a9498d/drivers/gpu/drm/msm/adreno/a6xx_catalog.c#L3218) 明确包含 `0x44050001`、`ADRENO_8XX_GEN1`、gen80000 GMU／SQE／AQE、12 MiB GMEM 和 `a8xx_gpu_funcs`。其 [CP_INIT](https://github.com/torvalds/linux/blob/efbda69d92e6a4822c5f2d09910f547872a9498d/drivers/gpu/drm/msm/adreno/a8xx_gpu.c#L497) 通过普通 ring 提交，关键十字与当前命令一致；[首次调用](https://github.com/torvalds/linux/blob/efbda69d92e6a4822c5f2d09910f547872a9498d/drivers/gpu/drm/msm/adreno/a8xx_gpu.c#L793) 先于完整 powerup list 填充和 HWCG enable。
+固定 Linux 提交 `efbda69d92e6a4822c5f2d09910f547872a9498d` 的三处依据：
+
+- [catalog](https://github.com/torvalds/linux/blob/efbda69d92e6a4822c5f2d09910f547872a9498d/drivers/gpu/drm/msm/adreno/a6xx_catalog.c#L3218) 明确包含 `0x44050001`、`ADRENO_8XX_GEN1`、gen80000 GMU／SQE／AQE、12 MiB GMEM 和 `a8xx_gpu_funcs`。
+- [CP_INIT](https://github.com/torvalds/linux/blob/efbda69d92e6a4822c5f2d09910f547872a9498d/drivers/gpu/drm/msm/adreno/a8xx_gpu.c#L497) 通过普通 ring 提交，关键十字与当前命令一致。
+- [首次调用](https://github.com/torvalds/linux/blob/efbda69d92e6a4822c5f2d09910f547872a9498d/drivers/gpu/drm/msm/adreno/a8xx_gpu.c#L793) 先于完整 powerup list 填充和 HWCG enable。
 
 HWSCHED 的 AHB 超时配置及空 powerup 对照仍未取得 CP ACK，结果见[恢复记录](../progress/2026-10-25-gpu-resume-review.md)。普通 HFI 模式可检查独立的命令执行入口。A840 社区结果仅作方法参考，本轮验收只使用 K90 的实际运行结果。
 

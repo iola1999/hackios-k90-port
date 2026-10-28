@@ -19,7 +19,10 @@
 1. `tools/mesa/air/air_metal.c:71` 定义 `RWA_FENCE_TIMEOUT_NS` 为 2,000,000,000（2 秒）。
 2. shim 的 `-waitUntilCompleted`（`userland/src/redwoodmetal_commandbuffer.inc:754`）调 `mesa.finish`，即 `rwa_finish`（`air_metal.c:3709`），进入 `finish_or_say_why`（`air_metal.c:2748`），其中 `fence_finish` 用上述 2 秒超时（`air_metal.c:2770`）。超时打印的格式串是 `the GPU did not finish the %s within two seconds`，然后返回 -1，shim 走 `failWith:` 让这次 commit 失败。
 3. `finish_or_say_why` 的超时分支里写着（`air_metal.c:2777` 附近）：**一次超时会把这块 GPU wedge 到本次启动结束，之后所有 dispatch 都是空转**。这条经验来自 2026-10-20 的 compute 路径（`air_run`，docs/air.md 第 5 节），渲染路径是否同样 wedge 没有验证过。
-4. shim 里有两处停顿打印，含义不同，之前的分析有混用。第一处在 work 循环里（`redwoodmetal_commandbuffer.inc:373`，`commit %u has run for %llu ms and is on work kind %d`，阈值 `RW_COMMIT_SLOW_US` 为 20 ms）：每个 work 开始前打一次，同一 commit 反复报说明循环还在推进、整个 commit 累计很慢，它本身不指认卡住的那一个调用。第二处是独立的观察线程 `rw_stall_watch`（同文件 57 行起）：`commit_progress_us` 连续 2.5 秒（`RW_STALL_US`）不推进就打 `commit %u has not moved for %llu ms inside %s`，`%s` 按 `commit_phase` 区分 `mesa.flush` 与 `a recorded work`，随后自动写 `kern.redwood.thread_dump` 要一次本进程线程 dump。历史轮次日志里已有的 `tl: td` dump 可能就来自这条路径。
+4. shim 里有两处停顿打印，含义不同，之前的分析有混用。
+   - 第一处在 work 循环里（`redwoodmetal_commandbuffer.inc:373`，`commit %u has run for %llu ms and is on work kind %d`，阈值 `RW_COMMIT_SLOW_US` 为 20 ms）：每个 work 开始前打一次，同一 commit 反复报说明循环还在推进、整个 commit 累计很慢，它本身不指认卡住的那一个调用。
+   - 第二处是独立的观察线程 `rw_stall_watch`（同文件 57 行起）：`commit_progress_us` 连续 2.5 秒（`RW_STALL_US`）不推进就打 `commit %u has not moved for %llu ms inside %s`，`%s` 按 `commit_phase` 区分 `mesa.flush` 与 `a recorded work`，随后自动写 `kern.redwood.thread_dump` 要一次本进程线程 dump。
+   - 历史轮次日志里已有的 `tl: td` dump 可能就来自这条路径。
 
 **时长对得上**：3.02～3.04 秒的空洞 ≈ 2 秒 fence 超时 + 约 1 秒的 commit 收尾与下一次事务启动。这个吻合是本文假设的起点。
 

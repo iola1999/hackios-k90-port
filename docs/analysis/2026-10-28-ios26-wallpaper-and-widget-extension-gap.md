@@ -6,7 +6,10 @@
 
 结论先写：
 
-- `staged_system_apps` 不是缺口。构建时 `ios26/select-system.py` 已经把目的路径写成 `Applications/`，`build.sh` 只是把提取出来的文件搬到那里。直接读 `userland/system26.apfs`，`/Applications` 里 `Photos.app`、`Camera.app`、`Music.app`、`Weather.app`、`Passbook.app`、`MobileCal.app`、`MobileSafari.app` 都在，`Photos.app/PlugIns/PhotosReliveWidget.appex` 与 `Camera.app/PlugIns/LauncherControlExtension.appex` 也都在。运行时 `/private/var` 是内存盘这件事仍然成立（`mount a memory filesystem on /private/var`，129 目录 10 文件 2 链接，来自 `etc/var.skel`），但它盖住的只是系统镜像里那份空的 `private/var`，对这 50 个应用没有影响。
+- `staged_system_apps` 不是缺口。
+  - 构建时 `ios26/select-system.py` 已经把目的路径写成 `Applications/`，`build.sh` 只是把提取出来的文件搬到那里。
+  - 直接读 `userland/system26.apfs`，`/Applications` 里 `Photos.app`、`Camera.app`、`Music.app`、`Weather.app`、`Passbook.app`、`MobileCal.app`、`MobileSafari.app` 都在，`Photos.app/PlugIns/PhotosReliveWidget.appex` 与 `Camera.app/PlugIns/LauncherControlExtension.appex` 也都在。
+  - 运行时 `/private/var` 是内存盘这件事仍然成立（`mount a memory filesystem on /private/var`，129 目录 10 文件 2 链接，来自 `etc/var.skel`），但它盖住的只是系统镜像里那份空的 `private/var`，对这 50 个应用没有影响。
 - launchd 缓存的 `AppExtensions` 不是缺口。QEMU 对照用的是同一份系统镜像（SHA-256 `d11083be02820507f5639e0a29c6f35256a48d1d4f3cf4cd265eb4b8e346efe4`）和同一份 733 条 `AppExtensions`，它成功拉起了 8 个扩展进程，其中 7 个的 appex 根本不在那份清单里。
 
 ## 2. 缓存的实际来源与构成
@@ -15,11 +18,19 @@ iOS 26 的 launchd 从 `/System/Library/xpc/launchd.plist` 取任务，不读 `L
 
 733 条 `AppExtensions` 的分布是 584 条在 `/System/Library/...`、149 条在 `/Applications/...`、0 条在 `/private/var/staged_system_apps`。那 584 条不是坏条目：拿它们逐条去 `rootfs` 里找 `Info.plist`，728 条找得到，5 条找不到。所以「584 条不可解析」这个说法是我上一版数错分组得出的，站不住。
 
-真正没有被这份清单覆盖的是被搬进 `/Applications` 的那 50 个应用的扩展：Photos、Camera、Music、Weather、Passbook、MobileCal 等，Apple 的缓存对它们 0 条。原因是 Apple 生成缓存时这些应用还在 `private/var/staged_system_apps` 里没有安装。如果要从我们这边补齐，`_infoPlist` 生成镜像内 plist 的规则可以从现有 728 条反推：它是真实 `Info.plist` 去掉固定的一批键（`DTSDKBuild`、`CFBundleSupportedPlatforms`、`DTXcodeBuild`、`UIRequiredDeviceCapabilities`、`BuildMachineOSBuild`、`DTXcode`、`MinimumOSVersion`、`DTPlatformVersion`、`DTSDKName`、`DTCompiler`、`DTPlatformBuild`、`DTPlatformName`、`UIDeviceFamily` 等 728/728 全部命中的键），缓存里没有出现任何磁盘上没有的键。这一项现在不需要做。
+真正没有被这份清单覆盖的是被搬进 `/Applications` 的那 50 个应用的扩展：Photos、Camera、Music、Weather、Passbook、MobileCal 等，Apple 的缓存对它们 0 条。
+
+- 原因是 Apple 生成缓存时这些应用还在 `private/var/staged_system_apps` 里没有安装。
+- 如果要从我们这边补齐，`_infoPlist` 生成镜像内 plist 的规则可以从现有 728 条反推：它是真实 `Info.plist` 去掉固定的一批键（`DTSDKBuild`、`CFBundleSupportedPlatforms`、`DTXcodeBuild`、`UIRequiredDeviceCapabilities`、`BuildMachineOSBuild`、`DTXcode`、`MinimumOSVersion`、`DTPlatformVersion`、`DTSDKName`、`DTCompiler`、`DTPlatformBuild`、`DTPlatformName`、`UIDeviceFamily` 等 728/728 全部命中的键），缓存里没有出现任何磁盘上没有的键。
+
+这一项现在不需要做。
 
 ## 3. QEMU 对照否掉了缓存假设
 
-`out/ios26-resume/chronod-qemu/` 那一轮只有根盘任务集不同（只加了 `com.apple.chronod`），根盘缓存同样是这份 733 条 `AppExtensions`、28 条 `LaunchDaemons`。日志里被拉起的扩展进程有 `SafariWidgetExte[165]`、`MusicWidgets[166]`、`PassbookWidgetsE[167]`、`BarcodeScannerWi[168]`、`TVWidgetExtensio[169]`、`TypeToSiriWidget[170]`、`HomeWidgetLockSc[171]`、`WorldClockWidget[172]`。按 `CFBundleIdentifier` 回查那份缓存，`com.apple.Music.MusicWidgets`、`com.apple.mobilesafari.SafariWidgetExtension`、`com.apple.Passbook.PassbookWidgets`、`com.apple.tv.TVWidgetExtension`、`com.apple.Home.HomeWidget`、`com.apple.weather.widget`、`com.apple.mobileslideshow.PhotosReliveWidget`、`com.apple.camera.LauncherControlExtension` 八项里只有 `com.apple.BarcodeScanner.BarcodeScannerWidgetExtension` 在清单上。
+`out/ios26-resume/chronod-qemu/` 那一轮只有根盘任务集不同（只加了 `com.apple.chronod`），根盘缓存同样是这份 733 条 `AppExtensions`、28 条 `LaunchDaemons`。
+
+- 日志里被拉起的扩展进程有 `SafariWidgetExte[165]`、`MusicWidgets[166]`、`PassbookWidgetsE[167]`、`BarcodeScannerWi[168]`、`TVWidgetExtensio[169]`、`TypeToSiriWidget[170]`、`HomeWidgetLockSc[171]`、`WorldClockWidget[172]`。
+- 按 `CFBundleIdentifier` 回查那份缓存，`com.apple.Music.MusicWidgets`、`com.apple.mobilesafari.SafariWidgetExtension`、`com.apple.Passbook.PassbookWidgets`、`com.apple.tv.TVWidgetExtension`、`com.apple.Home.HomeWidget`、`com.apple.weather.widget`、`com.apple.mobileslideshow.PhotosReliveWidget`、`com.apple.camera.LauncherControlExtension` 八项里只有 `com.apple.BarcodeScanner.BarcodeScannerWidgetExtension` 在清单上。
 
 扩展能不能启动因此和这份清单无关，补齐清单也解决不了 K90 的报错。
 

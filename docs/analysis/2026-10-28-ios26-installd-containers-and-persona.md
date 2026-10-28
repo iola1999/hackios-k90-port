@@ -11,7 +11,11 @@
 
 所以「没有安装记录」的成因指向 **`installd` 起来之后卡住**，卡住的签名与 `pkd`／`extensionkitservice`／`iconservicesagent` 一样（同一句 idle demotion 超时）。
 
-**但「被判卡」不能当作判据**：`docs/analysis/2026-10-28-stuck-process-census.md` 统计了 58 个证据目录，11 个有这类日志，被判卡的只有五个进程名（`AudioConverterService`、`pkd`、`iconservicesagent`、`extensionkitservice`、`installd`），而最干净的一轮（`attr-linkd`，11,015 帧、无停帧）同样有 `AudioConverterService`、`pkd`、`extensionkitservice` 三个事件。被判卡是背景状态，好坏轮都有。`kernel-12377-attr26-persona2` 又出现一个先前普查里没有的名字：`linkd` 2 次（同一轮还有 `installd` 3、`AudioConverterService` 3、`pkd` 2）。这一条只记录，不作推断。**验收改用目录与计数**：`lsprobe` 的 `mobilelibrary=` 里是否出现 `MobileInstallation/`、`containers_entries=` 是否从 0 变非 0、`mobileinstallation_dir=` 是否非 0。作业定义本身：`com.apple.mobile.installd`，`MachServices` 只有 `com.apple.mobile.installd`，plist 里没有 `RunAtLoad`，由打包脚本强制打开。
+**但「被判卡」不能当作判据**：`docs/analysis/2026-10-28-stuck-process-census.md` 统计了 58 个证据目录，11 个有这类日志，被判卡的只有五个进程名（`AudioConverterService`、`pkd`、`iconservicesagent`、`extensionkitservice`、`installd`），而最干净的一轮（`attr-linkd`，11,015 帧、无停帧）同样有 `AudioConverterService`、`pkd`、`extensionkitservice` 三个事件。被判卡是背景状态，好坏轮都有。
+
+- `kernel-12377-attr26-persona2` 又出现一个先前普查里没有的名字：`linkd` 2 次（同一轮还有 `installd` 3、`AudioConverterService` 3、`pkd` 2）。这一条只记录，不作推断。
+- **验收改用目录与计数**：`lsprobe` 的 `mobilelibrary=` 里是否出现 `MobileInstallation/`、`containers_entries=` 是否从 0 变非 0、`mobileinstallation_dir=` 是否非 0。
+- 作业定义本身：`com.apple.mobile.installd`，`MachServices` 只有 `com.apple.mobile.installd`，plist 里没有 `RunAtLoad`，由打包脚本强制打开。
 
 ## 2. 安装记录在 SQLite 里，不在 plist 里
 
@@ -22,7 +26,9 @@
 - `SystemAppInstallState`、`BackupSystemAppInstallState` —— 存在（`InstalledContentLibrary` 里，前者是 `SystemAppInstallState.plist`）。
 - `MobileInstallation` 的数据目录仍是 `~/Library/MobileInstallation`（`/private/var/mobile/Library/MobileInstallation`），`~/Library/Logs/MobileInstallation` 也存在。
 
-`containermanagerd` 本体是 54 KB 的壳（`strings` 只有 2 条），实现在 `ContainerManagerCommon`／`MobileContainerManager`。它在三轮里都在跑，日志里的写法是 `containermanager[37]`（biomed）、`containermanager[38]`（linkd）、`containermanager[54]`（crashlog），同一句 `minisandbox: request 5 (first seen from …): allowed`。`ContainerManagerCommon` 里是 SQLite 语句与列名：`identifier`、`code_signing_id`、`code_signing_id_text`、`child_code_signing_id_text`、`data_container_class`、`placeholder`、`advance_copy`、`registered_by_caller`、`invalid`、`codeSigningInfoData`，库文件名为 `com.apple.containermanagerd.SQLite`（另有统计库 `Analytics.sqlite`）。
+`containermanagerd` 本体是 54 KB 的壳（`strings` 只有 2 条），实现在 `ContainerManagerCommon`／`MobileContainerManager`。它在三轮里都在跑，日志里的写法是 `containermanager[37]`（biomed）、`containermanager[38]`（linkd）、`containermanager[54]`（crashlog），同一句 `minisandbox: request 5 (first seen from …): allowed`。
+
+`ContainerManagerCommon` 里是 SQLite 语句与列名：`identifier`、`code_signing_id`、`code_signing_id_text`、`child_code_signing_id_text`、`data_container_class`、`placeholder`、`advance_copy`、`registered_by_caller`、`invalid`、`codeSigningInfoData`。库文件名为 `com.apple.containermanagerd.SQLite`（另有统计库 `Analytics.sqlite`）。
 
 **这条决定 desktop 的做法**：16.5 时代照抄 plist 的路子在这里没有对应文件。要让 `containermanagerd` 认得一个已安装应用，要么走它自己的 XPC 接口让它写库，要么把库与容器目录一起造出来。前者的接口在 `MobileContainerManager`／`installd` 的 XPC 上；后者需要匹配 `MCMMetadataSchemaVersion`。
 

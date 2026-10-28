@@ -23,7 +23,16 @@
 
 ## 3. 构建产物（受版本控制输入，无手工修补）
 
-容器 `kbuild` 内对 `/work/repo` 执行 `git fetch /src k90-port && git reset --hard FETCH_HEAD`（源码快照 = 内核提交 `921e3f9`），删除 `xnu-src` 后 `XNU_URL=file:///work/xnu-tag-source bash xnu/apply.sh`（Apple 标签 `xnu-8796.121.2`，基线 `c54f35ca`，76 个补丁、131 个新增文件），`bash xnu-deps/setup.sh`，`bash xnu-build.sh -j8 BUILD_DSYM=0 KEXT_CREATE_SYMBOL_SET=/bin/true`。首次重建暴露输入问题：`git clean -xdf` 不删除内嵌 git 仓库 `xnu-src`（删除它需要 `-ff`），`apply.sh` 因目录已存在而退出，编译沿用了上一轮的 `xnu-src` 源文件（产物哈希与上一轮相同，`strings` 无新日志行）。重做时显式 `rm -rf xnu-src` 后重新展开，复制完成用 `cmp` 与哈希核对驱动源文件，再进行编译；两轮日志均落盘。设置与构建日志全量保存在 Git 忽略的 `docs/progress/evidence/2026-10-25-gpu-preflight/setup.log`、`build.log`。
+容器 `kbuild` 内对 `/work/repo` 依次执行：
+
+- `git fetch /src k90-port && git reset --hard FETCH_HEAD`（源码快照 = 内核提交 `921e3f9`）。
+- 删除 `xnu-src` 后 `XNU_URL=file:///work/xnu-tag-source bash xnu/apply.sh`（Apple 标签 `xnu-8796.121.2`，基线 `c54f35ca`，76 个补丁、131 个新增文件）。
+- `bash xnu-deps/setup.sh`。
+- `bash xnu-build.sh -j8 BUILD_DSYM=0 KEXT_CREATE_SYMBOL_SET=/bin/true`。
+
+首次重建暴露输入问题：`git clean -xdf` 不删除内嵌 git 仓库 `xnu-src`（删除它需要 `-ff`），`apply.sh` 因目录已存在而退出，编译沿用了上一轮的 `xnu-src` 源文件（产物哈希与上一轮相同，`strings` 无新日志行）。重做时显式 `rm -rf xnu-src` 后重新展开，复制完成用 `cmp` 与哈希核对驱动源文件，再进行编译；两轮日志均落盘。
+
+设置与构建日志全量保存在 Git 忽略的 `docs/progress/evidence/2026-10-25-gpu-preflight/setup.log`、`build.log`。
 
 构建后核验：链接清单包含 `adreno8_secure.o`（`bsd/conf/files` 注册自动生成的规则编译）；`nm` 可见 `adreno8_secure_preflight`、`adreno8_secure_execute`、`adreno8_gpu8_secure_preflight`；`strings` 含预检与门禁日志行（`secure preflight:`、`handover gated`、`preflight-only mode`）；产物 `hackios-xnu-kernel/out/handoff-mach-secure-preflight`（新文件名，保留上一审阅轮 `hackios-xnu-kernel/out/handoff-mach-secure`，19,192,624 字节、`b9be06b8…` 不变）大小 19,193,072 字节，SHA-256 `e2df73c312257792d8388372025d4b28716cbd9b7a2929b5147fe18ca783f8d4`。文件与 manifest 记录为产物身份的唯一依据。
 
@@ -39,16 +48,32 @@
 ## 5. 真机一次性试验（已放行，实际停在阶段 9）
 
 - 试验输入复核：产物 `out/handoff-mach-secure-preflight` 运行前实算 SHA-256 与 manifest 一致（`e2df73c3…`）。启动参数审查：`adreno8=1` 只运行阶段 1，阶段 14 的取值是 `adreno8=14`（`adreno8.c` 的分阶段循环在第一个 FAILED 阶段停止，后续阶段不尝试）；实际命令行沿用上一轮阶段 14 基线并加预检开关：`debug=0x10e cpus=1 bootcpu=7 epoch=1792797718 adreno8=14 adreno8_pause=0 adreno8_watch=0 adreno8_keep=1 adreno8_return=0 adreno8_speed=1 adreno8_secure_preflight=1 loader_return_after=25`，payload `out/handoff-preflight-full.bin`（28,261,912 字节，`fd5e634c…`），RAM 传盘，未写持久分区。
-- 实际结果：主机侧输入错误，本次暂存的小根盘是交互轮根盘 `out/handoff-ui-clean.apfs`（`e9aaafbe…`，不含 GMU 固件），阶段 9 报「no fw/gen80000_gmu.bin in the small image」与「missing or invalid gen80000 GMU firmware」后 FAILED，阶段 10 及以后未尝试。HWSCHED（阶段 14）没有运行：无 kind-5 请求、无预检调用、未执行 MP_ASSIGN、无 CB3 写；本驱动自身的 SCM 调用每次有调用前 announce 与返回后结果两行打印（`adreno8_cx.c` L583、L599），run000 内核日志没有这些行，在日志完整的前提下 adreno8 驱动在阶段 9 前没有发起 SCM；日志截断时，打印行缺失单独不足以支持该推断。其它组件的 SCM 打印形式不在本日志范围内，不能凭日志缺行推断全系统 SCM 次数为 0。内核继续启动到用户态并于 25 秒时限返回 loader（`returned 574724 0`），keep 保留消息照常打印。阶段 14 实验需要含固件的根盘 `out/handoff-ui-gen80000.apfs`（9,220,096 字节，`582b9fb2…`，与 manifest 中 step14 轮记录一致）。放行的单次试验按「出现异常即结束采样」用完，重跑需要另行放行。
+- 实际结果：主机侧输入错误，本次暂存的小根盘是交互轮根盘 `out/handoff-ui-clean.apfs`（`e9aaafbe…`，不含 GMU 固件），阶段 9 报「no fw/gen80000_gmu.bin in the small image」与「missing or invalid gen80000 GMU firmware」后 FAILED，阶段 10 及以后未尝试。
+  - HWSCHED（阶段 14）没有运行：无 kind-5 请求、无预检调用、未执行 MP_ASSIGN、无 CB3 写。
+  - 本驱动自身的 SCM 调用每次有调用前 announce 与返回后结果两行打印（`adreno8_cx.c` L583、L599），run000 内核日志没有这些行，在日志完整的前提下 adreno8 驱动在阶段 9 前没有发起 SCM；日志截断时，打印行缺失单独不足以支持该推断。
+  - 其它组件的 SCM 打印形式不在本日志范围内，不能凭日志缺行推断全系统 SCM 次数为 0。
+  - 内核继续启动到用户态并于 25 秒时限返回 loader（`returned 574724 0`），keep 保留消息照常打印。
+  - 阶段 14 实验需要含固件的根盘 `out/handoff-ui-gen80000.apfs`（9,220,096 字节，`582b9fb2…`，与 manifest 中 step14 轮记录一致）。
+  - 放行的单次试验按「出现异常即结束采样」用完，重跑需要另行放行。
 - 同轮对照观察（步骤 8 只读 dump 对比 `hwsched-step14b` 对照轮）：CB1 `SCTLR` 两轮相同（`0x3af42118`），CB0（`0x3d62e702` 对 `0x3d22e70e`）与 CB2（`0x107c430c` 对 `0x117c431c`）跨冷启动存在位差异，部分 `TTBR` 同样如此；本设备 GPU SMMU 的 context bank 寄存器读回值跨轮不稳定。CB3 `SCTLR`（0x3dc3000）首次读回 `0x96cc51a`，对照轮未读 CB3。预检以「`SCTLR` 非 0 即拒绝」判定占用，在该机上的真机结论需要结合这一读数不稳定性解读：单次非 0 读回不能区分真实占用与未上电读值，CB3 读数不能归因于某个占用方。
 - 收尾与设备最终状态：内核返回后 loader 命令可查，`fastboot reboot`（PSCI 冷复位）后主机 fastboot 侧约 12 分钟无枚举；期间设备实际已重新枚举为 Android 复合描述符并正常启动（ADB 可连，`sys.boot_completed=1`，slot `_b`）：该次复位后loader 未驻留，bootloader 引导了 slot b 的 Android；原因未确认（待查：bootloader 对 boot_a 的重试标记）。按约束未做第二次恢复尝试。设备当前健康：Android 完整启动；整板复位结束了本次 keep 的保留，但先前安全/GPU 归属状态是否全部清除，Android 正常启动不能证明，未验证；未读任何旧 GPU 页面。原始日志与状态保存在 `docs/progress/evidence/2026-10-25-gpu-preflight/run/`（Git 忽略）。
 
 ## 6. 重跑准备（主机侧，审阅复核轮）
 
-- 引用核对：[annibale-uefi-build.md](../analysis/annibale-uefi-build.md) L93-L94 变体 A（1.26 MB、`DTB=empty.dtb`、「`fastboot boot` 直测（LK 容量内）」）是 2026-10-23 旧变体时代（BootShim+UEFI FD 打包，早于 boot_a 驻留的 loader v5）；[rootfs-strategy.md](../analysis/rootfs-strategy.md) L105 记录 LK `fastboot boot` 镜像上限实测约 2 MiB、超限 Load Error、大镜像须 `flash boot_a`；[k90-annibale-feasibility.md](../analysis/k90-annibale-feasibility.md) L11 记录本机 XBL fastboot 接受 `boot` 命令（原厂镜像 OKAY、无损伤）。当前 v5 镜像（2,222,080 字节）没有 `fastboot boot` 实测记录，且比约 2 MiB 的实测上限大约 6%。
+- 引用核对：
+  - [annibale-uefi-build.md](../analysis/annibale-uefi-build.md) L93-L94 变体 A（1.26 MB、`DTB=empty.dtb`、「`fastboot boot` 直测（LK 容量内）」）是 2026-10-23 旧变体时代（BootShim+UEFI FD 打包，早于 boot_a 驻留的 loader v5）。
+  - [rootfs-strategy.md](../analysis/rootfs-strategy.md) L105 记录 LK `fastboot boot` 镜像上限实测约 2 MiB、超限 Load Error、大镜像须 `flash boot_a`。
+  - [k90-annibale-feasibility.md](../analysis/k90-annibale-feasibility.md) L11 记录本机 XBL fastboot 接受 `boot` 命令（原厂镜像 OKAY、无损伤）。
+  - 当前 v5 镜像（2,222,080 字节）没有 `fastboot boot` 实测记录，且比约 2 MiB 的实测上限大约 6%。
 - APFS 只读提取核验：`tools/hostbin/7z`（7-Zip 26.04）列出根盘 `out/handoff-ui-gen80000.apfs`（`582b9fb2…`）文件表并只读提取 `fw/` 四项固件，提取内容 SHA-256 与 `hackios-xnu-userland/firmware-gen8/gen80000-manifest.json` 逐项一致（gmu 88,896 B `1ad8175e…`、sqe 111,476 B `30ee3301…`、aqe 25,044 B `67562ad5…`、zap 12,088 B `0e3ae03f…`）；`handoff-ui-clean.apfs` 的 `fw/` 条目数为 0。
 - 输入校验（进入既有入口 `xnuloader/mkpayload.py`）：`--require name=sha256` 装配前实算输入哈希，`--require-cmd`/`--forbid-cmd` 校验 boot-arg 项，任一不通过即在写出前退出；完成后打印 payload 的 SHA-256。三条路径实测：错误根盘（ui-clean `e9aaafbe…`）拒绝且不产出文件；带 `loader_return_after=25` 的 cmdline 被拒绝；正确输入产出演示 payload 28,413,432 字节 `f9785da6…`（epoch=0，重跑按运行时 epoch 重新装配）。重跑命令行不含 `loader_return_after`；运行中的采样控制路径（`oem stop` 能否替代 stage-14 收尾冷重启）审查中，未授权前按既有手册用收尾冷重启。
-- 恢复 loader（优先无刷写）：v5（`89ed602e…`）10-24 写入 boot_a，此后未执行 `oem logwrite`（`loader.c` 注释：只有该命令写 boot_a）也没有其它 boot_a 写。真机只读核验（10-24，Android 侧 adb root 既有权限，`dd` 整分区读回 96 MiB，未重启/未刷写/未进 fastboot）：boot_a 前 2,222,080 字节（镜像 v0 头的页对齐有效长度：pagesize 2048、kernel 2,216,083 对齐 2,217,984、头页+内核页组+ramdisk 页，与镜像全长重合）实算 SHA-256 与批准 v5 完整哈希逐字节一致；尾部只读记录：整分区哈希 `5754318d…`，[2,222,080, 8,034,304) 非零 5,796,339 B（旧 stock boot 残留区），[8,034,304, 96 MiB) 非零 20,853,988 B，未写。数据与解析见 `evidence/2026-10-25-gpu-preflight/boota/notes.md`（Git 忽略）。恢复步骤（待授权）：进 LK 记录 `getvar product`/`getvar current-slot` → `fastboot set_active a`（playbook §3 既有命令，改持久槽位元数据、不写分区内容）→ `reboot` → 预期 `getvar product`=xnuloader、`result`=idle（历史实测约 17 秒）；本核验已完成，LK 侧 fetch 比对不再必要。读回不符或未读时的后续手段：重刷 boot_a v5 + `set_active a` 需另行授权。全程禁持久写时的替代手段：`mkxnuimg.py` 以 `DTB=empty.dtb` 重打包 v5 loader 到 2 MiB 内后 `fastboot boot`（RAM 驻留，重启消失）。
+- 恢复 loader（优先无刷写）：v5（`89ed602e…`）10-24 写入 boot_a，此后未执行 `oem logwrite`（`loader.c` 注释：只有该命令写 boot_a）也没有其它 boot_a 写。
+  - 真机只读核验（10-24，Android 侧 adb root 既有权限，`dd` 整分区读回 96 MiB，未重启/未刷写/未进 fastboot）：boot_a 前 2,222,080 字节（镜像 v0 头的页对齐有效长度：pagesize 2048、kernel 2,216,083 对齐 2,217,984、头页+内核页组+ramdisk 页，与镜像全长重合）实算 SHA-256 与批准 v5 完整哈希逐字节一致。
+  - 尾部只读记录：整分区哈希 `5754318d…`，[2,222,080, 8,034,304) 非零 5,796,339 B（旧 stock boot 残留区），[8,034,304, 96 MiB) 非零 20,853,988 B，未写。
+  - 数据与解析见 `evidence/2026-10-25-gpu-preflight/boota/notes.md`（Git 忽略）。
+  - 恢复步骤（待授权）：进 LK 记录 `getvar product`/`getvar current-slot` → `fastboot set_active a`（playbook §3 既有命令，改持久槽位元数据、不写分区内容）→ `reboot` → 预期 `getvar product`=xnuloader、`result`=idle（历史实测约 17 秒）；本核验已完成，LK 侧 fetch 比对不再必要。
+  - 读回不符或未读时的后续手段：重刷 boot_a v5 + `set_active a` 需另行授权。
+  - 全程禁持久写时的替代手段：`mkxnuimg.py` 以 `DTB=empty.dtb` 重打包 v5 loader 到 2 MiB 内后 `fastboot boot`（RAM 驻留，重启消失）。
 - 主机测试补充：新增非候选槽 SMR5 精确匹配 SID2 且指向 CB4 的拒绝场景（该 stream 已被占用，读扫描只读、0 写），SMMU 组两种页大小成功；生产代码未改动。
 
 ## 7. 放行的重跑轮 run001（恢复成功，停在阶段 9 的既有保守检查）
@@ -64,7 +89,11 @@
 - 审阅结论：`ae841eb` 把 context `SCTLR`≠0 的全局拒收加在共享 `adreno8_space_available` 上，普通 GMU 接管在本机被 CB2 读数 `0x107c430c` 永久拒收，即 run001 停在阶段 9 的回归来源；该值的位 0（使能位）为 0，「已使能」的说法与数值不符。批准的最小修复为仅本地实现、测试、构建，无设备操作。
 - 实现（内核提交 `9cc2b9d`）：`adreno8_space_available` 增加显式 `strict` 参数。`adreno8_space_on`（GMU/GPU 普通接管）传 false，逐 diff 恢复 step14b 已验证的三项语义：无全局 `SCTLR` 门、复用例外要求同 match 精确项加 FAULT 路由加 CB `SCTLR` 读 0、路由冲突仅对 S2CR active 类型生效。`adreno8_secure_preflight` 传 true，严格规则保持独立：先边界再读；CB3 `SCTLR` 非零即拒，打印写明非零、不满足预检；候选 match 槽占用、任何有效 SMR 覆盖 SID2、任意 S2CR 类型指向 CB3 均拒。secure 检查全部保留，随普通路径恢复一项未丢。
 - 生产路径测试：CB2 `SCTLR`=`0x107c430c` 普通接管成功，写轨迹与 `SCTLR`=0 基线逐条一致（测试桩新增写轨迹记录）；候选 match 槽同流加 FAULT 残留加 `SCTLR` 非零拒收（只读）；CB3 `SCTLR`=`0x96cc51a`（本机读数，使能位为 0）预检 0 写拒绝；fault（`0x20003`）与 bypass（`0x10003`）残留在非覆盖槽指向 CB3 预检 0 写拒绝；非候选槽精确 SID2→CB4 预检 0 写拒绝；边界检查前零 MMIO、门禁 0 MP_ASSIGN、0 kind-5 应答的既有断言不变。全量 10 组主机检查两种页大小（4096/16384）全部成功，日志 `evidence/2026-10-25-gpu-preflight/scopefix/tests-10groups.log`（Git 忽略）。
-- 构建与产物：干净源码快照 = 内核提交 `9cc2b9d`，流程与 §3 相同（显式 `rm -rf xnu-src` 后重新展开标签源码与补丁）。产物 `hackios-xnu-kernel/out/handoff-mach-scopefix` 大小 19,193,072 字节，SHA-256 `1785d8d4e911e3ec67ce2408f974b772bcb128ad040a6735a07ff182cc19c498`；新文件名保存，已审版本 `out/handoff-mach-secure-preflight`（`e2df73c3…`）与 `out/handoff-preflight-r2.bin`（`2afb28da…`）不覆盖。旧 xnu-src 残留导致 apply.sh 退出、编译沿用上一轮源文件的问题在本轮再次出现并再次以显式删除解决（失败轮记录 `build-first-round-stale-xnu-src.log`）；根治方向是构建流程的源快照前置检查，留待后续轮，本轮未改工具。源快照校验记录已归档供审查：编译树 `git log -1` 与构建输入同为 `9cc2b9d`，`xnu/files/` 全部 131 个注入文件与编译树逐字节比对零差异（`injection-check.log`），xnu-src 工作树实体清单 173 项（`xnu-src-status.list`），完整重展开与编译日志 `build.log` 共 1914 行（apply 76 补丁+131 文件、deps、899 编译单元、STEP-DONE）。构建、测试与校验日志保存在 `evidence/2026-10-25-gpu-preflight/scopefix/`（Git 忽略），四份记录 SHA-256 记入 manifest，manifest 绑定提交、产物与哈希。
+- 构建与产物：干净源码快照 = 内核提交 `9cc2b9d`，流程与 §3 相同（显式 `rm -rf xnu-src` 后重新展开标签源码与补丁）。
+  - 产物 `hackios-xnu-kernel/out/handoff-mach-scopefix` 大小 19,193,072 字节，SHA-256 `1785d8d4e911e3ec67ce2408f974b772bcb128ad040a6735a07ff182cc19c498`；新文件名保存，已审版本 `out/handoff-mach-secure-preflight`（`e2df73c3…`）与 `out/handoff-preflight-r2.bin`（`2afb28da…`）不覆盖。
+  - 旧 xnu-src 残留导致 apply.sh 退出、编译沿用上一轮源文件的问题在本轮再次出现并再次以显式删除解决（失败轮记录 `build-first-round-stale-xnu-src.log`）；根治方向是构建流程的源快照前置检查，留待后续轮，本轮未改工具。
+  - 源快照校验记录已归档供审查：编译树 `git log -1` 与构建输入同为 `9cc2b9d`，`xnu/files/` 全部 131 个注入文件与编译树逐字节比对零差异（`injection-check.log`），xnu-src 工作树实体清单 173 项（`xnu-src-status.list`），完整重展开与编译日志 `build.log` 共 1914 行（apply 76 补丁+131 文件、deps、899 编译单元、STEP-DONE）。
+  - 构建、测试与校验日志保存在 `evidence/2026-10-25-gpu-preflight/scopefix/`（Git 忽略），四份记录 SHA-256 记入 manifest，manifest 绑定提交、产物与哈希。
 - 重跑方案（10-24 独立审查通过后放行，实测见 §9）：输入三件 = 本产物内核 + 根盘 `582b9fb2…` + 批准 cmdline（epoch 取运行时值，`--exact-cmd` 整串核对），`mkpayload.py --require` 装配新 payload；playbook §4：loader idle 冷启动生命周期内 stage-system 传系统盘 → stage payload → `oem run`；采样按 §5 手册（运行中 `oem log`，返回后先 `getvar result` 与 `get_staged`）；本轮预期阶段 9 GMU 接管恢复 step14b 行为，阶段 10 起进入 SCM/HFI 路径，预检严格规则不变。设备最后观测为 slot a loader idle（该状态指最后一次读取，重跑前重新确认），无刷写。
 - 边界：实现、测试、构建、文档完成即冻结；未推送（内核 `k90-port` 领先 origin 八个提交，父仓文档提交含 gitlink→`9cc2b9d`），无新设备操作，未新增参数或工具行为。
 
@@ -74,8 +103,20 @@
 - 上传与运行：09:32:01–09:33:03 stage-system 传系统盘 2,492,227,584 字节 62.283 秒入 RAM；09:33:14 `oem run`；全程仅 RAM 上传，无持久分区写。
 - 阶段 9 恢复：本机该次冷启 CB2 `SCTLR` 读数 `0x117c431c`（run001 为 `0x107c430c`，跨冷启不稳定），普通接管按 step14b 顺序完成（FAULT→CB2 关→建表→`SCTLR`=0x27），打印「gmu translation enabled: stream 5, context 2, root PA 0x95e76c000」；run001 的阶段 9 拒收消失，作用域修复在真机生效。
 - 阶段 10–13 与 SCM：固件加载校验 0x15a50 通过；阶段 11 两次 SCM 调用各按两行打印（`0x42000601` 返回 0 应答 0x1；`0x42002801` 返回 0 应答 0）；阶段 12 GMU 起动、HFI 队列 status 1；阶段 13 指令表 2 频点 12 带宽行。正常初始化 SCM 允许，与门禁预期一致。
-- 阶段 14 预检：共享缓冲分配走 CB2 正常；日志出现「MEM_ALLOC kind 5 handle 0x5 flags 0x1007 size 0x138000 align 0」后紧接预检读 `0x3dc3000`=`0x96cc51a`，打印「secure preflight: context 3 SCTLR 0x96cc51a is nonzero; the context bank fails the preflight」，即按原值保守拒绝（该值位 0 为 0，严格规则只判非零，未做位解释）；预检前后 CB3 无写；全部日志无 kind-5 应答、无 MP_ASSIGN、无 START ACK；阶段 14 FAILED 后 keep 路径继续启动，内核进入用户态（launchd/SpringBoard 在实时日志中）。预检的 SCTLR 短路在路由扫描之前（`adreno8_smmu.c` L419-L452 先于 L455 起的路由循环），本轮预检时刻未读任何路由寄存器；阶段 8/9 dump 的 24 条 SMR 全 0、S2CR 全 `0x3000018` 是开机时刻的路由状态，与 kind-5 请求时刻没有对应关系，预检时刻的路由实态要靠拒绝后的只读采样获取（§10）。
-- 收尾：09:35:58 `oem stop` 一次；`result` 保持 running 至 09:36:40，loader 于 09:37:19 标记「hung 1310720 0」。park 的代码路径与该状态相容：quiesce 在 `adreno8_reset_required` 置位后 wfe 等待主机冷重启（`adreno8.c` L399-L408），但两条 park 打印（`adreno8.c` L232 stop 侧、L400-L403 probe 侧）本轮日志均未捕获，最后一段实时日志止于 09:35:25，早于 `oem stop` 33 秒，日志窗口没有覆盖停止时刻；hung 只证明 loader 判定内核无响应（`loader.c` L3573-L3579 的 OTHER_CPU_HUNG 路径，行号按 2026-10-24 审查修正），park 结论按「代码路径相容但日志未确证」记录，与 run001 的正常 returned 分列。停止后的日志补采顺序已写进 playbook §5。hang 态 `get_staged` 只出 32,767 字节 loader 串行日志（截断在阶段 8 dump 行中），两次重组结果相同；完整启动日志在实时采样 002-live1（6,491 行）与 002-live2（9,363 行）。09:38:03 loader `reboot`（PSCI）一次，09:38:23 重新枚举 xnuloader、`result`=idle。
+- 阶段 14 预检：共享缓冲分配走 CB2 正常。
+  - 日志出现「MEM_ALLOC kind 5 handle 0x5 flags 0x1007 size 0x138000 align 0」后紧接预检读 `0x3dc3000`=`0x96cc51a`，打印「secure preflight: context 3 SCTLR 0x96cc51a is nonzero; the context bank fails the preflight」，即按原值保守拒绝（该值位 0 为 0，严格规则只判非零，未做位解释）。
+  - 预检前后 CB3 无写；全部日志无 kind-5 应答、无 MP_ASSIGN、无 START ACK。
+  - 阶段 14 FAILED 后 keep 路径继续启动，内核进入用户态（launchd/SpringBoard 在实时日志中）。
+  - 预检的 SCTLR 短路在路由扫描之前（`adreno8_smmu.c` L419-L452 先于 L455 起的路由循环），本轮预检时刻未读任何路由寄存器。
+  - 阶段 8/9 dump 的 24 条 SMR 全 0、S2CR 全 `0x3000018` 是开机时刻的路由状态，与 kind-5 请求时刻没有对应关系，预检时刻的路由实态要靠拒绝后的只读采样获取（§10）。
+- 收尾：
+  - 09:35:58 `oem stop` 一次；`result` 保持 running 至 09:36:40，loader 于 09:37:19 标记「hung 1310720 0」。
+  - park 的代码路径与该状态相容：quiesce 在 `adreno8_reset_required` 置位后 wfe 等待主机冷重启（`adreno8.c` L399-L408）。
+  - 两条 park 打印（`adreno8.c` L232 stop 侧、L400-L403 probe 侧）本轮日志均未捕获，最后一段实时日志止于 09:35:25，早于 `oem stop` 33 秒，日志窗口没有覆盖停止时刻。
+  - hung 只证明 loader 判定内核无响应（`loader.c` L3573-L3579 的 OTHER_CPU_HUNG 路径，行号按 2026-10-24 审查修正），park 结论按「代码路径相容但日志未确证」记录，与 run001 的正常 returned 分列。
+  - 停止后的日志补采顺序已写进 playbook §5。
+  - hang 态 `get_staged` 只出 32,767 字节 loader 串行日志（截断在阶段 8 dump 行中），两次重组结果相同；完整启动日志在实时采样 002-live1（6,491 行）与 002-live2（9,363 行）。
+  - 09:38:03 loader `reboot`（PSCI）一次，09:38:23 重新枚举 xnuloader、`result`=idle。
 - 最后观测：slot a loader idle（指本轮收尾读取，后续运行前重新确认）。原始日志与记录在 `evidence/2026-10-25-gpu-preflight/run3/`（Git 忽略），payload 与产物哈希绑定记入 manifest `run002_2026_10_25`。
 - 专项审查两项已结案（独立审查结论）：`SCTLR` 依规范允许复位后呈 UNKNOWN，CB3 该非零读数的实际来源未知，寄存器值读不出占用信息；`0x96cc51a` 位 4 的字节序核对完成。CB3 占用仍属未知，判据保持「`SCTLR` 非零即拒」。
 - vendor-dir 复核：`tests.gpu_vendor_dir` 记录的路径实际存在，四个文件哈希与 `test-adreno8-gpu.py` 内 pin 值一致（`3379f615…`/`7faff3fd…`/`e85cb422…`/`f66d80cd…`），「缺路径」的说法与当前观测不符。
@@ -84,9 +125,27 @@
 
 - 实现（内核提交 `e5fdd39`）：严格预检在 SCTLR 非零拒绝时于拒绝打印（`adreno8_smmu.c` L423）之后补一次对已探测范围的只读采样（L432-L450）：SMR 逐条读、无效项跳过 S2CR；有效项命中候选 match、mask 后覆盖 SID2 或 S2CR 类型指向候选 context 3 时逐条打印（L446）；汇总行带步号与单调纳秒并声明拒绝保持原样（L450）。边界检查在采样之前，SCTLR 判据不变，采样不新增拒绝理由，扫描只一遍、返回 false 的结论不受扫描结果影响；0 写、0 SCM 调用、0 kind-5 应答；未使用 CB4-6 与 CB19-20、未新增寄存器、未引入多次冷启采样。
 - 主机测试：smmu 组给测试桩补 `mach_absolute_time` 与 `absolutetime_to_nanoseconds`（定值，断言可复现），驱动打印桩 `adreno8_say` 改为转发 stdout 以支持顺序断言；新增断言覆盖 CB3 残留值 1 与 `0x96cc51a` 下的全范围采样（SMR0 与 SMR23 各读一次、无效 SMR 不触发 S2CR 读）；新增候选槽占用（SMR2）与 CB3 路由（SMR5→CB3）同非零 SCTLR 并存的场景，两条命中行各一次、只读 0 写、首次拒绝理由仍是 SCTLR；mask、槽冲突与边界 0-MMIO 的既有断言保留。runner 捕获子进程输出并断言顺序：拒绝行在前、命中行在中、汇总行每场景恰一条。10 组两种页大小全部成功，日志 `evidence/2026-10-25-gpu-preflight/diag/tests-10groups.log`（`3d5e6f68…`）。
-- 停止后日志补采（playbook §5 新增程序）：`oem stop` 后 result 未转 returned 时立即 `oem log`+`get_staged` 取第一轮并完整保存，约 2 到 3 秒后取第二轮，固定两轮、不做轮询循环；结论分三档：host-stop banner 未见（抓取不完整与内核未执行停止回调无法区分）、banner 已见且无冷复位保留打印（park 未确证）、见到「requires host cold reset」打印（park 确证）。hung 本身只记录为 loader 判定内核无响应；判定 hung 后实时环形缓冲指针已清空（`loader.c` L2517），挂死判定时刻的快照只保留在 HUNG 分支 `write_logs` 预先组装的暂存内容里（L3578），直接 `get_staged` 可取回，再次执行 `oem log` 会经 `compose_logs(NULL, 0)`（L327-L347、分支 L4035-L4041）把暂存覆盖为仅 loader 日志；本程序的适用状态是挂死判定前的 running，此时 `oem log` 读实时环形缓冲。banner 命名与判据按 2026-10-24 审查修正，见[审查记录](../analysis/2026-10-25-loader-review-findings.md)。loader 未改（行号固定于 `hackios-xnu-kernel` 提交 `ec53bac`）。
+- 停止后日志补采（playbook §5 新增程序）：
+  - `oem stop` 后 result 未转 returned 时立即 `oem log`+`get_staged` 取第一轮并完整保存，约 2 到 3 秒后取第二轮，固定两轮、不做轮询循环。
+  - 结论分三档：
+    - host-stop banner 未见（抓取不完整与内核未执行停止回调无法区分）。
+    - banner 已见且无冷复位保留打印（park 未确证）。
+    - 见到「requires host cold reset」打印（park 确证）。
+  - hung 本身只记录为 loader 判定内核无响应。
+  - 判定 hung 后实时环形缓冲指针已清空（`loader.c` L2517），挂死判定时刻的快照只保留在 HUNG 分支 `write_logs` 预先组装的暂存内容里（L3578），直接 `get_staged` 可取回，再次执行 `oem log` 会经 `compose_logs(NULL, 0)`（L327-L347、分支 L4035-L4041）把暂存覆盖为仅 loader 日志。
+  - 本程序的适用状态是挂死判定前的 running，此时 `oem log` 读实时环形缓冲。
+  - banner 命名与判据按 2026-10-24 审查修正，见[审查记录](../analysis/2026-10-25-loader-review-findings.md)。loader 未改（行号固定于 `hackios-xnu-kernel` 提交 `ec53bac`）。
 - run002 措辞修订：§9 收尾改写为 park 代码路径相容但日志未确证（两条 park 打印在全部抓取中缺失，实时日志止于 stop 前 33 秒）；阶段 8/9 dump 的路由状态（SMR 全 0、S2CR 全 `0x3000018`）属开机时刻，与 kind-5 请求时刻没有对应关系，预检时刻的实态由本轮采样获取。专项审查两项已结案：`SCTLR` 依规范允许复位后呈 UNKNOWN，CB3 非零读数的实际来源未知；`0x96cc51a` 位 4 字节序已核对。CB3 占用仍属未知，判据「非零即拒」不变。
-- 构建溯源（一次性前置检查，用进程命令与既有入口，未新增工具）：构建前记录 XNU 基线（本机克隆 tag `xnu-8796.121.2` commit `c54f35ca…`，447,764 KiB）；旧 `xnu-src` 先记录指纹（445,192 KiB、base commit `c54f35ca…`）再过绝对路径检查删除，删除或 apply 失败在编译前退出，不带旧树继续；`git reset --hard FETCH_HEAD` 后逐条记录 76 个补丁 SHA-256（聚合 `168e70ef…`、series 文件 `72b0303b…`）与 131 个注入文件清单（清单 `7d78b542…`、内容聚合 `372a6618…`）；apply 后编译树 base commit `c54f35ca…` 与 131 个文件逐字节比对零差异（76 个 Apple 文件被修改、97 个新增条目）；构建前后记录仓库 HEAD `e5fdd39` 与 dirty 0。流程共三回合：第一回合符号集桩变量名写错（`config/Makefile` 实际用 `KEXT_CREATE_SYMBOL_SET`）停在 check_all_exports，日志留存 `build-failed-wrong-symbolset-var.log`（`13d9b8df…`）；第二回合产物路径笔误退出，日志被第三回合覆盖、失败原因记录于此；第三回合全步成功（`build.log` `e79b3fb9…`）。
+- 构建溯源（一次性前置检查，用进程命令与既有入口，未新增工具）：
+  - 构建前记录 XNU 基线（本机克隆 tag `xnu-8796.121.2` commit `c54f35ca…`，447,764 KiB）。
+  - 旧 `xnu-src` 先记录指纹（445,192 KiB、base commit `c54f35ca…`）再过绝对路径检查删除，删除或 apply 失败在编译前退出，不带旧树继续。
+  - `git reset --hard FETCH_HEAD` 后逐条记录 76 个补丁 SHA-256（聚合 `168e70ef…`、series 文件 `72b0303b…`）与 131 个注入文件清单（清单 `7d78b542…`、内容聚合 `372a6618…`）。
+  - apply 后编译树 base commit `c54f35ca…` 与 131 个文件逐字节比对零差异（76 个 Apple 文件被修改、97 个新增条目）。
+  - 构建前后记录仓库 HEAD `e5fdd39` 与 dirty 0。
+  - 流程共三回合：
+    - 第一回合符号集桩变量名写错（`config/Makefile` 实际用 `KEXT_CREATE_SYMBOL_SET`）停在 check_all_exports，日志留存 `build-failed-wrong-symbolset-var.log`（`13d9b8df…`）。
+    - 第二回合产物路径笔误退出，日志被第三回合覆盖、失败原因记录于此。
+    - 第三回合全步成功（`build.log` `e79b3fb9…`）。
 - 产物：`hackios-xnu-kernel/out/handoff-mach-diag-scan` 19,193,072 字节 SHA-256 `20368dc8f4f6c0968e14302f4bbb07d44855d8172d96e05ad82dc8faeecd1c1a`；容器与主机复测一致，`nm` 命中 `adreno8_space_available` 与 `adreno8_secure_preflight`，`strings` 命中新增打印三条（主机校验 `host-verify.log` `ffb55984…`）。旧产物 `handoff-mach-scopefix`（`1785d8d4…`）、`handoff-mach-secure-preflight`（`e2df73c3…`）与根盘（`582b9fb2…`）复测不变。日志、清单与一次性脚本保存在 `evidence/2026-10-25-gpu-preflight/diag/`（Git 忽略），哈希记入 manifest `diag_scan_2026_10_25`。
 - 边界：实现、测试、构建、文档完成即冻结；未推送（内核 `k90-port` 领先 origin 九个提交），无设备操作，参数集与判据未变，playbook 与文档之外未改工具。
 
@@ -95,7 +154,12 @@
 - 动机：§10 产物未获放行，只读采样缺自有对照条目时无法区分真实路由视图与退化读取（全无效）。修订后由后处理核对自有 GMU 路由（有效条目覆盖 stream 5 且 S2CR 指向 context 2）是否出现在打印的 valid 条目里；日志对照只用于区分两种读取形态，作 CB3 占用判据仍不成立。
 - 实现（内核提交 `bd8eca5`）：`adreno8_smmu.c` SCTLR 非零分支（L419-L468）保持单遍，循环内直接复用已读值：拒绝行在 L423，候选槽无论 SMR 有效与否打印 SMR 原值（无效行 L449 明确「s2cr not read」且不读该槽 S2CR，valid 才读 S2CR 于 L454 并逐条打印 SMR/S2CR 原始值，条数以已探测 match 数为界）；命中候选路由或候选 context 只计数不占行；汇总行 L464 带步号与单调纳秒打印 scanned/valid/hits 并声明拒绝保持原样。MMIO 仍为每槽一次 SMR 加仅对 valid SMR 的一次 S2CR，无预读、无第二遍、无新寄存器；判据不变，0 MP_ASSIGN、0 CB3 写、0 kind-5 应答不变。
 - 主机测试：smmu 组场景从三个增至四个，新增自有 GMU 非冲突条目（候选槽无效、SMR6 精确 SID5 有效、S2CR 用阶段 9 实写值 `0x302`，即 `SHCFG_NSH | context 2`），断言该条目按原始值打印、只计入 scanned 与 valid；全无效场景断言 24 槽 S2CR 读次数全为 0，冲突场景断言仅槽 2 与 5 各读一次 S2CR、每槽 SMR 恰读一次（读次数不增加）；runner 断言四场景各一条拒绝行与一条汇总行、候选无效行 3 次、valid 条目行 3 次且值与场景设定一致、汇总计数 scanned 24/valid 0/0/2/1、每对拒绝与汇总之间样例行不超过 24 行且无嵌套拒绝。10 组两种页大小全部成功，日志 `evidence/2026-10-25-gpu-preflight/diag2/tests-10groups.log`。GMU 样本值改用阶段 9 实值 `0x302` 的测试与期望行修订在内核提交 `3ce4102`，仅改测试文件；产物源码保持 `bd8eca5`（生产内核未改、未重建）。
-- 构建与产物：按 §10 已核验的溯源流程重跑（基线记录、旧 xnu-src 指纹后删除重建、76 补丁与 131 文件清单、apply 后逐字节比对、HEAD/dirty 记录，编译树 HEAD `bd8eca5` dirty 0），产物 `hackios-xnu-kernel/out/handoff-mach-diag-scan2` 19,193,072 字节 SHA-256 `2a5d52891dcb9d55a88f5fb03db650b57e547675ba12c9998168cf7d0750392b`，容器与主机复测一致，`nm` 命中 `adreno8_space_available` 与 `adreno8_secure_preflight`，`strings` 命中三条样例行与拒绝行；131 文件清单哈希与上轮一致、内容聚合因本轮提交变为 `54a7137d…`；旧产物 `handoff-mach-diag-scan`（`20368dc8…`）与更早各版本保留未覆盖。日志与清单保存在 `evidence/2026-10-25-gpu-preflight/diag2/`（Git 忽略），记入 manifest `diag_scan2_2026_10_25`。
+- 构建与产物：按 §10 已核验的溯源流程重跑（基线记录、旧 xnu-src 指纹后删除重建、76 补丁与 131 文件清单、apply 后逐字节比对、HEAD/dirty 记录，编译树 HEAD `bd8eca5` dirty 0）。
+  - 产物 `hackios-xnu-kernel/out/handoff-mach-diag-scan2` 19,193,072 字节 SHA-256 `2a5d52891dcb9d55a88f5fb03db650b57e547675ba12c9998168cf7d0750392b`，容器与主机复测一致。
+  - `nm` 命中 `adreno8_space_available` 与 `adreno8_secure_preflight`，`strings` 命中三条样例行与拒绝行。
+  - 131 文件清单哈希与上轮一致、内容聚合因本轮提交变为 `54a7137d…`。
+  - 旧产物 `handoff-mach-diag-scan`（`20368dc8…`）与更早各版本保留未覆盖。
+  - 日志与清单保存在 `evidence/2026-10-25-gpu-preflight/diag2/`（Git 忽略），记入 manifest `diag_scan2_2026_10_25`。
 - 边界：未推送（内核 `k90-port` 领先 origin 十个提交），无设备操作，参数集与判据未变，loader 未改，未新增工具；交付后冻结，等对新增日志行的审查。
 
 ## 12. run003 实测（放行一次 diag-scan2 诊断：kind-5 时刻路由视图到手，park 打印确证）

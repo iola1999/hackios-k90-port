@@ -5,8 +5,8 @@
 ## 1. 结论速览
 
 - 8 个 fork 补丁在 26.2.5 上：**4 个原样存活**（air-frontend、air-metal、ir3-round-default、ir3-ssbo-subdword，其中 ssbo-subdword 带 fuzz），**1 个可安全退役**（ir3-shift-split，触发 bug 的上游折叠逻辑已消失），**3 个部分失效需改写**（air-ir3、freedreno-darwin、osmesa-es-profile），全部失效点已被 `rebase-26/0003` 适配层覆盖。
-- darwin 原生编译**全绿**：26.2.5 + 两个 cherry-pick + 适配层后 `ninja` 零错误，产出 `libOSMesa.8.dylib`（20.3 MB，导出 1300 个 `gl*` + 13 个 `OSMesa*`），软管线冒烟（clear→readPixels 像素正确、ES profile 上下文报 "OpenGL ES 3.1 Mesa 26.2.5"）通过。
-- a8xx（SM8750/adreno-830，chipid 0x44050000）：真实 devinfo 条目 26.1.0 起才存在（26.0.x 的 "FD830" 是 cffdump 假条目），`CHIP >= A8XX` 运行时分支 26.0.0 起可用；两个 7 月修复（2ee0a5e6 indirect-buffer WFM、779cdb8e gen8+ query barriers）只进 26.3，cherry-pick 到 26.2.5 干净。
+- darwin 原生编译**全绿**：26.2.5 + 两个 cherry-pick + 适配层后 `ninja` 零错误，产出 `libOSMesa.8.dylib`（20.3 MB，导出 1300 个 `gl*` + 13 个 `OSMesa*`），软管线冒烟（clear→readPixels 像素正确、ES profile 上下文报「OpenGL ES 3.1 Mesa 26.2.5」）通过。
+- a8xx（SM8750/adreno-830，chipid 0x44050000）：真实 devinfo 条目 26.1.0 起才存在（26.0.x 的「FD830」是 cffdump 假条目），`CHIP >= A8XX` 运行时分支 26.0.0 起可用；两个 7 月修复（2ee0a5e6 indirect-buffer WFM、779cdb8e gen8+ query barriers）只进 26.3，cherry-pick 到 26.2.5 干净。
 - 建议路线：**26.2.5 + 0001 + 0002 + 适配层**为基线试验版本；自研 AIR 前端的 26.x NIR/st API 迁移**已完成**（第 8 节：编译链接全绿 + 软管线冒烟通过，改动全部在 `tools/mesa/air/` copy 目录内）。
 - 阻塞点：hackios-dev 容器缺 meson/ninja/bison/flex/theos，iOS 交叉构建未做；真机 freedreno 路径未验证（需用户态整机跑通后测）。
 
@@ -47,15 +47,26 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
    - 26.x 删除了 osmesa 的 postprocess 阶段（`postprocess/filters.h`），`pp_*` 全部剥离，`OSMesaPostprocess` 保留为 no-op 存根（本端口从未启用 filter；`OSMesaFinish` 25.0.7 也从未有过，非本次引入）。
    - `src/util/u_sync_provider.c` 在 declare_dependency 场景被误编译（darwin 下 redwood-drm 替身无 syncobj），加 `host_machine.system() != 'darwin'` 门控。
 
-验证（macOS 主机）：`ninja` rc=0；`nm -gU` 见 1300 个 `_gl*`、13 个 `_OSMesa*`；`rebase-26/smoke-osmesa.c` 输出 `GL_VERSION: 3.3 (Compatibility Profile) Mesa 26.2.5 / GL_RENDERER: softpipe`，clear(0.25,0.5,0.75) 回读像素 (64,128,191,255) 正确；`smoke-osmesa-es.c` 用 `OSMESA_ES_PROFILE` 建出 "OpenGL ES 3.1" 上下文。真机 msm 屏路径（osmesa_target 的 driinfo "msm" screen 创建 + IOSurface 导入）未经设备验证。
+验证（macOS 主机）：`ninja` rc=0；`nm -gU` 见 1300 个 `_gl*`、13 个 `_OSMesa*`；`rebase-26/smoke-osmesa.c` 输出 `GL_VERSION: 3.3 (Compatibility Profile) Mesa 26.2.5 / GL_RENDERER: softpipe`，clear(0.25,0.5,0.75) 回读像素 (64,128,191,255) 正确；`smoke-osmesa-es.c` 用 `OSMESA_ES_PROFILE` 建出「OpenGL ES 3.1」上下文。真机 msm 屏路径（osmesa_target 的 driinfo「msm」screen 创建 + IOSurface 导入）未经设备验证。
 
 ## 5. AIR 前端 26.x API 差异（已按第 8 节迁移完成）
 
-`src/compiler/air`（copy 目录）在 26.2.5 下 `air_run` 与 `libredwoodair` 编译失败（每 TU 20 错误被截断），归为 12 类机械问题：`PIPE_SHADER_*`→`MESA_SHADER_*`；`gl_shader_stage`→`mesa_shader_stage` 及 `gl_shader_stage_name` 转内部；`nir_builder.exact` 移除（4 处）；NIR pass 参数 `nir_shader*`→`nir_function_impl*`（2 处）；3 个函数签名参数数变化（含 air_run.c 里同样的 `driParseConfigFiles` 10 参调用）；`pipe_screen.get_compiler_options` 移除；`pipe_context.create_surface` 移除；glsl_type 查询回调返回类型 int→unsigned。libOSMesa 主库不受影响（air 目标 `build_by_default:false`）。预计 1–2 个工作日，全部是机械改写 + 一轮语义复核（尤其 `b->exact` 移除后 iadd 溢出标志的取舍）。
+`src/compiler/air`（copy 目录）在 26.2.5 下 `air_run` 与 `libredwoodair` 编译失败（每 TU 20 错误被截断），归为 12 类机械问题：
+
+- `PIPE_SHADER_*`→`MESA_SHADER_*`
+- `gl_shader_stage`→`mesa_shader_stage` 及 `gl_shader_stage_name` 转内部
+- `nir_builder.exact` 移除（4 处）
+- NIR pass 参数 `nir_shader*`→`nir_function_impl*`（2 处）
+- 3 个函数签名参数数变化（含 air_run.c 里同样的 `driParseConfigFiles` 10 参调用）
+- `pipe_screen.get_compiler_options` 移除
+- `pipe_context.create_surface` 移除
+- glsl_type 查询回调返回类型 int→unsigned。
+
+libOSMesa 主库不受影响（air 目标 `build_by_default:false`）。预计 1–2 个工作日，全部是机械改写 + 一轮语义复核（尤其 `b->exact` 移除后 iadd 溢出标志的取舍）。
 
 ## 6. a8xx（SM8750）可用性结论
 
-- 真实 devinfo：`0xffff44050000` + a8xx_gen1 gallium props（含 `gmem_vpc_bv_pos_buf_size`）由 48be91d1 于 **26.1.0** 进入；26.0.x 仅有 cffdump 假 "FD830"，**26.0.x 否决**。
+- 真实 devinfo：`0xffff44050000` + a8xx_gen1 gallium props（含 `gmem_vpc_bv_pos_buf_size`）由 48be91d1 于 **26.1.0** 进入；26.0.x 仅有 cffdump 假「FD830」，**26.0.x 否决**。
 - `CHIP >= A8XX` 运行时分支：26.0.0 起存在（fd6_emit.cc 等），26.2.5 齐备。
 - 两个关键修复仅在 26.3-branchpoint：`2ee0a5e6`（Indirect buffer needs WFM on a8xx+，改 fd6_barrier.*/fd6_context.cc）、`779cdb8e`（Fix query barriers for gen8+，改 fd6_query.cc）。cherry-pick 到 26.2.5 零冲突，已作为 `rebase-26/0001、0002` 存档。
 - 26.3.0-rc1 原生含这两个修复，且 fork 补丁栈失败集合与 26.2.5 相同、适配层 0003 仅 `freedreno/meson.build` 2 个 hunk 需手工移植——想省 cherry-pick 可换 26.3 基线，代价是 rc 质量。
@@ -94,17 +105,17 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 ### 8.2 清单之外新发现的差异（本节为权威清单）
 
 - `pipe->clear` 6 参→8 参：新增 `color_clear_mask`/`stencil_clear_mask`/`scissor_state`；两处调用改传 `0xf`/`0xff`/NULL（整面清除，attachments 仍由 buffers 位决定）。
-- `pipe_screen.get_compute_param` 移除，改 `screen->compute_caps` 值结构：`max_threads_per_group` 直读；**`subgroup_sizes` 语义变了**——25.0.7 freedreno 答字面 32，26.x 存"支持宽度集合的位掩码"（rusticl 取位号还原，freedreno 填 `threadsize_base |= 2×base`），取最低位（32|64→32）作为执行宽度；softpipe 全零时仍回退 1，与旧 decline 行为一致。
+- `pipe_screen.get_compute_param` 移除，改 `screen->compute_caps` 值结构：`max_threads_per_group` 直读；**`subgroup_sizes` 语义变了**——25.0.7 freedreno 答字面 32，26.x 存「支持宽度集合的位掩码」（rusticl 取位号还原，freedreno 填 `threadsize_base |= 2×base`），取最低位（32|64→32）作为执行宽度；softpipe 全零时仍回退 1，与旧 decline 行为一致。
 - `unreachable()` 改名 `UNREACHABLE()`（util/macros.h），air_metal.c 补 include。
 - `nir_copy_prop`→`nir_opt_copy_prop`（air2nir.c，1 处）。
-- 上游删 `ir3_cmdline.c` 的连带面在测试侧：`discardcheck.py` 需要 `ir3-compiler` 工具（26.x 没有），已按"无离线编译器则该条 SKIPPED"适配（第 10 节）；`cpuref.py` 本就不碰 ir3，原句把两个 harness 一起归因于 ir3 是错的，纠账见 10.1——它的 host 前置是 metallib corpus（8.3），不是 ir3。同病的 `fbfetchcheck.py`/`vattrcheck.py`/`corpus.py --ir3` 已照同款降级（草稿在 userland 工作树，10.3 末段）。
+- 上游删 `ir3_cmdline.c` 的连带面在测试侧：`discardcheck.py` 需要 `ir3-compiler` 工具（26.x 没有），已按「无离线编译器则该条 SKIPPED」适配（第 10 节）；`cpuref.py` 本就不碰 ir3，原句把两个 harness 一起归因于 ir3 是错的，纠账见 10.1——它的 host 前置是 metallib corpus（8.3），不是 ir3。同病的 `fbfetchcheck.py`/`vattrcheck.py`/`corpus.py --ir3` 已照同款降级（草稿在 userland 工作树，10.3 末段）。
 
 ### 8.3 软管线冒烟（macOS 主机，`AIR_RUN_SOFTWARE=1`，air_run/air_metal_test 均为 26.2.5 产物）
 
 - `fragpos.ll`（自证像素坐标约定的片元着色器）：air_run 4×4 绘制回读像素 (0,0) = **(0.5, 0.5, 0, 1)**，左上原点+y 翻转视口正确。
 - `tools/air/texopcheck.py`：全量口径 **99 calls = 74 命中 / 18 WRONG / 7 refused**（27/27 是历史子集口径，脚本无子集开关，全量口径为准；修订于 10 月 23 日，过程见 docs/progress/2026-10-23-offline-prep.md 条目 21）。7 refused 与 air.md 记载的"softpipe 跑不了的 16 位结果 7 例（f2f32）"吻合；18 WRONG 全是 i16/v4i16 取样——softpipe 对窄于 32 位的类型没有裁决权，属判定面而非前端缺陷（设备 ir3 上才是真问题）。
 - `tools/air/argbufruncheck.sh`（走 libredwoodair 的 compute dispatch + 渲染双路径、参数缓冲上传、fence）：**20/20 通过**（air_metal_test 需 install_name_tool 把 `/redwood/lib/libredwoodair.dylib` 改指本地 dylib，纯主机链接路径问题）。
-- 未做：`ios165/rootfs` 的 456 模块 corpus 未在本机解包，corpus.py/intrincheck 语料项跑 0 例（脚本自报 "NOTHING WAS COMPARED"，非失败）；iOS 交叉与真机仍按第 6 节顺序待设备。
+- 未做：`ios165/rootfs` 的 456 模块 corpus 未在本机解包，corpus.py/intrincheck 语料项跑 0 例（脚本自报「NOTHING WAS COMPARED」，非失败）；iOS 交叉与真机仍按第 6 节顺序待设备。
 
 ### 8.4 复现
 
@@ -112,7 +123,7 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 
 ## 10. iOS 交叉构建端到端可复现（26.2.5 基线，2026-10-23）
 
-任务背景：用户拍板不再跟上游，构建链可复现升为验收面。此前"在 hackios-dev 容器里跑 mk-mesa.sh"只是一句口头流程，环境缺件靠临场手补，没人能重放。本节把这条链钉死：镜像、脚本、判定面各改到位，`docker/dev.sh` 里一条命令出全部 iOS 产物。
+任务背景：用户拍板不再跟上游，构建链可复现升为验收面。此前「在 hackios-dev 容器里跑 mk-mesa.sh」只是一句口头流程，环境缺件靠临场手补，没人能重放。本节把这条链钉死：镜像、脚本、判定面各改到位，`docker/dev.sh` 里一条命令出全部 iOS 产物。
 
 ### 9.1 结论
 
@@ -122,11 +133,11 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 - `libredwoodair.dylib` 13 063 080 字节，31 个 `rwa_*` 导出，与主机 darwin 构建同数同集合；
 - `air_run` 13 620 416 字节；`exported-gl.txt`、`gl.xml`、`built-from`、`built-from-air` 齐。
 
-判定面要说清楚：二进制本身按 mk-mesa.sh 头注（Mesa 性质，25.0.7 实测两次构建差 9 132 774 字节）不按字节复现，所以"交叉链与已验证的主机链等价"用**导出面**判定，字节哈希只用来对输入（tarball、补丁栈、镜像内工具）钉版。按独立评估 F08 收紧这个"等价"的射程：导出集合一致只确认**符号名称**这一层，不覆盖类型布局、调用约定、运行行为、着色器结果、设备适配——当前可确认的范围就是三条：构建流程完成、产物可识别（名称/数量/输入哈希钉版）、部分主机测试通过（§8.3 软管线冒烟 + check.sh 全套 rc）；"iOS 上行为等价"整句**待设备轮验证**，在此之前不升格。
+判定面要说清楚：二进制本身按 mk-mesa.sh 头注（Mesa 性质，25.0.7 实测两次构建差 9 132 774 字节）不按字节复现，所以「交叉链与已验证的主机链等价」用**导出面**判定，字节哈希只用来对输入（tarball、补丁栈、镜像内工具）钉版。按独立评估 F08 收紧这个「等价」的射程：导出集合一致只确认**符号名称**这一层，不覆盖类型布局、调用约定、运行行为、着色器结果、设备适配——当前可确认的范围就是三条：构建流程完成、产物可识别（名称/数量/输入哈希钉版）、部分主机测试通过（§8.3 软管线冒烟 + check.sh 全套 rc）；「iOS 上行为等价」整句**待设备轮验证**，在此之前不升格。
 
 ### 9.2 交叉路径的真实依赖（此前没人记录的部分）
 
-- 编译走 `xnu-deps/host/bin/xnu-clang`：容器原生 clang 18 + `-target arm64-apple-ios16.5` + `--ld-path=$HB/ld64`；`ld64` 是 theos 工具链里 `toolchain/linux/iphone/bin/ld` 的**符号链接**，仓库里没有、也没人建——这就是"老 prebuilt 是谁编的"查不到的直接原因：`git log` 两仓都没有提交过 libOSMesa/libredwoodair，`xnu-deps/build/` 盘上只剩 lzbitmap 和 pthread，历史构建是 ad hoc 手搓的，工具链状态未记录，本来就不可复现。`userland/build.sh` 每次按需回调 mk-mesa.sh（`M=…/build/mesa/out`，产物拷进 `root/lib/`），所以 out/ 目录就是对接面，本次构建即插即用。
+- 编译走 `xnu-deps/host/bin/xnu-clang`：容器原生 clang 18 + `-target arm64-apple-ios16.5` + `--ld-path=$HB/ld64`；`ld64` 是 theos 工具链里 `toolchain/linux/iphone/bin/ld` 的**符号链接**，仓库里没有、也没人建——这就是「老 prebuilt 是谁编的」查不到的直接原因：`git log` 两仓都没有提交过 libOSMesa/libredwoodair，`xnu-deps/build/` 盘上只剩 lzbitmap 和 pthread，历史构建是 ad hoc 手搓的，工具链状态未记录，本来就不可复现。`userland/build.sh` 每次按需回调 mk-mesa.sh（`M=…/build/mesa/out`，产物拷进 `root/lib/`），所以 out/ 目录就是对接面，本次构建即插即用。
 - `xnu-clang++`（xnu-clang 的 basename 分身，`xnu-deps/setup.sh:124` 建）meson 也要，mk-mesa 不跑 setup.sh，现由脚本自建。
 - `install_name_tool`：kbuild 里同样**不在 PATH**（`which` 为空），mk-mesa.sh 裸调它在旧容器的收尾段必炸；现按 `$THEOS/toolchain/linux/iphone/bin` 显式解析。
 - theos 与 SDK 的权威版本从 kbuild 容器只读取到：theos HEAD `304e0799973e8145f32e4ca2de6c747a84b758ce`，ld64-609（L1ghtmann iOSToolchain），iPhoneOS16.5.sdk 已装——镜像照此钉版，不发明新配置。
@@ -134,7 +145,9 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 ### 9.3 镜像加了什么（docker/Dockerfile，全部带钉版注释）
 
 - apt 增件（arm64 原生）：`bison flex patch gawk autoconf automake libtool-bin m4 perl libzstd-dev zlib1g-dev python3-venv ninja-build`。meson **故意不用 apt**：noble 只有 1.3，26.x 的 meson.build 要 ≥1.4；由 mk-mesa.sh 的 venv 装 **meson==1.12.1**（与 §8 主机验证版本同）。
-- amd64 multiarch：theos 的 Linux iPhone 工具链是 x86_64 ELF，OrbStack 的 Rosetta 能跑，但 arm64 镜像缺运行时——`dpkg --add-architecture amd64` 后装 `libc6:amd64 libuuid1:amd64 libstdc++6:amd64 libtinfo6:amd64`（ld64→libtapi 的依赖链实测补齐才通）。两个坑：①ports 源没有 amd64 索引，加了 amd64 架构后 apt 全 404，要给 ubuntu.sources 的 ports stanza 补 `Architectures: arm64`，另立主档案源 `Architectures: amd64`（Suites 要带 noble-updates，否则 libc6 版本对不上）；②`zlib1g` 是 Multi-Arch: same，ports 的 arm64 停在 `...ubuntu2.2` 而主档案 amd64 是 `...ubuntu2.3`，apt 直接判 not installable——绕开 dpkg 库直接解包官方 deb（URL 钉死 + sha256 `376249c8…`，与 kbuild 靠 jammy 老 zlib 混过去同一思路）。
+- amd64 multiarch：theos 的 Linux iPhone 工具链是 x86_64 ELF，OrbStack 的 Rosetta 能跑，但 arm64 镜像缺运行时——`dpkg --add-architecture amd64` 后装 `libc6:amd64 libuuid1:amd64 libstdc++6:amd64 libtinfo6:amd64`（ld64→libtapi 的依赖链实测补齐才通）。两个坑：
+  - ①ports 源没有 amd64 索引，加了 amd64 架构后 apt 全 404，要给 ubuntu.sources 的 ports stanza 补 `Architectures: arm64`，另立主档案源 `Architectures: amd64`（Suites 要带 noble-updates，否则 libc6 版本对不上）。
+  - ②`zlib1g` 是 Multi-Arch: same，ports 的 arm64 停在 `...ubuntu2.2` 而主档案 amd64 是 `...ubuntu2.3`，apt 直接判 not installable——绕开 dpkg 库直接解包官方 deb（URL 钉死 + sha256 `376249c8…`，与 kbuild 靠 jammy 老 zlib 混过去同一思路）。
 - theos 层：`ENV THEOS=/root/theos`（install-sdk 不认默认路径），clone 后 fetch/checkout 钉 `304e0799…`，L1ghtmann `iOSToolchain-x86_64.tar.xz`（latest 下载但构建期校验 `bin/ld` sha256 `b61576c0…`、`install_name_tool` sha256 `15f03550…`），`bin/install-sdk iPhoneOS16.5` 后校验 `SDKSettings.plist` sha256 `e402d200…`——上游变化会让镜像构建失败。产物不会悄悄变化。
 
 ### 9.4 mk-mesa.sh 的 26.x 修正（tools/mk-mesa.sh）
@@ -173,7 +186,13 @@ host 侧原判定三段里，前两段（可翻译；NIR 带 `demote` 不带 `te
 
 ### 10.3 为什么 26.x 没有等价的离线编译入口
 
-上游在 986530d231（25.3+）删了 `ir3_cmdline.c`，26.x 没有留下替身：NIR→ir3 全在 libgallium 内部（`ir3_compiler_nir.c`），要 screen 与 compiler-options 上下文；`src/freedreno/` 的独立工具（`pgmdump2`、`computerator` 等）吃的是编好的 program 二进制，帮不上；turnip 不在 darwin 配置里。把 cmdline 复活等于给还在变化的 a8xx 接口重写一个上游不收的工具，而指令形状本来就是设备侧问题：26.x 的 a8xx 编译器对 demote 发自己的 `ir3_DEMOTE` 指令（`ir3_compiler_nir.c`），不是 a6xx 编码器的 DEMOTE→KILL 映射，旧 harness"kill for both kinds"的结论只对 a6xx 成立，现已改写为"两族映射并存、7c+ Gen 3 取哪个由 `--emit`/`--check` 上机裁决"。同病（硬要 `$IR3`）的 `fbfetchcheck.py`、`vattrcheck.py`、`corpus.py --ir3` 三家已照 10.2 同款降级（草稿在 userland 工作树）：`$IR3` 存在时行为一字不改，缺失时 fbfetch 的 isamm 段与 vattr 的 VFD fetch-table 段打 SKIPPED 行计入通过、corpus 的 ir3 列整列去掉表格停在 translate，三家 stderr 各留一行说明，rc 均不拦停——check.sh 只取这三家的退出码，26.x host 上从此不再硬失败。实测（`build-darwin` 产物、`IR3` 指向不存在路径）：fbfetch `7 of 7`、vattr `16 of 16`（QuartzCore 缺库段照旧自报 NO REAL MODULE）、corpus 拿单个 `.bc` 走 `--ir3` 去列 rc=0。
+上游在 986530d231（25.3+）删了 `ir3_cmdline.c`，26.x 没有留下替身。
+
+- NIR→ir3 全在 libgallium 内部（`ir3_compiler_nir.c`），要 screen 与 compiler-options 上下文。
+- `src/freedreno/` 的独立工具（`pgmdump2`、`computerator` 等）吃的是编好的 program 二进制，帮不上；turnip 不在 darwin 配置里。
+- 把 cmdline 复活等于给还在变化的 a8xx 接口重写一个上游不收的工具，而指令形状本来就是设备侧问题：26.x 的 a8xx 编译器对 demote 发自己的 `ir3_DEMOTE` 指令（`ir3_compiler_nir.c`），不是 a6xx 编码器的 DEMOTE→KILL 映射，旧 harness「kill for both kinds」的结论只对 a6xx 成立，现已改写为「两族映射并存、7c+ Gen 3 取哪个由 `--emit`/`--check` 上机裁决」。
+- 同病（硬要 `$IR3`）的 `fbfetchcheck.py`、`vattrcheck.py`、`corpus.py --ir3` 三家已照 10.2 同款降级（草稿在 userland 工作树）：`$IR3` 存在时行为一字不改，缺失时 fbfetch 的 isamm 段与 vattr 的 VFD fetch-table 段打 SKIPPED 行计入通过、corpus 的 ir3 列整列去掉表格停在 translate，三家 stderr 各留一行说明，rc 均不拦停——check.sh 只取这三家的退出码，26.x host 上从此不再硬失败。
+- 实测（`build-darwin` 产物、`IR3` 指向不存在路径）：fbfetch `7 of 7`、vattr `16 of 16`（QuartzCore 缺库段照旧自报 NO REAL MODULE）、corpus 拿单个 `.bc` 走 `--ir3` 去列 rc=0。
 
 设备轮观察项排期（F08）：本节的 `--emit`/`--check` 上机裁决（含 discardcheck 设备契约、ir3_DEMOTE-vs-KILL 收账）是 GL 族观察项，排在 F07 四阶段观测与启动验收**之后**——下一个真机窗口优先阶段标记与静态色块，GL 族在启动验收通过后同轮再排，不在一轮里叠加多个新启用面。
 

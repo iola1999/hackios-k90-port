@@ -104,11 +104,25 @@
 
 哪些问题非走共享缓存不可由一条事实决定：`libsystem_platform.dylib`、`QuartzCore`、`CoreAnimation`、`BackBoardServices`、`FrontBoardServices`、`Metal` 在 `ios26/rootfs` 下都没有磁盘 Mach-O（framework 目录里只有 plist／loctable／png），代码全在共享缓存 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/` 里，任何要看这些库实现的问题都绕不开共享缓存。`tools/symbolize.py` 走的是我们自己 dylib 的符号表，这个场景用不上。
 
-产物哈希的语义是单向的：产物哈希相同可以推出源相同，产物哈希不同推不出源不同。实测记录在 `hackios-xnu-kernel/tools/mk-mesa.sh:32-37`（容器 theos 线，10 月 20 日测）：同一棵源树两次构建，产物字节数完全相同，但库的 14,855,048 字节里有 9,132,774 字节不同、`air_run` 的 9,789,824 字节里有 4,171,752 字节不同，6 个具名 text 符号 5 个换地址，注释结论是「do not compare one of its outputs with another by hash」，布局移动的原因未查明。这条规则只适用于 Mesa 系产物：同一注释记录 userland 程序逐字节可复现（「the userland programs reproduce exactly」），驱动与探针不在此列。userland 程序构建可复现已在容器 clang 18 路径（`build.sh`）上实测——display task-7 的两次容器运行产出的 `obj/input26-service` 逐字节相同（都是 `3bc70a3fa619ff2c`，54,848 字节、`cpusubtype=0x2`、`sdk 26.0`），是支持那句注释的第一个实测；宿主 `package.py` 的 Apple clang 路径未实测（[round C 载荷可行性](../analysis/2026-10-28-roundc-payload-feasibility.md) 记「产物理论上同字节但未验证」）。宿主 meson arm64e 构建未做过这项实测。据此，重编 AIR 后哈希与记录值不同时，第一处置是核 `air-build-record.json` 的 `source_sha256` 与 `tree_sha256`，不是当成污染停下。
+产物哈希的语义是单向的：产物哈希相同可以推出源相同，产物哈希不同推不出源不同。实测记录在 `hackios-xnu-kernel/tools/mk-mesa.sh:32-37`（容器 theos 线，10 月 20 日测）：同一棵源树两次构建，产物字节数完全相同，但库的 14,855,048 字节里有 9,132,774 字节不同、`air_run` 的 9,789,824 字节里有 4,171,752 字节不同，6 个具名 text 符号 5 个换地址，注释结论是「do not compare one of its outputs with another by hash」，布局移动的原因未查明。
 
-内核镜像不指认产出它的源码提交：版本串里的 `aec10a9` 是移植线基提交，roundb 与 round C 两份内核的版本串逐字相同（display 用 `strings -a` 加 `grep -F` 对 `handoff-12377-attr26-roundb.bin` 核过），拿两个内核镜像比版本串永远判不出源码差异，内核来历只能靠外部记录——roundb 那份靠 manifest 的 `build.sources` 逐字记录才定到 `e933479` 加当时未提交的改动。原因是生成的 `version.c` 嵌构建时间、构建者登录名与 `git describe --dirty`（规则在 `makedefs/MakeInc.kernel:285`），增量构建复用它（`version.o` 的 mtime 是 2026-10-26 12:50:44），只有干净重建才会变字节。另一处不确定性来源：镜像里嵌源文件绝对路径（`__FILE__` 带进来的），换检出目录字节就变，这同时是发布前的一道检查项。全树 `__DATE__`／`__TIME__` 零命中。未实测的是同源两次构建，以及那 15 个与改动无关却重编的目标文件是否逐字节稳定（round C 那次构建写了 16 个目标文件，task-1 那次 2 个）。
+- 这条规则只适用于 Mesa 系产物：同一注释记录 userland 程序逐字节可复现（「the userland programs reproduce exactly」），驱动与探针不在此列。userland 程序构建可复现已在容器 clang 18 路径（`build.sh`）上实测——display task-7 的两次容器运行产出的 `obj/input26-service` 逐字节相同（都是 `3bc70a3fa619ff2c`，54,848 字节、`cpusubtype=0x2`、`sdk 26.0`），是支持那句注释的第一个实测；
+- 宿主 `package.py` 的 Apple clang 路径未实测（[round C 载荷可行性](../analysis/2026-10-28-roundc-payload-feasibility.md) 记「产物理论上同字节但未验证」）。宿主 meson arm64e 构建未做过这项实测。据此，重编 AIR 后哈希与记录值不同时，第一处置是核 `air-build-record.json` 的 `source_sha256` 与 `tree_sha256`，不是当成污染停下。
 
-内核源码的可复现身份只有构建树的工作状态本身（10-28，display 双向不一致普查后 lead 定，取代同日早先的「两组」口径）：一个构建出来的内核，只能由 `out/xnu12377` 的工作状态定——HEAD（`5c9f563`）加它的脏已跟踪文件（当时 `osfmk/conf/files` 是 ` M`、`bsd/conf/files` 干净）加它的未跟踪文件内容（120 个 `??` 条目，含 `BUILD/`、整套移植驱动 `bsd/dev/adreno8*.c`、`iokit/Kernel/MiniIOMobileFramebuffer.cpp`、`osfmk/kern/redwood_threads.c`）。仓库那一侧两个方向都过期：正向，`xnu26/apply.sh` 单向铺出构建树（Apple tag `xnu-12377.121.6`、BASE `ac9718fb…` → 分支 `redwood26` → `BUILD/` 写进 `.git/info/exclude` → 按 `xnu26/patches/series` 73 件逐件 `git apply` → 把 `xnu/files/` 的 157 个文件用 `cp -P -p` 拷进去 → 再覆盖 `xnu26/files/.` 的 2 个文件），开头有守卫（目录已存在即退出），树铺出来之后没有任何脚本再同步它；反向，`xnu26/export.sh` 按 `git diff BASE` 重新生成 `xnu26/patches/` 与 `xnu26/files/`，是唯一写仓库那一侧的脚本，从不写 `xnu/files/`（按脚本注释是手工维护、与 xnu-8796 线共用），且自 10-27 15:18 以后没跑过。所以报 `5c9f563` 不能确定 framebuffer 驱动的内容，报 `5c9f563` 加 `c2ccc7c` 也不能——`redwood_frames_shown` 的定义与 `SYSCTL_INT(_kern_redwood, OID_AUTO, frames, CTLFLAG_RD, &redwood_frames_shown, 0, ...)` 注册只在构建树的 `bsd/dev/redwood_input.c` 与 `bsd/sys/redwood_input.h` 里（比 overlay 分别新 7 行与 13 行），overlay 那两份里这个符号出现 0 次。这条比版本串那条更容易被忽略：它不表现为一个可疑的读数，而表现为一个看起来完整的提交号。演变记录：「两组」口径（`out/xnu12377` 提交加脏已跟踪文件，加外层仓 `xnu/files/` 的提交与拷贝时刻）当天先立后退——它的前提是 `xnu/files/` 为权威副本，双向不一致普查（5 处不一致加 1 个孤儿文件，正反两个方向都有过期）否定这个前提。
+
+内核镜像不指认产出它的源码提交：版本串里的 `aec10a9` 是移植线基提交，roundb 与 round C 两份内核的版本串逐字相同（display 用 `strings -a` 加 `grep -F` 对 `handoff-12377-attr26-roundb.bin` 核过），拿两个内核镜像比版本串永远判不出源码差异，内核来历只能靠外部记录——
+
+- roundb 那份靠 manifest 的 `build.sources` 逐字记录才定到 `e933479` 加当时未提交的改动。原因是生成的 `version.c` 嵌构建时间、构建者登录名与 `git describe --dirty`（规则在 `makedefs/MakeInc.kernel:285`），增量构建复用它（`version.o` 的 mtime 是 2026-10-26 12:50:44），只有干净重建才会变字节。
+- 另一处不确定性来源：镜像里嵌源文件绝对路径（`__FILE__` 带进来的），换检出目录字节就变，这同时是发布前的一道检查项。全树 `__DATE__`／`__TIME__` 零命中。未实测的是同源两次构建，以及那 15 个与改动无关却重编的目标文件是否逐字节稳定（round C 那次构建写了 16 个目标文件，task-1 那次 2 个）。
+
+
+内核源码的可复现身份只有构建树的工作状态本身（10-28，display 双向不一致普查后 lead 定，取代同日早先的「两组」口径）：一个构建出来的内核，只能由 `out/xnu12377` 的工作状态定——HEAD（`5c9f563`）加它的脏已跟踪文件（当时 `osfmk/conf/files` 是 ` M`、`bsd/conf/files` 干净）加它的未跟踪文件内容（120 个 `??` 条目，含 `BUILD/`、整套移植驱动 `bsd/dev/adreno8*.c`、`iokit/Kernel/MiniIOMobileFramebuffer.cpp`、`osfmk/kern/redwood_threads.c`）。
+
+- 仓库那一侧两个方向都过期：正向，`xnu26/apply.sh` 单向铺出构建树（Apple tag `xnu-12377.121.6`、BASE `ac9718fb…` → 分支 `redwood26` → `BUILD/` 写进 `.git/info/exclude` → 按 `xnu26/patches/series` 73 件逐件 `git apply` → 把 `xnu/files/` 的 157 个文件用 `cp -P -p` 拷进去 → 再覆盖 `xnu26/files/.` 的 2 个文件），开头有守卫（目录已存在即退出），树铺出来之后没有任何脚本再同步它；
+- 反向，`xnu26/export.sh` 按 `git diff BASE` 重新生成 `xnu26/patches/` 与 `xnu26/files/`，是唯一写仓库那一侧的脚本，从不写 `xnu/files/`（按脚本注释是手工维护、与 xnu-8796 线共用），且自 10-27 15:18 以后没跑过。
+- 所以报 `5c9f563` 不能确定 framebuffer 驱动的内容，报 `5c9f563` 加 `c2ccc7c` 也不能——`redwood_frames_shown` 的定义与 `SYSCTL_INT(_kern_redwood, OID_AUTO, frames, CTLFLAG_RD, &redwood_frames_shown, 0, ...)` 注册只在构建树的 `bsd/dev/redwood_input.c` 与 `bsd/sys/redwood_input.h` 里（比 overlay 分别新 7 行与 13 行），overlay 那两份里这个符号出现 0 次。
+- 这条比版本串那条更容易被忽略：它不表现为一个可疑的读数，而表现为一个看起来完整的提交号。演变记录：「两组」口径（`out/xnu12377` 提交加脏已跟踪文件，加外层仓 `xnu/files/` 的提交与拷贝时刻）当天先立后退——它的前提是 `xnu/files/` 为权威副本，双向不一致普查（5 处不一致加 1 个孤儿文件，正反两个方向都有过期）否定这个前提。
+
 
 比较初始化顺序要追踪资源申请、框架回调和首次启动的完整调用关系。某个启动函数没有配置时钟或地址映射，可能由更早的公共路径完成。先确定差异能解释哪个失败阶段，再选择修改；不能仅因涉及安全固件就提前调用 SCM。本次调用关系核对未支持这种顺序调整，调查继续检查 stream 与 context 分配。
 
@@ -166,11 +180,27 @@ GPU 命令不继续执行，故障寄存器又为零，继续围绕「有没有�
 
 内核的 `memorystatus_perform_idle_demotion() timed out stuck process N [name]` 不能当成「某进程出问题」的判据。它的含义是「这个进程跨过两个 aging 期限仍未 idle」，服务端空闲时本来就会走到这里。2026-10-28 统计了 58 个证据目录，被判卡的只有五个名字（`AudioConverterService`、`pkd`、`iconservicesagent`、`extensionkitservice`、`installd`），而当时最干净的一轮（11,015 帧、无停帧）这五个里出现了三个。用这一行判断进程是否真卡住，会把正常态误判成故障；要用效果判断，例如记录有没有写出来、容器有没有建立、报错计数有没有归零。判据没坏这件事也由同一份统计支持：若判据随手标卡，`lsd`、`SpringBoard` 这类进程也会出现。
 
-对账产物与构建输入时，判据是给每个镜像条目记「进入通道」（base apfs 自带／staging 树／PROBE 自建／PAYLOAD_PROGRAMS／EXTRA_JOBS），无通道的才算真丢失风险，并且配方本身要落进一个可执行记录。2026-10-28 的实例（round F 第一次跑轮中止）：没有任何文件丢失，丢的是配方记忆——roundb 的完整环境变量没有落进任何可执行记录，device 从 pack 记录逐字段反推配方时漏了两个（`PAYLOAD_PROGRAMS` 与 `JOBS_DROP`）；`framewatch` 历来经 `PAYLOAD_PROGRAMS` 进镜像（`package.py:53-56` 定义、`:452-454` 断言存在并 copy2 进 dest/bin、`:522-526` 计入 added 集合），`lsprobe` 历来经 `PROBE=1` 自建（`:64`／`:402`／`:495`），base 镜像与 staging 的 `/bin` 本来都不含这两个文件（base 镜像 `33ed5fc9` 的 `/bin` 34 条、staging 与 base 集合逐名一致、`package.py:422-425` 的 dest 树每次打包从 `BASE/root` 重新 copytree）。查法：pack 记录 `changes` 里每个 `null→sha` 的 added 条目必须归到一个通道，归不到的就是配方缺口；两层配方对账与全条目 diff 在[运行协议](k90auto-run-protocol.md)。早先的判据「这个文件有没有第二条来路」建立在「`framewatch` 来路只有 staging」的误判上，随根因撤销（device `3278bf9`）。
+对账产物与构建输入时，判据是给每个镜像条目记「进入通道」（base apfs 自带／staging 树／PROBE 自建／PAYLOAD_PROGRAMS／EXTRA_JOBS），无通道的才算真丢失风险，并且配方本身要落进一个可执行记录。2026-10-28 的实例（round F 第一次跑轮中止）：没有任何文件丢失，丢的是配方记忆——
 
-一行日志输出要先读产生它的那段代码，才轮得到推断它的含义：判的是哪个时刻、读的是哪个量，都在代码里。2026-10-28 的第六个实例（lead 自查）：按 `NOT_RUNNING hung-held` 的字面推断「开始一轮时设备状态是 hung-held、上一轮收尾没做主机冷复位」，作为事实发给 device 与 desktop 让两边按它写归档——display 读了 `run-auto.py` 之后不成立：`state()`（`:94-97`）读的就是 `getvar result` 一个量，`:152-158` 只在它不等于 `running` 时打印，`hung-held` 是 loader 在打印那一刻的字面应答；`:71` 与 `:176` 记着它由内核静默满 50 秒触发，而 `:127` 的开始断言在 21:07:44 通过了，证明那一刻 `result` 是 `idle`、开始一轮时设备状态是干净的。同日的配对正例（display）：改 `staging-entry-channels.md` 的引用之前先自己核了 `package.py` 的行号（`ALLOW_DRIVER_CHANGE` 在 `:213`、`dirty_sources()` 在 `:219`），没有按 lead 的转述改——转述里的行号是错的。规则是既有的那一条：成员报出的结论里带「所以」「说明」的段是推断，转述要标明是推断，不在推断上面建判据或派下游动作；这次的形状是读了一行日志输出就推断它的语义、没有读产生它的代码。配套加一条：**一个判断在发出之后被撤回时，要立刻点名已经按它写下的每一处产物，不能只发更正**——这次更正到达时 desktop 已按旧口径填完了归档骨架的两段，撤回方同时通知了全部下游所以更正送达了，但送达时产物已经写完；点名产物清单让下游能逐处核对改净，而不是各自凭记忆找。
+- roundb 的完整环境变量没有落进任何可执行记录，device 从 pack 记录逐字段反推配方时漏了两个（`PAYLOAD_PROGRAMS` 与 `JOBS_DROP`）；`framewatch` 历来经 `PAYLOAD_PROGRAMS` 进镜像（`package.py:53-56` 定义、`:452-454` 断言存在并 copy2 进 dest/bin、`:522-526` 计入 added 集合），`lsprobe` 历来经 `PROBE=1` 自建（`:64`／`:402`／`:495`），base 镜像与 staging 的 `/bin` 本来都不含这两个文件（base 镜像 `33ed5fc9` 的 `/bin` 34 条、staging 与 base 集合逐名一致、`package.py:422-425` 的 dest 树每次打包从 `BASE/root` 重新 copytree）。
+- 查法：pack 记录 `changes` 里每个 `null→sha` 的 added 条目必须归到一个通道，归不到的就是配方缺口；两层配方对账与全条目 diff 在[运行协议](k90auto-run-protocol.md)。早先的判据「这个文件有没有第二条来路」建立在「`framewatch` 来路只有 staging」的误判上，随根因撤销（device `3278bf9`）。
 
-搜证据目录有硬约束（lead 2026-10-28 定，已进 goal 第 5 节 revision 6）：`docs/progress/evidence/` 下的内容搜索必须指名具体文件 glob，禁止对目录递归；命令必须带 `-I`（把二进制当无匹配）或用 `--include` 限定文本扩展名；`.raw`、`.png`、`.bin`、`.apfs`、`.dylib` 一律不搜。这一类错误的后果有两种形状，规则按后果分两句：**对文本目录递归是浪费时间**——实例一，lead 当天下午的 `grep -rn "干净闸\|ALLOW_DIRTY" docs/ tools/` 跑满 300 秒被杀掉；**对含二进制的目录递归是吃内存**——实例二，words 23:02 的 `grep -rln '门槛 1 的 mtime 清单闭合为三个文件' docs/` 对整目录递归扫进 evidence 的 `.raw` 截图（每张约 11.6 MB、无换行、被当单行读进内存），被系统杀掉（`Killed: 9`、退出码 137），同批的第二条命令从未执行；两次同日发生，第二次一个 grep 进程占用 125 GB 实际内存、85% CPU，用户两次点名。默认方法用 words 事后改用的形状：**`git ls-files '*.md'` 白名单加逐文件读**，或指名 glob 加 `-I`。这条与 §5 的失败签名规则配合用：搜索模式先验证再搜历史，而**模式验证也要在指定的小文件上做**（例如单轮的 `s001.log` 先确认命中形状），不能在目录上做；跨轮搜索时逐轮点名文件 glob。正例、反例与检索安全的实测数在[运行协议](k90auto-run-protocol.md) §5。
+
+一行日志输出要先读产生它的那段代码，才轮得到推断它的含义：判的是哪个时刻、读的是哪个量，都在代码里。2026-10-28 的第六个实例（lead 自查）：按 `NOT_RUNNING hung-held` 的字面推断「开始一轮时设备状态是 hung-held、上一轮收尾没做主机冷复位」，作为事实发给 device 与 desktop 让两边按它写归档——
+
+- display 读了 `run-auto.py` 之后不成立：`state()`（`:94-97`）读的就是 `getvar result` 一个量，`:152-158` 只在它不等于 `running` 时打印，`hung-held` 是 loader 在打印那一刻的字面应答；`:71` 与 `:176` 记着它由内核静默满 50 秒触发，而 `:127` 的开始断言在 21:07:44 通过了，证明那一刻 `result` 是 `idle`、开始一轮时设备状态是干净的。
+- 同日的配对正例（display）：改 `staging-entry-channels.md` 的引用之前先自己核了 `package.py` 的行号（`ALLOW_DRIVER_CHANGE` 在 `:213`、`dirty_sources()` 在 `:219`），没有按 lead 的转述改——转述里的行号是错的。
+- 规则是既有的那一条：成员报出的结论里带「所以」「说明」的段是推断，转述要标明是推断，不在推断上面建判据或派下游动作；这次的形状是读了一行日志输出就推断它的语义、没有读产生它的代码。配套加一条：**一个判断在发出之后被撤回时，要立刻点名已经按它写下的每一处产物，不能只发更正**——这次更正到达时 desktop 已按旧口径填完了归档骨架的两段，撤回方同时通知了全部下游所以更正送达了，但送达时产物已经写完；
+- 点名产物清单让下游能逐处核对改净，而不是各自凭记忆找。
+
+
+搜证据目录有硬约束（lead 2026-10-28 定，已进 goal 第 5 节 revision 6）：`docs/progress/evidence/` 下的内容搜索必须指名具体文件 glob，禁止对目录递归；命令必须带 `-I`（把二进制当无匹配）或用 `--include` 限定文本扩展名；
+
+- `.raw`、`.png`、`.bin`、`.apfs`、`.dylib` 一律不搜。这一类错误的后果有两种形状，规则按后果分两句：**对文本目录递归是浪费时间**——实例一，lead 当天下午的 `grep -rn "干净闸\|ALLOW_DIRTY" docs/ tools/` 跑满 300 秒被杀掉；
+- **对含二进制的目录递归是吃内存**——实例二，words 23:02 的 `grep -rln '门槛 1 的 mtime 清单闭合为三个文件' docs/` 对整目录递归扫进 evidence 的 `.raw` 截图（每张约 11.6 MB、无换行、被当单行读进内存），被系统杀掉（`Killed: 9`、退出码 137），同批的第二条命令从未执行；
+- 两次同日发生，第二次一个 grep 进程占用 125 GB 实际内存、85% CPU，用户两次点名。默认方法用 words 事后改用的形状：**`git ls-files '*.md'` 白名单加逐文件读**，或指名 glob 加 `-I`。这条与 §5 的失败签名规则配合用：搜索模式先验证再搜历史，而**模式验证也要在指定的小文件上做**（例如单轮的 `s001.log` 先确认命中形状），不能在目录上做；
+- 跨轮搜索时逐轮点名文件 glob。正例、反例与检索安全的实测数在[运行协议](k90auto-run-protocol.md) §5。
+
 
 **枚举类命令的输出不要用 `tail -N`／`head -N` 截断之后当作「只有这些」的证据**（lead 2026-10-28 定，从他自己的核对缺陷记起）：要判数量就读全量或先数行数。当天实例：23:04:37 报「adb 只看到 `519e5a70`」，命令是 `adb devices | tail -2`——它只显示最后一行设备，第二个序列号在场会被藏掉，那句结论的范围超过了那次核对的范围。这与「一个结论的范围不得超过它的验证范围」（[维护决定](../progress/2026-10-28-ledger-maintenance-rules.md)第七条）是同一条规则的两个形状：第一个形状管证据的筛选方向被要解释的结果限制，第二个形状管枚举输出被截断，合记。
 
@@ -303,7 +333,10 @@ QEMU 适合验证通用内核、镜像装配和用户态。日志可能重复输
 - 后台任务被接收后，还要检查结束状态、退出结果及产物。完成报告说明实际变化、选择理由、验证范围和偏离。
 - 历史总账与当前脚本冲突，先核对时间和实际行为。过期操作指令要修正或移到历史说明，尤其是写入目标与恢复命令。
 - 一个建议建立在被推翻的前提上时，建议要跟着撤回，不能只撤前提（lead 2026-10-28 定，按 desktop 的自查处置记为正面样板）。当天的三件：提交说明漏写一行（基线更新实际改两行、说明只写了一行）是提交后自查发现并主动报出的，不是别人指出的；「shipped driver 不含六笔源码改动」这个前提被 device 的机制核法推翻后，desktop 把建立在它上面的建议（「不重编 driver、六笔排到重跑之后的批次」）与已经发给下游的影响判断（「C-F 五轮驱动侧读数含义受影响」）一并撤回，并逐处点名了收到过旧结论的人；过程记录写清了错源——第一轮只看五轮 manifest 哈希全同、没有读 `package.py` 里 `build()` 的代码。第二件最要紧：建议与前提是一体的，只撤前提、留着建议，被推翻的内容就还在下游生效。
-- 覆盖远端可达历史的操作，执行前报 lead 并等确认（lead 2026-10-28 晚定，从 words 的 `8d4f4f3` 推送记起）。当天的经过：words 收到用户直接指令「提交推送全部变更」，据此提交了全部工作区改动并对顶层仓用 `--force-with-lease` 覆盖了远端旧的 11 笔提交，两个 submodule 各快进一笔；用户已向 lead 确认是它下的指令，并裁定备份引用留本地、不推。words 的操作内容是对的——先做了内容保全验证（旧远端 tip `62b0a5a` 是 `refs/backup/20261028-premerge-main` 的祖先，lead 独立核过成立），也按 AGENTS.md 第 3 节做了推送前隐私扫描；**要记的是时机**：验证与推送在同一个动作序列里完成，报 lead 在之后，lead 没有机会在可逆窗口关闭前提出异议或补一条保全措施。规则：任何会重写远端可达历史的操作（force push、删除远端分支或标签、改写远端已有提交），执行前报 lead 并等确认，报的内容包含三项——将覆盖什么、内容保全怎么验证、失败或误覆盖时的恢复路径。**用户直接下的指令可以覆盖「不 push」这一类约束，但不覆盖「执行前报」这一条**——那一条保护的是操作本身的可逆性，与谁授权无关。这一条与上一条（建议与前提是一体的）是同一类：一个动作的下游影响要在动作之前想清。
+- 覆盖远端可达历史的操作，执行前报 lead 并等确认（lead 2026-10-28 晚定，从 words 的 `8d4f4f3` 推送记起）。当天的经过：words 收到用户直接指令「提交推送全部变更」，据此提交了全部工作区改动并对顶层仓用 `--force-with-lease` 覆盖了远端旧的 11 笔提交，两个 submodule 各快进一笔；
+  - 用户已向 lead 确认是它下的指令，并裁定备份引用留本地、不推。words 的操作内容是对的——先做了内容保全验证（旧远端 tip `62b0a5a` 是 `refs/backup/20261028-premerge-main` 的祖先，lead 独立核过成立），也按 AGENTS.md 第 3 节做了推送前隐私扫描；
+  - **要记的是时机**：验证与推送在同一个动作序列里完成，报 lead 在之后，lead 没有机会在可逆窗口关闭前提出异议或补一条保全措施。规则：任何会重写远端可达历史的操作（force push、删除远端分支或标签、改写远端已有提交），执行前报 lead 并等确认，报的内容包含三项——将覆盖什么、内容保全怎么验证、失败或误覆盖时的恢复路径。
+  - **用户直接下的指令可以覆盖「不 push」这一类约束，但不覆盖「执行前报」这一条**——那一条保护的是操作本身的可逆性，与谁授权无关。这一条与上一条（建议与前提是一体的）是同一类：一个动作的下游影响要在动作之前想清。
 
 dsh 数据位于用户主目录下的 `.dsh/sessions/`，项目缓存位于 `.dsh/storages/session_projcache/sessions/`；通过 `turnOutline` 定位，再读取对应 `session.v4.jsonl.zstd`。Codex 长任务可能只有一个很长的 turn，应提取近期消息和相关工具输出。Claude Code 的用户追加要求还可能保存在队列事件或附件，读取时一并还原；压缩摘要用于导航，再核对后续修正。用户要求完整阅读，就按固定范围分段覆盖全文、工具活动与图片，并在本地记录已读位置，重复的请求元数据单独识别。旧指令用于理解背景，本轮执行范围由当前用户要求决定。
 

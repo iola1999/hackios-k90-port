@@ -2,7 +2,17 @@
 
 K90 上的 iOS 16.5 已经由 A830 绘制桌面，按负载调频、温控、触摸、按键、电量、手电和震动都有实测结果，见[GPU 桌面记录](../progress/2026-10-26-gpu-desktop-acceleration.md)与[路线图](2026-10-26-roadmap.md)。本轮按用户决定开始迁移到 iOS 26.6.2（`23G90`，iPhone 17 身份），目前只在 QEMU 中运行：内核 `xnu-12377.121.6` 能启动 iOS 26 的 arm64e 用户态，launchd 以正常模式（非恢复环境）执行全部启动任务；停止位置是 lsd 反复中止、屏幕全黑，backboardd 与 SpringBoard 是否启动待确认。iOS 26 的决策与进度见[iOS 26 移植计划](2026-10-26-ios26-port.md)。本轮的修改都还没有提交。
 
-后续进度（10-27）：iOS 26 已在 K90 双核启动并显示软件桌面，全面屏上滑解锁、左右翻页和右上角控制中心已自动化验证；Metal 在 A830 完成计算、绘制和内容读回，SpringBoard 图标绘制仍有显示缺失及性能问题。用户暂时不方便查看设备，手指操作、顶部留白和控件大小保留为人工待确认项。软件 LK 往返第四轮通过；AIR fast FMA 陷阱已在宿主复现，精度边界修正进入 userland 跟踪源码，真机包待构建。Metal 线性对齐 getter 已在真机调用；surface 3 的 960 字节行距不满足 A830 对 RGBA16Float 的 128 字节布局要求，实际后端拒绝位置待确认。CA surface Home 登记修复通过两轮 QEMU，待真机验证。压缩开关、手势功能、帧率和完整 GPU 桌面继续验收。Wi-Fi MHI 固件下载、蓝牙、iOS 27 用户态及温控策略分析仍在队列。详细输入、参数与结果见[真机后续记录](../progress/2026-10-27-ios26-k90.md)，QEMU 适配见[启动记录](../progress/2026-10-26-ios26-qemu.md)。
+后续进度（10-27）：
+
+- iOS 26 已在 K90 双核启动并显示软件桌面，全面屏上滑解锁、左右翻页和右上角控制中心已自动化验证。
+- Metal 在 A830 完成计算、绘制和内容读回，SpringBoard 图标绘制仍有显示缺失及性能问题。
+- 用户暂时不方便查看设备，手指操作、顶部留白和控件大小保留为人工待确认项。
+- 软件 LK 往返第四轮通过；AIR fast FMA 陷阱已在宿主复现，精度边界修正进入 userland 跟踪源码，真机包待构建。
+- Metal 线性对齐 getter 已在真机调用；surface 3 的 960 字节行距不满足 A830 对 RGBA16Float 的 128 字节布局要求，实际后端拒绝位置待确认。
+- CA surface Home 登记修复通过两轮 QEMU，待真机验证。
+- 压缩开关、手势功能、帧率和完整 GPU 桌面继续验收。
+- Wi-Fi MHI 固件下载、蓝牙、iOS 27 用户态及温控策略分析仍在队列。
+- 详细输入、参数与结果见[真机后续记录](../progress/2026-10-27-ios26-k90.md)，QEMU 适配见[启动记录](../progress/2026-10-26-ios26-qemu.md)。
 
 本次接续：AIR fast／strict／contract-only lowering 回归三项通过；`redwood-drm` 的 IOSurface 导入错误映射覆盖 `NotFound`、`Unsupported`、`NoMemory` 三项宿主注入测试，源文件语法检查通过。当前设备为 `xnuloader` idle。新增源码尚未进入设备库；现有 AIR 75c0 包仍使用旧 AIR 和 1125×2436 几何，本轮未运行。容器中的 26.2.5 Mesa 源码与 SDK 可用，但增量构建所需的 `ninja`／`pip` 不在该容器内。Wi-Fi 固件下载前仍需确认 RID `0x100` 的 SID 及 apps SMMU 映射；当前 `mhi_pcie.c` 只读到 BHI／BHIe 和 PARF 状态。
 
@@ -12,7 +22,12 @@ K90 上的 iOS 16.5 已经由 A830 绘制桌面，按负载调频、温控、触
 
 可直接作为下一轮 goal 使用的描述：
 
-> 在 REDMI K90（`annibale`，SM8750）上持续完善 HackiOS。iOS 16.5 的 GPU 加速桌面保持可启动，并继续改进流畅度、显示正确性、功耗与温度；按[路线图](2026-10-26-roadmap.md)分阶段实现后续功能：系统迁移到 iOS 26.6.2（`23G90`，身份 iPhone 17 `iPhone18,3`／`V57AP`，内核基于 `xnu-12377.121.6`），先在 QEMU 中以软件渲染进入 SpringBoard，再上 K90 真机，之后决定 GPU 路线（`AccelServer` 换用 OGL 渲染器，或 Metal／Turnip）并评估 iOS 27 用户态在同一内核上的差异；外设继续推进 Wi-Fi（MHI 固件下载）和蓝牙。验收：性能与省电（60 帧/秒以上，报告帧率和长帧，随负载调频、空闲降频、温控降频，开机不固定大核约 3 GHz）；显示与稳定性（壁纸、翻页、控制中心反复验证，偶发断触可暂缓）；路线实施（落实路线图，Turnip／Metal 与系统升级分别验收，推进外设）；无人值守验证（结论附版本、参数和实测结果，需要人工确认的项目单独列出）。
+> 在 REDMI K90（`annibale`，SM8750）上持续完善 HackiOS。
+>
+> - iOS 16.5 的 GPU 加速桌面保持可启动，并继续改进流畅度、显示正确性、功耗与温度。
+> - 按[路线图](2026-10-26-roadmap.md)分阶段实现后续功能：系统迁移到 iOS 26.6.2（`23G90`，身份 iPhone 17 `iPhone18,3`／`V57AP`，内核基于 `xnu-12377.121.6`），先在 QEMU 中以软件渲染进入 SpringBoard，再上 K90 真机，之后决定 GPU 路线（`AccelServer` 换用 OGL 渲染器，或 Metal／Turnip）并评估 iOS 27 用户态在同一内核上的差异。
+> - 外设继续推进 Wi-Fi（MHI 固件下载）和蓝牙。
+> - 验收：性能与省电（60 帧/秒以上，报告帧率和长帧，随负载调频、空闲降频、温控降频，开机不固定大核约 3 GHz）；显示与稳定性（壁纸、翻页、控制中心反复验证，偶发断触可暂缓）；路线实施（落实路线图，Turnip／Metal 与系统升级分别验收，推进外设）；无人值守验证（结论附版本、参数和实测结果，需要人工确认的项目单独列出）。
 
 执行时的约束：
 
@@ -48,7 +63,13 @@ K90 上的 iOS 16.5 已经由 A830 绘制桌面，按负载调频、温控、触
 
 ### 2.3 停止位置
 
-最后一次运行（QEMU，180 秒，`IDENTITY=v57`，`CMDLINE="rootdev=md0 launchd_unsecure_cache=1"`）：init 的 36 项检查全部通过；keybag、usermanagerd、`launchd_cache_loader` 等启动任务执行完毕，日志出现 `Using unsecure cache` 与 `Cache sent to launchd successfully`；日志中可见 distnoted、wifid、powerd、containermanagerd、MobileGestaltHelper 在运行。lsd 每次都在同一位置中止，内核记录为 `userabort: lsd[48] aborts, shared cache slide 0x1ce68000; called from: 0x1abf42fcc 0x19e5ef390 0x19e5f541c 0x1dae901e4 0x1dae862e0 0x19e527c38 ...`，减去 slide 后在共享缓存中的地址依次为 `0x18f0dafcc`、`0x181787390`、`0x18178d41c`、`0x1be0281e4`、`0x1be01e2e0`、`0x1816bfc38`，尚未符号化。正常启动时 launchd 自身的日志没有输出到控制台，无法从日志判断用户域任务是否启动。
+最后一次运行的参数是 QEMU、180 秒、`IDENTITY=v57`、`CMDLINE="rootdev=md0 launchd_unsecure_cache=1"`：
+
+- init 的 36 项检查全部通过。
+- keybag、usermanagerd、`launchd_cache_loader` 等启动任务执行完毕，日志出现 `Using unsecure cache` 与 `Cache sent to launchd successfully`。
+- 日志中可见 distnoted、wifid、powerd、containermanagerd、MobileGestaltHelper 在运行。
+- lsd 每次都在同一位置中止，内核记录为 `userabort: lsd[48] aborts, shared cache slide 0x1ce68000; called from: 0x1abf42fcc 0x19e5ef390 0x19e5f541c 0x1dae901e4 0x1dae862e0 0x19e527c38 ...`，减去 slide 后在共享缓存中的地址依次为 `0x18f0dafcc`、`0x181787390`、`0x18178d41c`、`0x1be0281e4`、`0x1be01e2e0`、`0x1816bfc38`，尚未符号化。
+- 正常启动时 launchd 自身的日志没有输出到控制台，无法从日志判断用户域任务是否启动。
 
 ## 3. 仓库与产物状态
 
