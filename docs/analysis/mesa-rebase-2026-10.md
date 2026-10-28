@@ -22,10 +22,10 @@
 
 | 补丁 | 严格应用(fuzz=0) | 默认 fuzz | 逐文件明细 | 处置 |
 | --- | --- | --- | --- | --- |
-| air-frontend | 通过 | 通过 | `subdir('air')` 锚点未漂移 | 保留 |
+| air-frontend | 通过 | 通过 | `subdir('air')` 锚点未移动 | 保留 |
 | air-metal | 通过 | 通过 | libredwoodair/air_metal_test 目标声明可应用 | 保留 |
-| air-ir3 | 失败 | 失败 | `ir3_cmdline.c` 已被上游删除（986530d231，25.3+），8 hunk 全空；freedreno/meson.build 的 `air_run` exe hunk 上下文漂移 | 删 cmdline 部分；`air_run` 声明并入 0003 |
-| freedreno-darwin | 失败 | 失败 | `src/freedreno/drm/meson.build` 1/2（libvdrm TODO hunk，上游已修）；`fd6_draw.cc` 1/1（fb_read 锚点漂移）；`freedreno_screen.c` 2/2（`pipe_screen.ram_size`/sysinfo 已删）；osmesa 三文件（frontends/targets meson、osmesa_target.c）因文件缺失跳过 | 拆分：删死 hunk，fb_read 重锚与 osmesa 钩子并入 0003 |
+| air-ir3 | 失败 | 失败 | `ir3_cmdline.c` 已被上游删除（986530d231，25.3+），8 hunk 全空；freedreno/meson.build 的 `air_run` exe hunk 上下文偏移 | 删 cmdline 部分；`air_run` 声明并入 0003 |
+| freedreno-darwin | 失败 | 失败 | `src/freedreno/drm/meson.build` 1/2（libvdrm TODO hunk，上游已修）；`fd6_draw.cc` 1/1（fb_read 锚点偏移）；`freedreno_screen.c` 2/2（`pipe_screen.ram_size`/sysinfo 已删）；osmesa 三文件（frontends/targets meson、osmesa_target.c）因文件缺失跳过 | 拆分：删死 hunk，fb_read 重锚与 osmesa 钩子并入 0003 |
 | osmesa-es-profile | （空跑） | （空跑） | `include/GL/osmesa.h`、`osmesa.c` 在 26.x 整体不存在（见第 3 节） | 内容并入 0003 的恢复文件 |
 | ir3-round-default | 通过 | 通过 | `create_cov` 舍入块 26.2.5 仍无 else 分支（ir3_compiler_nir.c:411 附近），修复仍然必要 | 保留 |
 | ir3-shift-split | 失败 | 失败 | helper 函数 hunk 可应用；使用点 hunk 失败——26.x 重写后的 `ir3_nir_try_propagate_bit_shift` 只匹配纯 ishl/ishr/ushr，不再拆 `(c+x)>>s` | **退役**：实测 bug（grid_buf[id-1] 读 0）成因已在上游消失，负常量 iadd 折叠已不存在 |
@@ -37,9 +37,9 @@
 
 upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除 OSMesa 前后端，替代路线是 EGL surfaceless；而 hackios 的 CoreAnimation 供帧路径（`userland/src/eagl.c`、`gl_osmesa.c`）dlopen 的是 `libOSMesa.8.dylib`，iOS 侧没有现成 EGL 栈，短期只能恢复 OSMesa。恢复清单（全部固化在 `rebase-26/0003-restore-osmesa-26.x-drift-adaptations.patch`）：
 
-1. 反向应用 027ccd963b 的 meson 接线：`meson.options` 加回 `osmesa` option，根 `meson.build`/`include/meson.build`/`src/gallium/meson.build` 恢复 `frontends/osmesa`、`targets/osmesa` 子目录。
+1. 反向应用 027ccd963b 的 meson 连接改动：`meson.options` 加回 `osmesa` option，根 `meson.build`/`include/meson.build`/`src/gallium/meson.build` 恢复 `frontends/osmesa`、`targets/osmesa` 子目录。
 2. 从打补丁的 25.0.7 树取回 9 个文件（`include/GL/osmesa.h`、frontends/osmesa 2 个、targets/osmesa 6 个），内容已含 osmesa-es-profile 与 freedreno-darwin 的 osmesa 钩子。
-3. 六类 26.x 适配（这是真正的漂移成本）：
+3. 六类 26.x 适配（这是真正的版本差异成本）：
    - `inc_mapi` 不复存在；`inc_glapi` 只在 `src/mesa/glapi` 子目录可见，三处 meson 改用字面 `include_directories('../../../mesa/glapi')`。
    - `with_shared_glapi` 变量没了，targets/osmesa 直接链 `libglapi`。
    - **gl\* 导出**：26.x 的 shared-glapi 静态库只含调度核心，`gl*` 桩在 `libglapi_bridge`（wgl/libgl-xlib 专用），osmesa 目标不链它导致 dylib 一个 `gl*` 都不导出——把 `libglapi_bridge` 加进 `link_whole` 后恢复 1300 个导出（arm64 上该桥库原生可编译，实测无 asm 问题）。
@@ -49,7 +49,7 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 
 验证（macOS 主机）：`ninja` rc=0；`nm -gU` 见 1300 个 `_gl*`、13 个 `_OSMesa*`；`rebase-26/smoke-osmesa.c` 输出 `GL_VERSION: 3.3 (Compatibility Profile) Mesa 26.2.5 / GL_RENDERER: softpipe`，clear(0.25,0.5,0.75) 回读像素 (64,128,191,255) 正确；`smoke-osmesa-es.c` 用 `OSMESA_ES_PROFILE` 建出 "OpenGL ES 3.1" 上下文。真机 msm 屏路径（osmesa_target 的 driinfo "msm" screen 创建 + IOSurface 导入）未经设备验证。
 
-## 5. AIR 前端 26.x API 漂移（已按第 8 节迁移完成）
+## 5. AIR 前端 26.x API 差异（已按第 8 节迁移完成）
 
 `src/compiler/air`（copy 目录）在 26.2.5 下 `air_run` 与 `libredwoodair` 编译失败（每 TU 20 错误被截断），归为 12 类机械问题：`PIPE_SHADER_*`→`MESA_SHADER_*`；`gl_shader_stage`→`mesa_shader_stage` 及 `gl_shader_stage_name` 转内部；`nir_builder.exact` 移除（4 处）；NIR pass 参数 `nir_shader*`→`nir_function_impl*`（2 处）；3 个函数签名参数数变化（含 air_run.c 里同样的 `driParseConfigFiles` 10 参调用）；`pipe_screen.get_compiler_options` 移除；`pipe_context.create_surface` 移除；glsl_type 查询回调返回类型 int→unsigned。libOSMesa 主库不受影响（air 目标 `build_by_default:false`）。预计 1–2 个工作日，全部是机械改写 + 一轮语义复核（尤其 `b->exact` 移除后 iadd 溢出标志的取舍）。
 
@@ -91,7 +91,7 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 | `create_surface` 移除 | **实际比清单更大**：26.x 的 `pipe_surface` 成了纯值结构，`pipe_framebuffer_state.cbufs/zsbuf` 按值内嵌。air_metal.c 帧目标块与 air_run.c RT 循环重写为 `pipe_surface_init()` 就地填充，销毁=对 `.texture` 做 `pipe_resource_reference(&…, NULL)`（与 u_fb_copy/u_fb_destroy 的上游惯例一致）；值填充不可能失败，原两条 create 失败错误分支按语义删除 |
 | glsl_type 回调返回 int→unsigned | 两处 `type_size_vec4` 返回类型改 `unsigned` |
 
-### 8.2 清单之外新发现的漂移（本节为权威清单）
+### 8.2 清单之外新发现的差异（本节为权威清单）
 
 - `pipe->clear` 6 参→8 参：新增 `color_clear_mask`/`stencil_clear_mask`/`scissor_state`；两处调用改传 `0xf`/`0xff`/NULL（整面清除，attachments 仍由 buffers 位决定）。
 - `pipe_screen.get_compute_param` 移除，改 `screen->compute_caps` 值结构：`max_threads_per_group` 直读；**`subgroup_sizes` 语义变了**——25.0.7 freedreno 答字面 32，26.x 存"支持宽度集合的位掩码"（rusticl 取位号还原，freedreno 填 `threadsize_base |= 2×base`），取最低位（32|64→32）作为执行宽度；softpipe 全零时仍回退 1，与旧 decline 行为一致。
@@ -135,7 +135,7 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 
 - apt 增件（arm64 原生）：`bison flex patch gawk autoconf automake libtool-bin m4 perl libzstd-dev zlib1g-dev python3-venv ninja-build`。meson **故意不用 apt**：noble 只有 1.3，26.x 的 meson.build 要 ≥1.4；由 mk-mesa.sh 的 venv 装 **meson==1.12.1**（与 §8 主机验证版本同）。
 - amd64 multiarch：theos 的 Linux iPhone 工具链是 x86_64 ELF，OrbStack 的 Rosetta 能跑，但 arm64 镜像缺运行时——`dpkg --add-architecture amd64` 后装 `libc6:amd64 libuuid1:amd64 libstdc++6:amd64 libtinfo6:amd64`（ld64→libtapi 的依赖链实测补齐才通）。两个坑：①ports 源没有 amd64 索引，加了 amd64 架构后 apt 全 404，要给 ubuntu.sources 的 ports stanza 补 `Architectures: arm64`，另立主档案源 `Architectures: amd64`（Suites 要带 noble-updates，否则 libc6 版本对不上）；②`zlib1g` 是 Multi-Arch: same，ports 的 arm64 停在 `...ubuntu2.2` 而主档案 amd64 是 `...ubuntu2.3`，apt 直接判 not installable——绕开 dpkg 库直接解包官方 deb（URL 钉死 + sha256 `376249c8…`，与 kbuild 靠 jammy 老 zlib 混过去同一思路）。
-- theos 层：`ENV THEOS=/root/theos`（install-sdk 不认默认路径），clone 后 fetch/checkout 钉 `304e0799…`，L1ghtmann `iOSToolchain-x86_64.tar.xz`（latest 下载但构建期校验 `bin/ld` sha256 `b61576c0…`、`install_name_tool` sha256 `15f03550…`），`bin/install-sdk iPhoneOS16.5` 后校验 `SDKSettings.plist` sha256 `e402d200…`——上游漂移会让镜像构建失败，而不是让产物悄悄漂。
+- theos 层：`ENV THEOS=/root/theos`（install-sdk 不认默认路径），clone 后 fetch/checkout 钉 `304e0799…`，L1ghtmann `iOSToolchain-x86_64.tar.xz`（latest 下载但构建期校验 `bin/ld` sha256 `b61576c0…`、`install_name_tool` sha256 `15f03550…`），`bin/install-sdk iPhoneOS16.5` 后校验 `SDKSettings.plist` sha256 `e402d200…`——上游变化会让镜像构建失败。产物不会悄悄变化。
 
 ### 9.4 mk-mesa.sh 的 26.x 修正（tools/mk-mesa.sh）
 
@@ -173,7 +173,7 @@ host 侧原判定三段里，前两段（可翻译；NIR 带 `demote` 不带 `te
 
 ### 10.3 为什么 26.x 没有等价的离线编译入口
 
-上游在 986530d231（25.3+）删了 `ir3_cmdline.c`，26.x 没有留下替身：NIR→ir3 全在 libgallium 内部（`ir3_compiler_nir.c`），要 screen 与 compiler-options 上下文；`src/freedreno/` 的独立工具（`pgmdump2`、`computerator` 等）吃的是编好的 program 二进制，帮不上；turnip 不在 darwin 配置里。把 cmdline 复活等于给还在漂移的 a8xx 接口重写一个上游不收的工具，而指令形状本来就是设备侧问题：26.x 的 a8xx 编译器对 demote 发自己的 `ir3_DEMOTE` 指令（`ir3_compiler_nir.c`），不是 a6xx 编码器的 DEMOTE→KILL 映射，旧 harness"kill for both kinds"的结论只对 a6xx 成立，现已改写为"两族映射并存、7c+ Gen 3 取哪个由 `--emit`/`--check` 上机裁决"。同病（硬要 `$IR3`）的 `fbfetchcheck.py`、`vattrcheck.py`、`corpus.py --ir3` 三家已照 10.2 同款降级（草稿在 userland 工作树）：`$IR3` 存在时行为一字不改，缺失时 fbfetch 的 isamm 段与 vattr 的 VFD fetch-table 段打 SKIPPED 行计入通过、corpus 的 ir3 列整列去掉表格停在 translate，三家 stderr 各留一行说明，rc 均不拦停——check.sh 只取这三家的退出码，26.x host 上从此不再硬失败。实测（`build-darwin` 产物、`IR3` 指向不存在路径）：fbfetch `7 of 7`、vattr `16 of 16`（QuartzCore 缺库段照旧自报 NO REAL MODULE）、corpus 拿单个 `.bc` 走 `--ir3` 去列 rc=0。
+上游在 986530d231（25.3+）删了 `ir3_cmdline.c`，26.x 没有留下替身：NIR→ir3 全在 libgallium 内部（`ir3_compiler_nir.c`），要 screen 与 compiler-options 上下文；`src/freedreno/` 的独立工具（`pgmdump2`、`computerator` 等）吃的是编好的 program 二进制，帮不上；turnip 不在 darwin 配置里。把 cmdline 复活等于给还在变化的 a8xx 接口重写一个上游不收的工具，而指令形状本来就是设备侧问题：26.x 的 a8xx 编译器对 demote 发自己的 `ir3_DEMOTE` 指令（`ir3_compiler_nir.c`），不是 a6xx 编码器的 DEMOTE→KILL 映射，旧 harness"kill for both kinds"的结论只对 a6xx 成立，现已改写为"两族映射并存、7c+ Gen 3 取哪个由 `--emit`/`--check` 上机裁决"。同病（硬要 `$IR3`）的 `fbfetchcheck.py`、`vattrcheck.py`、`corpus.py --ir3` 三家已照 10.2 同款降级（草稿在 userland 工作树）：`$IR3` 存在时行为一字不改，缺失时 fbfetch 的 isamm 段与 vattr 的 VFD fetch-table 段打 SKIPPED 行计入通过、corpus 的 ir3 列整列去掉表格停在 translate，三家 stderr 各留一行说明，rc 均不拦停——check.sh 只取这三家的退出码，26.x host 上从此不再硬失败。实测（`build-darwin` 产物、`IR3` 指向不存在路径）：fbfetch `7 of 7`、vattr `16 of 16`（QuartzCore 缺库段照旧自报 NO REAL MODULE）、corpus 拿单个 `.bc` 走 `--ir3` 去列 rc=0。
 
 设备轮观察项排期（F08）：本节的 `--emit`/`--check` 上机裁决（含 discardcheck 设备契约、ir3_DEMOTE-vs-KILL 收账）是 GL 族观察项，排在 F07 四阶段观测与启动验收**之后**——下一个真机窗口优先阶段标记与静态色块，GL 族在启动验收通过后同轮再排，不在一轮里叠加多个新启用面。
 

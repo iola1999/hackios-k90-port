@@ -50,7 +50,7 @@
 
 ## 7. 已验证的兼容性/流水线事实（2026-10-23 实测）
 
-- **`uefi/mu-silicium.patch` 对今天的上游 main `git apply --check` 干净通过** （hackios 锁的 BASE 提交是 `e51cd877`，无漂移冲突）。
+- **`uefi/mu-silicium.patch` 对今天的上游 main `git apply --check` 干净通过** （hackios 锁的 BASE 提交是 `e51cd877`，无版本差异冲突）。
 - 出货镜像装配线 = 根目录 `mkxnuimg.py`：`gzip(BootShim.bin + UEFI FD + XNUP容器(kernel+images)) + DTB`；检测 `Mu-Silicium/BootShim` 存在时**自动用我们的地址重编 BootShim**（FD_BASE/PAYLOAD_BASE 生效点）。
 - `uefi/apply.sh` 是 redwood 流程（clone+checkout BASE+cp files/），我们的 annibale 路线 **不复用它**：直接在 k90-port 上 `git apply mu-silicium.patch` 即可（已验证可过），第一支纯 Mu UEFI 冒烟 .fd 可以不套补丁（先验 UEFI 本体起壳）。
 - 构建容器化：`hackios-dev:latest` 已含 stuart（edk2-pytool + regex + pillow，tuna 源）；日志 `hackios-xnu-kernel/logs-mu-{setup,update,compile}.log`（容器写、宿主读，均 gitignore）。坑：宿主机一次性 `docker run --rm` 里 pip install 不会留存（无头容器）——已烙进镜像层。

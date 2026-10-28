@@ -1,176 +1,199 @@
-# round C 冻结形态分析（2026-10-28）
+# 冻结形态分析：round C、round D 与旧冻结轮（2026-10-28）
 
-round C（内核 `cf1502f5632284af…`，payload `ebdca4adfc9fb5f4…`，apfs 复用 roundb 的 `e36caefb…`，jobs `a4af9a9f…`）全轮 bad access 零条，按[判读口径 §8](2026-10-28-roundc-reading-criteria.md)归冻结形态。本页回答 task-19 的六项：冻结时刻换算、线程 dump、线程数曲线、拷贝路径相关性削弱到什么程度、49152 尺寸的出处、died 分类对照，外加 `run-queue.sh` 调用更正与建议。全部离线，数据是 `docs/progress/evidence/k90auto/kernel-12377-attr26-roundc/run/` 的 21 份 s*.log 与 hung-held.log，脚本与机器可读输出在 `docs/progress/evidence/k90auto/analysis-roundc/`（`freeze_form.py`、`freeze_form.out.json`、`read_roundc.py`）。轮次身份与收尾四条命令原文见[内核改动记录 §6](../progress/2026-10-28-kernel-badaccess-region.md)。
+round C（内核 `cf1502f5632284af…`，payload `ebdca4adfc9fb5f4…`，apfs 复用 roundb 的 `e36caefb…`，jobs `a4af9a9f…`）全轮 bad access 零条，按[判读口径 §8](2026-10-28-roundc-reading-criteria.md)归冻结形态。round D（task-21）是 round C 的零改动重跑：同一 payload bin 逐字节复用、manifest 逐字节复制，只换证据目录 `kernel-12377-attr26-roundd`，结果冻结形态复现（bad access 0、exited 0、帧 id 1..3620 零断裂、末次 swap rel 96.4、主线程 settling），冻结形态在拷贝路径驱动上 2/2 可复现，「轮间变异」解释被削弱。本页并入 round D 后覆盖 task-19 的六项（冻结时刻换算、线程 dump、线程数曲线、拷贝路径相关性、49152 尺寸出处、died 分类对照，其中第 1/2/3 项各有两轮样本、第 4 项变为 n=2 对 n=1）加旧冻结轮对照与三轮时刻表。数据目录：`docs/progress/evidence/k90auto/kernel-12377-attr26-{roundc,roundd,freeze,roundb}/run/`；脚本与机器可读输出在 `docs/progress/evidence/k90auto/analysis-roundc/`（`freeze_form.py` 接受第二参数 BOOT_S，输出 `freeze_form.out-<轮名>.json`）；桩解码的受跟踪实现在 `tools/k90auto/stubsym.py`（提交 `e566027`）。轮次身份与收尾四条命令原文见[内核改动记录 §6](../progress/2026-10-28-kernel-badaccess-region.md)。round E（task-22，fb_hz=120 唯一变量）并入 §10：形态翻转到循环家族，bad access 的 lr 首次落地，故障 pc 与 roundb 逐位同为 _platform_memmove+0x9c0。
 
-## 1. 换算口径与数据来源
+## 1. 换算口径与时钟校准
 
-轮内相对秒 = (µs − 12841497838)/1e6，T0 取全部日志里最早的 `tl:` 行 µs，与 `summary.py --verify` coverage 行的起点相同。带 µs 的行（`tl: s`、`tl: v`、`tl: w`、framewatch 各款）直接换算；不带 µs 的行（`periodic dump`、dump 块）用同一快照内最近的前后带 µs 行夹逼，报区间。日志环跨快照有重复，所有计数分 raw（跨快照求和）与唯一行两个口径，逐处标明。
+轮内相对秒（rel s）= tl 行 µs/1e6 − B，B 是该轮 payload 内核启动时刻的设备钟读数。设备单调钟跨轮不共享零点：warm 复位延续旧计数（round C 的 B≈12841.5 s），冷启动从头计（round D B≈4527.6、roundb B≈969.2、旧冻结轮 B≈146.7）。B 用锚点法得到：`lsprobe t=60`／`lsprobe t=300` 两行与各自最近的带 µs 行夹逼，B = (µs₆₀−60e6 + µs₃₀₀−300e6)/2；四轮的两锚点差实测 239.5..240.0 s 对期望 240 s，一致性 ±0.5 s 内。跨轮直接比较 tl 原值没有意义，必须先减各自的 B。
 
-截图文件名是轮内十分之一秒时刻：`run-auto.py:34` 解析 `RUN_TIMING`（本轮默认 `3,100,20`），`:163` 的调度是 `elapsed >= shot_from` 且距上一张满 `shot_every`，`:166` 命名 `shot-{int(elapsed * 10):05d}.raw`。所以 `shot-01001.raw` 是 100.1 s、`shot-04190.raw` 是 419.0 s，101 张覆盖 100.1..419.0 s、间隔约 3.2 s。前 100 s 没有截图是 `shot_from=100` 的设计值。
+主机侧时钟（截图文件名、run-auto 的 elapsed、墙钟行）与设备钟是两个域，校准差 ≤3 s：旧冻结轮提交停止在设备域 126.3 s，截图内容最后变化区间 (127.6, 131.1] 在主机域，两者实际同段。跨域时刻只做「同段/先后差 >5 s」级别的比较。
 
-## 2. 冻结时间线（第 1 项）
+由此产生对交接文档 §1 的两处校准更正：「提交停在 273 s」是设备钟原值（实测末次交换 `tl: s 3425 backboardd at 273031935`，减 B=146.7 得 rel 126.3 s），「内容冻在 131 s」是主机域轮内值、无需换算；两数混用时基，「内容冻结后提交又持续 142 s」不成立，旧轮真实顺序与 round C 相同（settling → 提交停止 → 内容最后变化，间隔秒级）。`rc.jobs.freeze:14-18` 注释里「3 秒洞每 15 秒、从 ~180 s 开始」的 180 同为设备钟（−146.7 = rel 33.3 s，与 C/D 轮周期洞起点 30.3/31.4 吻合）。
 
-全部时刻是轮内相对秒。
+µs 锚点纪律：只有 `tl: s/v/w/p`、framewatch 各款这类行尾 `at <µs>` 的行可作时间锚；`tl: td` 行的 pc 与 wait 字段是纯数字十六进制时会伪装成 µs。round D 的 `summary.py --verify` coverage 行「span 4707 s、largest gap 4289.2 s」就是把 `pc 0x237103808` 当时间戳的解析伪影（round C 的 pc 都带十六进制字母所以未触发），真实跨度约 418 s，已报 perf 修 µs 提取。行序纪律：`sort -u` 的输出是文本序，带时间语义的序列必须按锚点重建时间轴再读；本页 §4 的更正就是这个错法的产物。
 
-- 2.9 s：首次交换（`tl: s 1`）。
-- 2.9→18.3 s：第一个交换空档，长 15.4 s，即 round-stats 报的首个 hole；`still no frames` 第一段计数出现在这一段（N=6..8 于 9.6..11.6 s，起点约 3.6 s），属开机段。
-- 18.3→100.2 s：渲染段。3611 帧、3611 次交换，帧号 1..3611 零断裂。15 s 周期的约 3 s 交换空档在 31.4→34.4、46.4→49.4、61.4→64.4、76.4→79.4 s；末段空档变密：91.4→93.6、94.2→97.6、97.7→100.1 s。
-- 约 90.2 s：rwtouch 的 swipe（`rc.jobs.freeze:13` 的 `wait 90` 之后）；gestures 报 swipe-left 1 次、无动画可量。
-- 约 100.25 s：rwtouch 的 `button home`（`wait 90` + swipe 0.25 s + `wait 10`）；round-stats 的 30 s 窗口表在 92.9..122.9 s 窗口记 34 finger、2 button。
-- **100.2 s：末次交换（`tl: s 3611`），提交永久停止。与 `button home` 的时刻差在 0.1 s 量级内。**这是本轮数据里最紧的一对时刻，只证明一起出现；home 键处理路径与该内核的交互是否参与停止，本轮分辨不了。
-- 100.5 s 起：`still no frames` 第二段计数，N=6 于 106.5 s，连续无复位，N=318 于 419.8 s（hung-held.log），跨 155.6 s 的触发簇不中断。
-- 100.1..103.1 s 之间：截图内容唯一一次变化。101 张截图共 2 个唯一哈希，`shot-01001`（100.1 s）是一个值，`shot-01031`（103.1 s）起全部是另一个值。**内容冻结时刻 ∈ (100.1, 103.1]，与提交停止 100.2 s 一致。**
-- 155.6 s：一次性触发簇。`no frames for 2 s` 对两个 pid 各一条、`no process named /redwood/bin/framewatch`、`no process named 2`、`no process named 6`，以及对应的一对 dump（SB 18 线程）。出处是 `rc.jobs.freeze:19` 的 `framewatch 2 6 backboardd SpringBoard`：`:14-18` 的注释写明该行靠 `:13` 的 wait 链排在约 150 s 启动、阈值 2 s、6 个 dump 名额；155.6 s 触发与启动时刻（约 153.6 s）吻合。`no process named 2`／`no process named 6` 说明该实例把一部分命令行参数当成进程名去 dump 了，参数处理与注释意图对不上，原样记录。它的 6 个 dump 名额在日志里只见 155.6 s 一对，其余名额无对应行。
+截图文件名是轮内十分之一秒时刻：`run-auto.py:34` 解析 `RUN_TIMING`（默认 `3,100,20`），`:163` 的调度是 `elapsed >= shot_from` 且距上一张满 `shot_every`，`:166` 命名 `shot-{int(elapsed * 10):05d}.raw`。`shot-01001.raw` 是 100.1 s；C 轮 101 张覆盖 100.1..419.0 s、D 轮 100.1..419.4 s，间隔约 3.2 s；前 100 s 没有截图是 `shot_from=100` 的设计值。
 
-与交接文档 §1 旧驱动 `31f2d6b7` 冻结轮的对照。旧轮两个数（内容冻在 131 s、提交停在 273 s）已是轮内相对秒，与本页口径相同，**可比**。结论：同属冻结形态家族（双进程 `exited code` 0 条、帧号零断裂、`still no frames` 连续计数到轮末、主线程 settling 在 `psynch_cvwait` 固定等待对象，见 §3），子形态有三处不同：
+日志环跨快照有重复，所有计数分 raw（跨快照求和）与唯一行两个口径，逐处标明。
 
-三个 framewatch 实例的启动文本在日志里各出现一次，与 `rc.jobs.freeze` 的三行一一对应，读采样前先按这三行认实例：`watching kern.redwood.frames from 0, still after 5 s, at most 0 dumps`（`:11` 停滞模式，`still no frames` 两段计数都来自它）、`periodic dumps every 20 s, 15 of them, 2 names`（`:12` 周期模式）、`watching kern.redwood.frames from 3611, still after 2 s, at most 6 dumps`（`:19`，约 153.6 s 启动时帧计数已停在 3611，155.6 s 触发簇来自它）。周期模式的预算在日志结束前用完：最后一次 `periodic dump 15 of 15` 在 s020.log:18297，并集口径最后一个 dump 在 309.4 s，`still no frames` 持续到 419.8 s，dump 缺口约 110 s；冻结段（100.2 s 起）的前约 209 s 有周期采样，缺的只是尾段。
+## 2. 三轮四时刻表与 15 s 周期序列
 
-| 项 | 旧驱动冻结轮（31f2d6b7） | round C（9d66dd36 + 新内核） |
-|---|---|---|
-| 内容冻结对提交停止 | 内容先冻（131 s），提交再持续 142 s（273 s） | 同时（内容 ∈ (100.1,103.1]，提交 100.2 s） |
-| 提交停止对 home 键（约 100.25 s） | 停止在 273 s，距按键约 173 s | 停止在 100.2 s，与按键时刻一致 |
-| 15 s 周期 3 s 空档位置 | 约 180 s 起（`rc.jobs.freeze:16` 注释） | 31.4..79.4 s，按键之前 |
+四时刻全部是轮内相对秒。home 按下是内核 `tl: p 4` 行的实测值（±0.1 s）；settling 是 20 s dump 网格给的区间（网格粒度决定只能给区间）；提交停止是末次 `tl: s` 行；内容冻结是截图 hash 变化点区间（主机域）。
 
-旧轮的主线程描述（`psynch_cvwait` 等私有对象、从 +106 s 起 runloop 不再泵）在 round C 成立：tid 221 的等待对象自 rel (86.5, 108.5] 区间内固定，之后 14 代 dump 不变（§3）。
+| 轮 | home 按下 | 主线程 settling 区间 | 提交永久停止 | 内容冻结 |
+|---|---|---|---|---|
+| 旧冻结轮（31f2d6b7） | 101.49 | (84.1, 105.9] | **126.3**（id 3425） | (127.6, 131.1] |
+| roundb（9d66dd36+旧内核） | 101.51 | 无（SB 15 代相继终止，各代 dump 首行都在 mach_msg2） | **266.7**（id 113；全日志 tl 行同刻停止，267..420 零输出） | 黑屏（截图覆盖 100.1 起全黑，起点早于覆盖） |
+| round C | 103.41 | (86.5, 108.5] | **100.2**（id 3611） | (100.1, 103.1] |
+| round D（C 零改动重跑） | 101.46 | (84.2, 105.9] | **96.4**（id 3620） | ≤96.4（由提交停止推定；截图覆盖 100.1..419.4 唯一 hash 1 个、零变化佐证） |
+
+**home 键因果假设被实测否证**。我此前报的「round C 提交停止与 home 键一致到 0.1 s 量级」用的是 jobs 推算时刻（≈100.25 s）；实测按键 C 轮 103.41、D 轮 101.46、旧冻结轮 101.49、roundb 101.51（四轮 rwtouch 前缀相同，C 轮整体晚启动约 2 s）。C 轮停止在按键前 3.2 s，D 轮前 5.1 s，旧冻结轮按键后 24.8 s 才停——停止时刻相对按键在两轮新内核里为负、旧轮为正 25 s，无耦合。round E 把否证扩到循环轮：home 按下 rel 101.0/释放 101.1（`tl: p 4 4 0 0 at 4612691307`），而崩溃从 rel 18.5 s 就开始、早于按键 82.5 s，「home 键只在冻结形态里无关」这个退路被排除。swipe 同样不是触发点：C 轮的退化（91.4 s 起空档）早于它自己的 swipe 按下（93.03 s，落在空档内）；D 轮 swipe 91.08、崩溃 ~91.7，两轮崩溃跟着 15 s 网格走。
+
+**15 s 周期空档序列是三轮冻结形态的共同主线**。四轮 swap 空档（>1.5 s，rel s，(起点,终点)）：
+
+| 轮 | 启动洞 | 周期洞（间隔 15.0、长约 3.0） | 终末段 | 停止 |
+|---|---|---|---|---|
+| round C | (2.9, 18.3) | (31.4,34.4)(46.4,49.4)(61.4,64.4)(76.4,79.4) | (91.4,93.6)(94.2,97.6)(97.7,100.1) | 100.2 |
+| round D | (1.6, 17.5) | (30.3,33.3)(45.3,48.3)(60.3,63.3)(75.3,78.3) | (91.7,94.6)，其后仅 94.6/96.4 两次交换 | 96.4 |
+| 旧冻结轮 | (1.4, 21.6) | (33.8,36.8)(48.8,51.9)(63.8,66.9)(78.8,81.9) | (92.0,93.8)(93.9,97.7)(97.7,126.3) | 126.3 |
+| roundb | (1.8, 18.2) | 无 15 s 序列；代际洞约 10.3 s 间隔至 125.6 | 周期倍增 20.3→40.3→80.3 | 266.7 |
+
+三轮冻结形态的周期洞起点 30.3/31.4/33.8，间隔恒 15.0 s、长度恒约 3.0 s，前 4 个周期恢复，第 5 个网格点（90.3/91.4/92.0）起进入终末段，提交在其后 0..30 s 内永久停止；停止时刻的差异（96.4/100.2/126.3）= 终末段里残余交换次数的差异。roundb 的代际洞周期倍增（10→20→40→80）是循环形态自己的签名，与 15 s 序列无关。
+
+**终末段的零星交换与 widget 扩展 code1001 终止逐点对齐**：旧冻结轮的三次残余交换 93.8/97.7/126.3 对终止 93.9/97.7/126.3；round D 的 94.6/96.4 对终止 94.8/96.0/96.4；round C 的末次交换 100.2 对终止 100.2。这条对齐的读法（lead 定案）：终末段那些交换是扩展宿主终止与连接失效的下游产物。`Code=4099` 已定案为 NSCocoaErrorDomain 的 `NSXPCConnectionInvalid`（Apple 维护的 swift-corelibs-foundation `NSError.swift` 原文 `CocoaError.Code(rawValue: 4099)`，多份独立镜像的 `FoundationErrors.h` 给出 4097 Interrupted／4099 Invalid／4101 ReplyInvalid；chronod 自己的域是 CHSErrorDomain，同批日志里的 1500 controlReloadFailed、1050 timelineReloadFailed、1001 Watchdog provision violated 才属于它），文本「The connection to service with pid 87 named (null) was invalidated」里的 pid 86／87／127 正是三个 sig5 扩展宿主的第一代，宿主终止在前、重载失败在后；且旧冻结轮那 126 行 `[controls.store]` 4099 全部落在同一秒（09:46:30），是一次性爆发，与 15 s 节律无关。sig5 爆发本身发生在提交永久停止之后，整段上下文都是下游现象。
+
+**15 s 序列的 widget/chronod 候选已被本项目自己的实测排除**：nochronod 轮（`kernel-12377-attr26-nochronod`，lsprobe 在 t=60 与 t=300 两次都报 `chronod=-`、`extensionkitse=-`，全部运行日志 `chronod[` 0 行、`chronoservices` 查找 0 行、无任何 widget/control 扩展的 died 行）序列仍在（493.1/508.2/523.2/538.2，间隔 15.0），且末帧 `tl: v 3608 … done 554972816`（mach 554.97 s）落在第 5 个网格点 553.2 之后约 1.8 s、此后再无一帧直到轮末——「4 个周期洞后第 5 网格点永久停止」的终末形态在没有 chronod、没有扩展宿主的轮次里完整出现；bbm29 轮（chronod 在跑、宿主从未被拉起）同样有序列（288.5/303.6/318.6/333.6/348.6）。「chronod 有无 × 扩展宿主有无」三个组合全部带序列，dasd、biomed、contextstored、replicatord 也各被含/不含它们的轮次组合排除，减法轮取消。序列的锚定量过：三轮首个周期洞起点减启动洞终点是 12.2/13.1/12.8 s，而各轮 mach 时间 mod 15 的余数互不相同（freeze/biomed 0.5、linkd 14.7、nochronod 13.1、crashlog 1.3、touchdiag 3.4），网格锚定在首帧附近的事件上，墙钟锚定被排除，改 `epoch=` 的实验预计零读数。受控变体并入以后的参数轮当第二读数：主动把首帧推迟一个已知量（换 `adreno8_speed` 档或改 GPU 初始化路径），若整个网格平移同量，锚定就从相关性升级为受控结论。剩余候选按指向强度排：**显示/提交路径最强**——两次更换 GPU 驱动的轮次都失去序列并改变形态，round E 只加 `fb_hz=120` 就同时失去序列与冻结形态是第三个数据点（限定：E 的翻转也可以由 memmove 故障在 rel 18.5 s 终止渲染、根本没跑到网格来解释，所以是数据点而不是判定；空洞的既有判读「无 commit 发起、观察线程零告警、主 run loop 在转」与「CA 在等可绘制表面、提交在发起之前被节拍挡住」兼容，这一条是推测）；其次是所有序列轮共有的用户态基座（SpringBoard/backboardd 本身、iconservices 族、PosterBoard、pkd/lsd/installd/containermanagerd，未被任何减法轮触碰）；再次是采集 harness（截图约 3 s 一张、framewatch、lsprobe、inject 探针，周期对不上 3 对 15，但没做过关闭对照）。判读纪律：序列判定只看 swap holes 三段输出（间隔是否仍 15.0、长度是否仍约 3.0、第 5 网格点是否仍停），4099 计数与 stuck 行都不作判据（4099 随服务摘除自然归零，stuck 在干净轮也出现——round E 的 registration 4 条 stuck 与 C/D 相同，desktop 注明是上游退化）。
+
+round C 时间线细目（round D 与之同构，差异值括注）：2.9 s 首次交换（D 1.6）；启动洞后进入渲染段，3611 帧零断裂（D 3620）；still 计数 boot 段 N=6..8 于 9.6..11.6（D N=6 于 7.9）；swipe 手指事件 rel 93.03..93.30（D 91.08..91.35）；提交停止后 still 第二段从 N=6 于 106.5 连续无复位到 N=318 于 419.8（D N=320 于 418.2；旧冻结轮 N=290 于 418.2）；155.6 s 一次性触发簇（D 153.7）来自 `rc.jobs.freeze:19` 的第三实例。三个 framewatch 实例的启动文本在日志里各出现一次，读采样前先按这三行认实例：`watching kern.redwood.frames from 0, still after 5 s, at most 0 dumps`（`:11` 停滞模式，still 两段计数都来自它，s001.log:2803）、`periodic dumps every 20 s, 15 of them, 2 names`（`:12` 周期模式，s001.log:2887）、`watching kern.redwood.frames from 3611, still after 2 s, at most 6 dumps`（`:19`，s008.log:18970，D 轮是 `from 3620`；启动时帧计数已停）。周期模式预算在日志结束前用完：最后一次 `periodic dump 15 of 15` 在 C 轮 s020.log:18297；引用缺口时分清两个口径——display 报的「其后 159 行、其中 89 条 still」是行数，我报的「最后 dump 309.4 s、still 持续到 419.8 s」折算缺口约 110 s 是秒数。冻结段前约 209 s 有周期采样，缺的是尾段。第三实例的 `no process named 2`／`6`／自身路径三行说明它把阈值与 dump 数当进程名解析（framewatch.m:200-232 的参数处理，display 在查），真实名字部分照常工作。
 
 ## 3. dump 与主线程（第 2 项）
 
-dump 来源两个实例：`rc.jobs.freeze:12` 的 `--every 20 --count 15`（周期 20 s、15 代）与 `:19` 的事件触发（1 代）。实测每进程 16 代：rel 23.1、43.7、63.2、86.5、108.5、128.7、148.8、155.6（事件）、168.8、188.9、209.0、229.1、249.1、269.2、289.3、309.4 s，周期约 20.1 s，与 `--every 20 --count 15` 吻合。309.4 s 之后无 dump（周期名额用完，事件实例的余量没再触发），`still no frames` 行持续到 419.8 s。
+dump 来源：`:12` 的 `--every 20 --count 15` 加 `:19` 的事件触发，C/D 每进程 16 代（rel 21.3/23.1..306.7/309.4，周期约 20.1 s）；旧冻结轮的 jobs 只有两个实例，15 代（rel 21.0..306.7），无事件触发。roundb 的 dump 目标是逐代 pid（91..267），pid 30 终止得早、无 dump。
 
-字段语义按打印源码：`redwood_threads.c:60-63` 依次打 `thread->state`、`thread->wait_event`、`thread->sched_pri`、保存的 upcb 用户 pc。本内核树 `osfmk/kern` 里检索不到 `TS_UNINT` 等 state 位定义，数值到语义的映射未建立，state 按原值报（tid 221 经历过 4→1）。
+**主线程认定是源码级判定**：`osfmk/kern/thread.c:1510` 的 `queue_enter(&parent_task->threads, new_thread, thread_t, task_threads)` 尾插，redwood dump 用 `queue_iterate` 顺序遍历，打印顺序 = 创建顺序，每代 dump 首行 = 最老线程 = 主线程。佐证：221 是 pid 30 出现过的全部 tid 的最小值，且旧冻结轮/C/D 三轮每代首行 tid 都是 221（bbd 首行 C 244、D 242、旧轮 246）。
 
-pc 归属用桩解码：pc − slide（0x105a4000）− libsystem_kernel 加载址（0x232f09000）得镜像内偏移；该偏移换算文件偏移用 subcache `.46` 自己的 mapping 表（mappingOffset 0x228、唯一一项 address 0x22c8a8000、size 0x6b98000、fileOffset 0），得文件偏移 0x6661000，与[归属复核 §2](2026-10-28-roundb-memmove-attribution.md)一致。从 pc 往前 4 条指令内找 `movz/movn x16`：movz 是 BSD 调用号（对照 `bsd/kern/syscalls.master`），movn 是 mach trap 号 −(imm+1)（对照 `osfmk/mach/syscall_sw.h`）。本轮 dump 出现的五个 pc：
+字段语义按打印源码：`redwood_threads.c:60-63` 依次打 `thread->state`、`thread->wait_event`、`thread->sched_pri`、保存的 upcb 用户 pc。本内核树检索不到 `TS_*` 位定义，state 数值按原样报（出现过 1、4、65）。
 
-| pc | 镜像内偏移 | pc−8 处的装载指令 | 号 | 名字 |
-|---|---|---|---|---|
-| 0x2434b2ba4 | +0x5ba4 | movz x16,#305 | 305 | `psynch_cvwait` |
-| 0x2434b35e8 | +0x65e8 | movz x16,#305 | 305 | `psynch_cvwait` |
-| 0x2434ada54 | +0xa54 | movz x16,#375 | 375 | `kevent_id` |
-| 0x2434ada80 | +0xa80 | movz x16,#368 | 368 | `workq_kernreturn` |
-| 0x2434adcd4 | +0xcd4 | movn x16,#46 | −47 | `mach_msg2_trap` |
+桩解码方法单独成节，受跟踪实现是 [tools/k90auto/stubsym.py](../../tools/k90auto/stubsym.py)（提交 `e566027`，接口：`--slide` 加 `--pc`/stdin，输出偏移/调用号/名字，纯参数与 stdout）。方法：dump 保存的 pc 指向桩里 `svc #0x80` 后第一条指令；桩的固定形状是 `movz x16, #imm`（BSD 调用）或 `movn x16, #imm`（mach trap，号 = −(imm+1)）随后 svc，从 pc 往回扫最多 4 条取最近的 x16 装载指令；正数号查 `bsd/kern/syscalls.master`（同号码多行取第一条，305 先 `psynch_cvwait` 后 `nosys`），负数查 `osfmk/mach/syscall_sw.h` 的 `kernel_trap(name, num, argc)` 行。pc 到文件偏移：u = pc − slide，off = u − LOAD + FOFF；LOAD 0x232f09000、FOFF 0x6661000 由 `.46` 子缓存自己的 mapping 表定位（mappingOffset 0x228、唯一条目 address 0x22c8a8000 size 0x6b98000 fileOffset 0），与[归属复核 §2](2026-10-28-roundb-memmove-attribution.md)一致。形态自洽：mov 在 pc−8、svc（`d4001001`）在 pc−4，与 roundb tid 306 的 pc 指 `ret` 同形状。
 
-形态自洽：mov 在 pc−8、svc（`d4001001`）在 pc−4、保存的 pc 指向 svc 之后第一条，与 roundb tid 306 的 pc 指 `ret` 是同一形状。同一 syscall 有两个桩（+0x5ba4 与 +0x65e8 都是 `psynch_cvwait`）。
+三轮 dump 出现过的桩（stubsym.py 输出）：
 
-SpringBoard（pid 30）主线程候选 tid 221：每代 dump 的第一行、pri 47、rel 108.5 s 起三元组恒定。dump 行没有「主线程」标志，认定依据是这三条加与交接文档形状一致，属推断。序列：
+| 镜像内偏移 | 号 | 名字 | 出现轮 |
+|---|---|---|---|
+| +0x5ba4 | 478 | `bsdthread_ctl` | C、D |
+| +0x65e8 | 305 | `psynch_cvwait` | 三轮（settling 桩） |
+| +0xa54 | 375 | `kevent_id` | C |
+| +0xa80 | 368 | `workq_kernreturn` | 三轮（工作线程） |
+| +0xcd4 | −47 | `mach_msg2_trap` | 三轮（bbd 主线程恒常） |
+| +0x6808 | 334 | `__semwait_signal` | C、D（静态对象 0xfffffff00700628c 上） |
+| +0x4120 | 未解码 | state 65 线程恒常 | 三轮 |
 
-| rel s | 线程数 | state | wait | pc |
-|---|---|---|---|---|
-| 63.2 | 25 | 4 | 0 | +0x5ba4（psynch_cvwait） |
-| 86.5 | 23 | 4 | 0 | +0xa54（kevent_id） |
-| 108.5 | 24 | 1 | 0xfffffff91baf2e00 | +0x65e8（psynch_cvwait） |
-| 128.7..309.4（13 代） | 22→18 | 1 | 0xfffffff91baf2e00 | +0x65e8（psynch_cvwait） |
+更正：我早前口算「+0x5ba4 = 305 psynch_cvwait」作废，工具核对是 bsdthread_ctl(478)；settling 的 +0x65e8 = psynch_cvwait(305) 不变。旧冻结轮首代 tid 221 的 pc 0x200c3d0ac 不在 libsystem_kernel 区（u=0x1e2e5d0ac），未归属，原样报。
 
-等待对象 0xfffffff91baf2e00 自 108.5 s 起 14 代约 200 s 不变；固定时刻夹逼在 (86.5, 108.5]，与提交停止 100.2 s 一致。交接文档「主线程在 `psynch_cvwait` 上等一个私有对象」在本轮成立，等待对象是同一个且不再变化。dump 里其余线程的 wait 对象集中在 0xfffffff91baf0d00..0xfffffff91baf3a00 同页区间，pc 多在 +0x65e8 与 +0xa80。
+SB 主线程 tid 221 三轮序列（每代首行）：
 
-backboardd（pid 38）主线程候选 tid 244（每代第一行，pri 31）：state 1、wait 0、pc +0xcd4（mach_msg2_trap）全 16 代恒定，渲染段内已如此。这个形状区分不了渲染与冻结两种状态，只说明每次采样时 bbd 主线程都在 mach 消息等待里。
+| rel s | 旧冻结轮 | round C | round D |
+|---|---|---|---|
+| 21.0..23.1 | state 1 wait 0xfffffff5b4e83620 pc 0x200c3d0ac（未归属） | state 1 wait 0 pc +0xcd4（mach_msg2） | 同 C |
+| 41.6..86.5 | +41.2..84.1 mach_msg2（+0xcd4，wait 0） | 63.2 state 4 wait 0 +0x5ba4（bsdthread_ctl）；86.5 state 4 wait 0 +0xa54（kevent_id） | 60.3 state 4 wait 0 +0x5ba4；其余代 mach_msg2 |
+| settling 起（105.9/108.5） | state 1 wait 0xfffffff6e7eef800 pc +0x65e8 | state 1 wait 0xfffffff91baf2e00 pc +0x65e8 | state 1 wait 0xfffffff75ddc1b00 pc +0x65e8 |
+| settling 后 | 至 306.7 恒定（8 代） | 至 309.4 恒定（14 代） | 至 306.7 恒定（12 代） |
 
-exec 行本轮出现在 s002..s020 与 hung-held.log，两行实测值 `tl: td 30 exec 0x100fb4000 SpringBoard`、`tl: td 38 exec 0x100c78000 backboardd`。本轮 dump 里所有 pc 都在共享缓存内，没有落进主二进制区间的，exec 基址没有参与命名；行本身的有效性（非零基址、名字正确）已验证，pc 减 exec 基址的用法留给有主二进制 pc 的轮次。
+三轮 settling 同构：同 tid 221、同 state 1、同 pri 47、同 +0x65e8 psynch_cvwait 桩、等待对象各自恒定到轮末。等待对象三轮地址不同（0xfffffff6e7eef800/0xfffffff91baf2e00/0xfffffff75ddc1b00），跨 boot 的内核堆地址不构成对象标识，地址差异不否证同源。专属性核对：C 轮对象在全部日志只出现在 pid 30 tid 221 一行；旧轮对象零次出现在 pid 38；D 轮对象有两行唯一文本（td 30 tid 221 与 td 38 tid 305），但分属不同代——tid 305 在 84.5 代持有它、tid 221 自 105.9 代起持有它，中间隔一代以上，这是内核堆地址在同轮内先后复用，同一地址在不同时刻同样不构成同一对象。三轮的真实形状一致：settling 对象进程私有。
 
-与旧驱动 `31f2d6b7` 冻结轮（`kernel-12377-attr26-freeze`）的主线程对照。旧轮数据两个来源：交接文档 §1 的 display 判读（8 个 dump 时刻 +20.6/41.2/60.1/83.3/106.2/126.4/136.8/155.9 s，墙钟锚），以及本轮分析对该目录 s*.log 的直接检索（tid 221 行原样）。
+bbd 侧三轮同构：主线程（C tid 244、D tid 242、旧轮 tid 246）全代恒常 state 1 wait 0 pc +0xcd4（mach_msg2_trap），渲染段内已如此，区分不了渲染与冻结两种状态。另有 2 个工作线程恒在 +0x65e8 psynch_cvwait、等待对象与 SB settling 对象同页区间（C：tid 299/302 对 0xfffffff91baf2100/2200；D：tid 302/305 对 c0d00/c0600，其中 tid 305 自提交停止后同代起恒定；旧轮：tid 305/307 对 0xfffffff6e7eed700/d300）；同页是内核堆相邻时间分配的结果，跨进程各持各的对象。还有一个全轮恒定在静态对象 0xfffffff00700628c（__semwait_signal +0x6808）的线程，该地址三轮相同，属内核静态区。
 
-| 项 | 旧冻结轮（31f2d6b7） | round C（9d66dd36 + 新内核） |
-|---|---|---|
-| 主线程 tid | 221 | 221（每代首行 + pri 47 推断，与旧轮认定一致，互为印证） |
-| settling 前的形状 | +41.2..83.3 s 在 `mach_msg2_trap`（pc 尾 `+0xcd4`） | 63.2 s `psynch_cvwait`（state 4 wait 0）、86.5 s `kevent_id`（state 4 wait 0） |
-| settling 时刻 | +106.2 s（dump 采样点） | (86.5, 108.5] 区间 |
-| settling 后 state／pri | 1／47 | 1／47 |
-| settling 后 pc | libsystem_kernel `+0x65e8`（`psynch_cvwait` 桩，slide 0x1dde0000） | 同一桩 `+0x65e8`（slide 0x105a4000） |
-| 等待对象 | `0xfffffff6e7eef800`，只在 pid 30 出现 | `0xfffffff91baf2e00`，检索 s020 全部 dump 只出现在 pid 30 tid 221 一行 |
-| settling 对内容冻结／提交停止 | settling 先于内容冻结（131 s）25 s，先于提交停止（273 s）167 s | settling 与提交停止（100.2 s）同段，内容冻结 (100.1,103.1] |
+**SB/bbd 主线程对照是「本轮不是正常空闲」的主要依据**：一个空闲的 runloop 应当停在 mach_msg2_trap 一类的事件等待上，bbd 主线程正是这个形状且三轮不变；SB 主线程停在 psynch_cvwait 等条件成立，且与提交停止同段发生。对照 roundb：各代 SB 主线程（如 pid 91 tid 671）dump 时也在 mach_msg2，循环形态从未出现 psynch settling——settling 是冻结形态家族的成员特征。
 
-两轮主线程在「同一 tid、同一 syscall 与同一桩偏移、同 state 值、等待对象同样只属于 pid 30」四项上一致；对象地址不同，但跨 boot 的内核堆地址不构成对象标识，地址差异不能用来否证同源。就主线程证据而言，旧驱动冻结轮与 round C 的冻结是同一个静止状态，子形态差异集中在 settling 与提交停止的先后（§2 表）。[协议 §「符号化 pc 走 stub 的系统调用号」](../plan/k90auto-run-protocol.md)要求把桩解码落成工具，本页的解码器已在 `freeze_form.py` 里（输入 slide 与 pc，输出镜像内偏移、系统调用号与名字）；本轮五个 pc 的解码结果与协议记录的旧轮六个主导 pc 同族，都是普通阻塞调用，没有一条落在 CoreAnimation 或 backboardd 的提交路径上。
+exec 行：C/D 轮实测（C `tl: td 30 exec 0x100fb4000 SpringBoard`、`tl: td 38 exec 0x100c78000 backboardd`；D 0x1010e4000/0x100f14000），旧冻结轮与 roundb 的内核无 exec 行。三轮 dump 的所有 pc 都在共享缓存内，exec 基址没有参与命名；pc 减 exec 基址的用法留给有主二进制 pc 的轮次。slide 实测：C 0x105a4000、D 0x41f4000、旧轮 0x1dde0000、roundb 0xbc54000（十代相同）。
 
 ## 4. 线程数曲线（第 3 项，含更正）
 
-**更正**：我在收尾报告里写过「SpringBoard 线程数 18→57 随时间增长」，那是把唯一行按文本排序的输出误读成时间序。按 dump 时序，实测是 57→18 收敛：
+**更正**：我在 round C 收尾报告里写过「SpringBoard 线程数 18→57 随时间增长」，那是把唯一行按文本排序的输出误读成时间序。按 dump 时序重建后，实测是收敛：
 
-| rel s | 23.1 | 43.7 | 63.2 | 86.5 | 108.5 | 128.7 | 148.8 | 155.6 | 168.8 | 188.9 | 209.0..309.4 |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| SB 线程数 | 57 | 28 | 25 | 23 | 24 | 22 | 20 | 18 | 21 | 18 | 18（恒定） |
+| rel s | 首代 | 二代 | 三代 | 四代 | 五代 | 末段 |
+|---|---|---|---|---|---|---|
+| round C | 57@23.1 | 28@43.7 | 25@63.2 | 23@86.5 | 24@108.5 | 22→20→18@155.6→21@168.8→18@188.9 起恒定 |
+| round D | 47@21.3 | 27@41.7 | 25@60.3 | 23@84.2 | 25@105.9 | 22→20→19@153.7→20@165.2→18@185.3 起恒定（226.4 一次回弹 20） |
+| 旧冻结轮 | 41@21.0 | 31@41.6 | 26@62.2 | 23@84.1 | 24@105.9 | 23→21→19@166.2 起恒定 |
 
-backboardd 同期 13→12..14 波动，309.4 s 收在 13，全程平坦。
+bbd 三轮同期 12..14 波动，全程平坦。收敛主体在提交停止之前完成（首代到四代），停止后继续降到常驻值并恒定，期间各有一次小幅回弹。「增长在停止之前、可能是成因」与「停止后请求堆积、增长是后果」两个方向都不成立：三轮曲线都没有持续增长段，冻结点两侧都是下降。boot 期 41..57 收敛到常驻 18..19 与 workqueue 线程回收形状一致（dump 里有 +0xa80 workq_kernreturn 桩），不再归因。
 
-先后关系：收敛主体在提交停止（100.2 s）之前（57→23 于 86.5 s），停止之后继续降到 18 并自 188.9 s 恒定，期间只有 168.8 s 一次 18→21 回弹。所以「增长在停止之前、可能是成因」与「停止后请求堆积、增长是后果」两个方向都不成立：曲线没有持续增长段，冻结点两侧都是下降。boot 期 57 收敛到常驻 18 与 workqueue 线程回收形状一致（dump 里有 +0xa80 `workq_kernreturn` 桩），不再归因。
+## 5. 拷贝路径相关性（第 4 项，n=2 对 n=1）
 
-## 5. 拷贝路径相关性假设被削弱到什么程度（第 4 项）
+round D 是 round C 的零改动重跑，两轮构成拷贝路径驱动加新内核的 n=2 样本；roundb 是 n=1 对照。apfs（驱动 `9d66dd36`）、jobs、带插桩 AIR（`d7b9ced5`，三轮都有 `perf draw: timing on` 行）在 roundb/C/D 相同，C-D 之间内核也相同：
 
-对照数据。两轮同一份 apfs（驱动 `9d66dd36`）、同一份 jobs、同一个带插桩的 AIR（`d7b9ced5`，两轮都有 `perf draw: timing on` 行），唯一变量是内核（`9a7a118a` 对 `cf1502f5`）：
+| 项 | roundb | round C | round D |
+|---|---|---|---|
+| `rwa buffer: copied` raw／唯一 ptr+size 对 | 1775／— | 230／21 | 262／22 |
+| copied 后 4 行内出现 bad access | 209（11.8%） | 0 | 0 |
+| bad access raw／唯一行／物理事件 | 212／11／15 | 0／0／0 | 0／0／0 |
+| 驱动侧 nil（`left nil, over the`） | 8 | 16（rel 18.5/54.1） | 15（rel 17.8/52.8） |
+| copied 时间范围（rel） | 全轮散布 | 18.5..100.1 s | 17.1..96.0 s |
+| 旧冻结轮参照 | — | — | copied 0 条（旧驱动无拷贝路径，冻结形态照样出现） |
 
-| 项 | roundb | round C |
-|---|---|---|
-| `rwa buffer: copied` raw（s*.log） | 1775 | 230 |
-| copied 后 4 行内出现 bad access | 209（11.8%） | 0 |
-| bad access raw／唯一行／物理事件 | 212／11／15 | 0／0／0 |
-| 驱动侧 nil（`left nil, over the`） | 8 | 16（1081344×3、1163264×13，rel 18.5 与 54.1 s） |
-| CA 侧 `nil buffer from memory` | 8 | 16 |
-| copied 时间范围（rel） | 全轮散布 | 18.5..100.1 s（全在渲染段） |
+三轮插桩状态相同时「随后 4 行内」窗口口径可比；判读口径 §12 的不可比警告针对插桩开关不同的轮次对，本对照不落入（该条已由 lead 转 perf 修订 §12）。能排除的：「拷贝必然或在短时间内必然伴随故障」被 C+D 合计 492 raw 拷贝零故障否证；「故障率是 copied 次数的稳定函数」被否证（同驱动同插桩，11.8% 对 0% 对 0%）。旧冻结轮 copied 为零而形态同为冻结，说明冻结形态不需要拷贝路径参与。不能排除的：「拷贝路径是 roundb 故障链的必要参与项」这个弱命题在 roundb/C/D 都满足 copied 存在，对照分不开拷贝路径与内核版本各自的贡献；roundb 内核与拷贝缓冲的交互机制属 task-18 的源码 delta 排查。轮间方差已有首轮实测：copied 230 对 262、帧数 3611 对 3620、停止 100.2 对 96.4、线程首代 57 对 47——同 payload 两轮的量级一致、个位数到十位数波动。
 
-两轮插桩状态相同，「随后 4 行内」窗口的行密度口径跨这两轮可比；判读口径 §12 的不可比警告针对插桩开关不同的轮次对，本对照不落入。
+## 6. 49152 尺寸与拷贝尺寸分布（第 5 项）
 
-能排除的：「拷贝必然或在短时间内必然伴随故障」被 230 次拷贝零故障直接否证；「故障发生率是 copied 次数的稳定函数」也被否证（同驱动同插桩，11.8% 对 0%，唯一变量是内核）。
+49152（48 KiB）在两轮新内核都出现：round C raw 17、唯一行 1（ptr `0x102c24000`、buffer `0x1027e3000`），首现 rel 94.2 s（s005.log:21047）；round D raw 34、首现 rel 91.7 s（s005.log:20679-20680 同刻两条）。两轮首现都在 swipe 时刻附近（C swipe 93.03、D 91.08），进程都是 backboardd 38，上下文都是 16384 拷贝的连发段。唯一行重复 raw 次是日志环跨快照重复。未判项：49152 首现跟的是 swipe 还是终末段起点，两轮先后关系不一致——D 是 swipe 91.08 → 终末 91.7 → 首现 91.7，C 是终末 91.4 → swipe 93.03 → 首现 94.2；两个候选时刻相差不到 2 s，现有数据分不开。能分开它的读数是一轮把 swipe 与 15 s 网格错开 20 s 以上：round F 探针序列里 206 s 那次底部上划重放正好满足。
 
-不能排除的：「拷贝路径是故障链的必要参与项」这个弱命题两轮都满足 copied 存在，本对照分不开拷贝路径的贡献与内核版本的贡献；roundb 内核（`9a7a118a`）与拷贝缓冲的交互以何种机制产生越界 src，属于 task-18 的源码 delta 排查，本页不下结论。
+| 尺寸 | roundb 唯一行 | C 唯一行 | C raw | D 唯一行对 | D raw | 进程 |
+|---|---|---|---|---|---|---|
+| 15360 | 5 | 1 | 3 | 3 | 3 | SpringBoard 30 |
+| 16384 | 4 | 16 | 214 | — | 216 | backboardd 38 |
+| 32768 | 94 | 1 | 3 | — | 3 | backboardd 38 |
+| 49152 | 0 | 1 | 17 | — | 34 | backboardd 38 |
+| 62464 | 5 | 1 | 3 | — | 3 | SpringBoard 30 |
+| 65536 | 1 | 1 | 3 | — | 3 | backboardd 38 |
 
-样本边界：轮次对 n=1 对 n=1；round C 的 230 次拷贝来自同一进程同一 UI 状态，轮内不是独立样本；轮间方差未测（同一 payload 重跑没做过）。
-
-## 6. 49152 尺寸与两轮拷贝尺寸分布（第 5 项）
-
-49152（48 KiB）的全部出现：raw 17 条、唯一行 1 条（ptr `0x102c24000`、buffer `0x1027e3000`），进程全部是 backboardd 38，首现 rel 94.2 s（s005.log:21047），上下文是 16384 拷贝的连发段。同一唯一行重复 17 次是日志环跨快照重复。
-
-两轮 `copied` 唯一行尺寸分布（roundb 引自 task-19 任务文本，口径同判读标准 §3.6）：
-
-| 尺寸 | roundb 唯一行 | round C 唯一行 | round C raw（含 hung-held） | round C 进程 |
-|---|---|---|---|---|
-| 15360 | 5 | 1 | 3 | SpringBoard 30 |
-| 16384 | 4 | 16 | 214 | backboardd 38 |
-| 32768 | 94 | 1 | 3 | backboardd 38 |
-| 49152 | 0 | 1 | 17 | backboardd 38 |
-| 62464 | 5 | 1 | 3 | SpringBoard 30 |
-| 65536 | 1 | 1 | 3 | backboardd 38 |
-
-分布差异与形态差异并列记录，不互推：两轮桌面状态不同（roundb 黑屏循环、SpringBoard 未到过主屏；round C 渲染主屏约 100 s 后冻结），CA 的请求长度跟随 UI 内容，分布差异预期内。32768→94 对 1 与 16384→4 对 16 是两轮主导尺寸的互换；49152 只在 round C 出现，roundb 的故障地址与 32768 长度绑定（归属复核 §6），round C 无故障，两条线各自成立。
+（D 轮唯一行合计 22 对，逐尺寸拆分未单列，raw 列已含 hung-held。）分布差异与形态差异并列记录，不互推：roundb 黑屏循环、SpringBoard 未到过主屏，C/D 渲染主屏约 100 s 后冻结，CA 的请求长度跟随 UI 内容。32768→94 对 1..3 与 16384→4 对 214+ 是循环形态对冻结形态的主导尺寸互换；49152 只在冻结形态两轮出现，roundb 的故障地址与 32768 长度绑定（归属复核 §6）。
 
 ## 7. died 分类对照（第 6 项）
 
-口径：raw = 跨快照求和，唯一行 = 行文本去重，进程数 = pid 去重。roundb 唯一行合计 178、raw 2883；round C 唯一行合计 28、raw 363。
+口径：raw = 跨快照求和，唯一行 = 行文本去重，进程数 = pid 去重。roundb 唯一行合计 178、raw 2883；round C 28／363；round D 27／—（14 类与 C 相同）。
 
-| 类 | roundb raw／唯一行／进程数 | round C raw／唯一行／进程数 |
-|---|---|---|
-| backboardd sig11 code11 | 225／15／15 | 0 |
-| SpringBoard sig9 code0 | 217／14／14 | 0 |
-| SpringBoard sig6 code6 | 18／1／1 | 0 |
-| widget/extension sig9 code0 | 1788／106／106 | 0 |
-| widget/extension sig9 code1001 | 224／15／15 | 204／17／17 |
-| widget/extension sig5 code5 | 0 | 117／9／9 |
-| ACCHWComponentAu sig9 code9 | 229／15／15 | 0 |
-| AudioConverterSe sig9 code9 | 93／6／6 | 0 |
-| MTLCompilerServi sig9 code9 | 47／4／4 | 0 |
-| launchd.ios／MSUEarlyBootTask sig1 code-1 | 42／2／2 | 42／2／2 |
+| 类 | roundb raw／唯一行／进程 | round C | round D |
+|---|---|---|---|
+| backboardd sig11 code11 | 225／15／15 | 0 | 0 |
+| SpringBoard sig9 code0 | 217／14／14 | 0 | 0 |
+| SpringBoard sig6 code6 | 18／1／1 | 0 | 0 |
+| widget/extension sig9 code0 | 1788／106／106 | 0 | 0 |
+| widget/extension sig9 code1001 | 224／15／15 | 204／17／17（rel 27.9..167.8） | —／16／—（rel 27.5..146.1） |
+| widget/extension sig5 code5 | 0 | 117／9／9（rel 166.8..167.8 同秒集中） | 135／9／9（rel 130.0 同秒集中） |
+| ACCHW/AudioConverter/MTLCompiler sig9 code9 | 369／25／25 | 0 | 0 |
+| launchd.ios／MSUEarlyBootTask sig1 code-1 | 42／2／2 | 42／2／2（rel 0.1） | —／2／—（boot 段） |
 
-round C 的 sig9 code1001 明细（唯一行 17、进程数 17）：AccessibilityCon×2、AdaptiveMusicCon×2、FitnessWidget×2、MusicWidgets×1、NewsToday2×1、PassbookWidgetsE×2、ScreenTimeWidget×3、StocksWidget×3、WorldClockWidget×1，rel 27.9..167.8 s 散布。sig5 code5 明细（唯一行 9）：BarcodeScannerWi、CalculatorWidget、LauncherControlE 各 3 代 pid，rel 166.8..167.8 s 集中，在冻结之后约 66 s。sig1 code-1 两行都在 rel 0.1 s（boot 段）。
-
-「widget 死亡是否属于正常运行」的判据与判定：
-
-- sig9 code1001：进程名全部是 widget/extension 家族；散布全轮；同名进程多代 pid（拉起→回收循环）；roundb 同样存在（15 进程）；`package.py` 的 ON_DEMAND_JOBS 注释记录这类任务按「launchd 在空闲时回收」设计。判为正常回收。
-- sig1 code-1（launchd.ios、MSUEarlyBootTask，rel 0.1 s）：两轮完全一致，boot 交接段行为，判为正常。
-- sig5 code5（SIGTRAP，3 进程 9 行，rel 166.8 s 同秒集中）：回收形状应是 sig9 code1001，SIGTRAP 批量同秒死亡与之不符，roundb 无此类，且在冻结之后。原样报，成因不猜；round C 无崩溃报告（`crash_files=0`，通道未通），没有进一步材料。
-- roundb 独有的 sig9 code0 大批量（106 widget + 14 SB）与 sig9 code9 三类（ACCHW/AudioConverter/MTLCompiler）在 round C 全部消失，与 roundb 的重启循环形状一致：code0 类是循环期间的连带杀。此条属对照观察，机制归 task-18 之后的裁决。
+判定：sig9 code1001 为正常回收（widget 家族、散布全轮、同名多代 pid、roundb 同样存在、`package.py` ON_DEMAND 注释记录按设计回收）。sig1 code-1 是 boot 交接段行为，三轮一致。sig5 code5（SIGTRAP）两轮新内核再现：同样三进程（BarcodeScannerWi/CalculatorWidget/LauncherControlE）各 3 代、同秒集中，C 在 rel 166.8（停止后 66.6 s）、D 在 rel 130.0（停止后 33.6 s），时刻不锚定轮内固定位置；±5 行上下文两轮同构（chronod controls.store Code=4099、XPC Connection interrupted、`Unable to get short BSD proc info`、二代扩展 DYLD unnest、`MiniAppleKeyStore: ReportCrash selector not implemented`），查不出单行共同触发者，原样报；上下文的方向已由 4099 定案修正（§2）：4099 = NSXPCConnectionInvalid，报的是宿主已终止、连接失效，sig5 爆发发生在提交永久停止之后，整段上下文是下游现象。roundb 独有的 sig9 code0 大批量与 sig9 code9 三类在 C/D 全部消失，与循环形态一致。
 
 ## 8. run-queue.sh 调用更正与建议（归 task-10）
 
-本轮实际执行的调用是 `run-queue.sh docs/progress/evidence/k90auto/kernel-12377-attr26-roundc 420`。用法（`run-queue.sh` 38 行）：位置参数是 `RUN_DIR...` 目录列表，秒数走环境变量 `RUN_SECONDS`（默认 420）。`420` 被静默当成第二个轮次目录，脚本先完整跑完真实轮次（`QUEUE done … 14:10:03`），再对 `420/manifest.json` 报 `QUEUE stop: 420/manifest.json names no payload` 并 exit 1。
+round C 实际执行的调用是 `run-queue.sh docs/progress/evidence/k90auto/kernel-12377-attr26-roundc 420`。用法（38 行脚本）：位置参数是 `RUN_DIR...` 目录列表，秒数走环境变量 `RUN_SECONDS`（默认 420）。`420` 被静默当成第二个轮次目录，脚本先完整跑完真实轮次（`QUEUE done … 14:10:03`），再对 `420/manifest.json` 报 `QUEUE stop: 420/manifest.json names no payload` 并 exit 1。数据未受影响：本轮秒数走默认 420，`SAMPLED_SECONDS 420.4473890408408` 为证；`QUEUE done` 先于 `QUEUE stop`；exit 1 发生在设备已恢复 loader idle 之后。round D 的调用已按用法只传目录，`SAMPLED_SECONDS ≈ 420`、`QUEUE done … 15:33:20`、REBOOT_END mode loader、failed null。
 
-数据未受影响的依据：本轮秒数走默认 420，`SAMPLED_SECONDS 420.4473890408408` 为证；`QUEUE done` 先于 `QUEUE stop`；GUARD 行、reboot.json、21 份快照完整；exit 1 发生在设备已恢复 loader idle 之后，与设备状态无关。
+失误的形状比用法更值得记：多余的数字参数没有在入口被拒绝，而是被当成目录名进入队列，错误在消耗完一整轮设备时间（约 10.7 分钟）之后才出现。建议 task-10 给 `run-queue.sh` 加前置校验：循环开始前逐个检查参数是存在且含 `manifest.json` 的目录，任何一个不满足立即退出；纯数字参数直接拒绝并提示秒数用 `RUN_SECONDS`。本页不改脚本。
 
-失误的形状比用法更值得记：一个多余的数字参数没有在入口被拒绝，而是被当成目录名进入队列，错误在消耗完一整轮设备时间（约 10.7 分钟）之后才出现。建议 task-10 给 `run-queue.sh` 加前置校验：循环开始前逐个检查参数是存在且含 `manifest.json` 的目录，任何一个不满足立即退出，不消耗设备时间；纯数字参数可以直接拒绝并提示秒数用 `RUN_SECONDS`。本页不改脚本。
+## 9. 注入序列与静止段响应性
 
-## 9. 结论
+**CC 下拉识别为 0 的断点在注入内容与识别几何两处**。C/D 轮的注入序列（`rc.jobs.freeze:13`）只有一个底部上划（swipe 0.5 0.985 → 0.5 0.3，250 ms）加一次 home 键，没有顶部下拉；内核触摸行证实注入被忠实记录（`tl: p` 落点 x=32768/65535≈0.5、y 从 64552/65535≈0.985 走到 19660/65535≈0.30，34 finger 事件）。`gestures.py` 的 `kind()` 判 cc-pull 的条件是落点 y<0.05（顶部下拉语义、1800 ms 窗口），而基线轮历史 jobs（git `ccaa7d7` 的 rc.jobs.gestures）里 CC/通知栏类手势是底部上划家族（swipe 0.5 0.98 0.5 0.65 等，home 键 iOS 的 CC 语义）——就算注入基线式 CC，现识别口径也数不出来。「swipe-left 1x」标签是 x≈0.5000076>0.5 的落点分类，分类器不看运动方向。渲染侧无责：识别数为 0 时没有窗口进入帧统计。
 
-round C 是拷贝路径驱动 `9d66dd36` 第一次出现冻结形态，此前该形态只在旧驱动 `31f2d6b7` 的轮次出现过。冻结形态家族的四个要素本轮全部成立：双进程 `exited code` 0 条、帧号 1..3611 零断裂、交换空档加提交永久停止、主线程 `psynch_cvwait` 等待对象固定（tid 221，rel 108.5 s 起约 200 s 不变）。主线程证据四项与旧冻结轮一致（同 tid、同桩偏移、同 state 值、等待对象同属 pid 30 私有，§3 表），两轮的冻结就主线程而言是同一个静止状态；「冻结形态由驱动版本决定」的旧框架在驱动 `9d66dd36` 上不再成立，与 task-21 要分开的问题直接相关。
+**提交停止后实际注入过的输入**：C 轮 home 键一次（rel 103.41，停止后 3.2 s）、D 轮一次（rel 101.46，停止后 5.1 s），此后 rwtouch 序列结束（wait 50 后进程退出），静止段其余约 316 s 零注入。home 键在已处于主屏幕的桌面上不必然产生画面变化，不能作响应性测试；swipe 在单页桌面上同样不必然（gestures 报「no animation to measure」）。所以 C/D 都没有静止段响应性数据。
 
-子形态与旧轮不同的三处（§2 表）：内容冻结与提交停止同时（旧轮相差 142 s）；提交停止与 `button home` 时刻一致到 0.1 s 量级（旧轮距按键约 173 s）；15 s 周期 3 s 空档出现在按键之前的 31.4..79.4 s（旧轮约 180 s 起）。第二处是本轮数据里最紧的时刻对应，它把「home 键处理路径参与提交停止」列为下一轮可检验的假设，也保留「停止已在进行、按键恰好落在停止点」的可能，本轮数据分辨不了两者。
+**良性静止对病态冻结**：良性解释（按下 home 后无事可画、提交自然停）失去时间对应支撑——两轮停止都先于按键，静止段是 15 s 周期停顿序列的终末状态。反对良性的另有三条：D 轮 swipe 前 0.6 s 还在 48 fps 渲染（4589.2..4619.2 设备钟窗口 1440 帧），swipe 后 3 s 窗口只剩约 1 帧，回弹动画一帧未画；101 张截图全 home screen 说明 swipe 没打开 app switcher/CC，动画应当发生；settling 在 psynch_cvwait 等条件而 bbd 主线程在事件等待（§3 对照）。限定（lead 补）：D 轮那次 swipe（91.08 s）落在终末段起点（91.7 s）附近，它分辨不了「无响应」与「正在崩溃」——这正是 round F 要往静止段深处注入的理由。决定性测试是静止段注入必然产生画面变化的输入，即 round F（task-23，已批；round E 是 task-22 的 fb_hz=120 轮）。
 
-正面证据单列：101 张截图（100.1..419.0 s）全部判为 home screen、`bad_shots=0`，加上渲染段（0..100.2 s）3611 帧零断裂，这是重启循环出现以来第一轮拿到「桌面显示出来并保持」的完整读数。截图覆盖段从 100.1 s 起是 `shot_from=100` 的设计值，渲染段的画面内容由帧计数与 round-stats 的 tier 判定支撑，无逐张截图。
+**round F 设计（jobs 层，不改内核/驱动/AIR/探针；lead 已批，两处修订见段末）**：`:13` rwtouch 前缀不动保持与 C/D 可比，尾部 wait 50 换成静止段探针序列 `wait 45 button lock wait 15 button lock wait 15 button volup wait 15 swipe 0.5 0.02 0.5 0.5 400 wait 15 swipe 0.5 0.985 0.5 0.3 250 wait 15 tap 0.5 0.92 wait 20`（lock≈145/161 走已验证的按键路径、volup≈176 音量 HUD、顶部下拉≈191 会被 gestures.py 计入 cc-pull、底部上划≈206 重放与崩溃时刻重合的手势、tap≈221 dock 区，每个探针三种独立读数：still 计数复位、swap id 增长、3 s 网格截图 hash/层级变化）；`:19` 第三实例保持原样等 framewatch.m 参数核查。gestures.py 无需改（顶部下拉落点 y=0.02 触发 cc-pull 判定；零帧手势只在 coverage 行计数，响应从 swap/still/截图读）。打包依赖：jobs 在 root.apfs 内，需重打 root.apfs（package.py，display 的暂存区）与 payload（make-payload），内核/驱动/AIR/probe sha 不变，manifest 变 jobs_sha256 与 root/payload sha。lead 修订两处的最终落点：①`:12` 周期网格取 display 环量化后的 B 方案——`--every 20 --count 15` 改 `--count 30`（420 s 轮内 21 次触发，补上 round C 缺的尾段 89 s），加 11 个 `--count 1` 单发实例（`--every 80..130` 步长 5，周期分支 arg_base 5、无垃圾进程名，~451 行）插在 `:12` 与 rwtouch 之间，B 总增量 +48.6 KB/+693 行，判据是快照节奏：挤出只在累计产出超过 1,311,925 字节后开始，130 s 到挤出起点（约 338 s）之间按 20 s 一拉约有 10 份快照，并集覆盖 80..130 s；收尾要报实际快照份数与每份拉取时刻（s*.log mtime 与 commands.jsonl 双源）确认前提成立。②gestures.py 的零帧 down 加行改进归 task-10，不阻塞 round F。落地的 jobs 文件是 `tools/k90auto/jobs/rc.jobs.freezef`（40 行，sha256 `e6ece11169f23c2d…`，提交 a51a085，同笔含 rc.jobs.freeze:14-18 注释的设备钟更正），镜像内 /etc/rc.jobs 43 行 = 前置 3 行（PROBE 的 lsprobe 60/300 与 var_store show）+ 40 行源逐字，jobs_sha256 `9a7be5c34f9c824b…`。第一次打包中止过：镜像缺 /bin/framewatch（staging root/bin 在 task-7 重排时丢失；roundb 的来路是 `PAYLOAD_PROGRAMS` 通道，pack 记录 `changes["/bin/framewatch"]={sha256:[null,8c8869b8…]}` 为证），且我漏设 `JOBS_DROP` 使 appprotectiond 被多打进镜像；坏 payload 短暂运行后被条目数核对阻止（在体实证：`/redwood/bin/framewatch: No such file or directory` ×13，lsprobe/rwtouch/tl 全正常）。恢复轮配方从 roundb pack 记录逐字段反推（`PROBE=1 VARSTORE_SHOW=1 JOBS_DROP=com.apple.appprotectiond.plist GPU_SPEED=3 JOBS_SOURCE=… PAYLOAD_PROGRAMS=hackios-xnu-kernel/userland/obj/framewatch`，obj 现存文件与 roundb 实跑字节 sha 逐位一致），条目 diff 闸（`tools/k90auto/image-diff.py`，提交 e7955f5，常设）实测新旧镜像 136=136 条、全字段差异恰好 /etc/rc.jobs 一处，root.apfs `dfbc7e48…` 5,226,496 B 与 e36caefb 尺寸全同，payload `266313734450b5e2…` 25,437,256 B。round F 的结果见 §12。
 
-拷贝路径相关性：强命题（拷贝必然伴随故障、故障率是 copied 次数的稳定函数）被 230 次拷贝零故障否证；弱命题（拷贝路径是故障链的必要参与项）本轮无分辨力，等 task-18 的内核源码 delta 结论。
+## 10. round E：fb_hz=120 与形态翻转
+
+round E（task-22）与 C/D 的唯一差异是启动参数 EXTRA 多一项 `fb_hz=120`（payload `a1604d306bb456de…`，25,437,256 B；kernel/ramdisk/system/jobs/driver/AIR 六项身份与 C/D 逐字相同，日志 cmdline 行原样含 `fb_hz=120` 与 `adreno8_speed=3`），B=4511.7（lsprobe 锚点差 239.9）。结果形态翻转到循环家族（roundb 型）：bad access raw 243／唯一 14 行（C/D 全零）；bbd sig11 code11 共 15 个 pid（roundb 同为 15 代）；exited raw 472／唯一类 2（含 `backboardd … exited code -1 reason 2`）；帧 id 1..91 唯一 78 带 8 个断裂（round-stats 标 restart each）；swaps 78、末次 rel 185.0；截图 96 张 tier 全 black（C/D 是 home ×101），hash 唯一 3、变化点 126.8/188.4（黑屏内的字节级差异），bad_shots 0；copied raw 1479（唯一 src 92／dst 14）、32768 主导 ×1335＝roundb 签名；nils 0；空档序列为代际倍增 10.6/10.7/9.5→20.8/20.8→30.9→60.7（roundb：~10.3→20.3→40.3→80.3），**无 15 s 周期序列**；tl 行止于 rel 265.2、其后到轮末只有 framewatch still 行（计到 397.3 s）＝roundb 的日志静默尾同族；dump 目标是代际 pid（94..267 共 11 个），每代主线程首行在 mach_msg2（+0xcd4）或 kevent_id（+0xa54），零 psynch settling。关键时刻：首次故障 rel 18.5、swipe 手指 90.6..90.9、home 按下 101.0/释放 101.1。C/D 在同 payload 家族 60 Hz 下冻结 2/2，本轮只加 fb_hz=120 就进循环——形态对帧节拍时序敏感。结合 task-18（roundb→C 内核 delta 仅打印，而 roundb 60 Hz 是循环）：形态由驱动版本决定的框架已被 C/D 否掉，由内核版本或 fb_hz 单独决定同样不成立；能说的是 memmove 故障路径在 120 Hz 节拍下反复触发、在 60 Hz 新内核下 492 次拷贝零触发，竞态窗口解释是候选，未判定。
+
+**lr 首次落地，故障 pc 与 roundb 逐位同点**：pc 恒 `0x2ad4459c0`，cache slide 全轮单值 `0x80e4000`（桩算术核验：dump pc 0x23afedcd4−0x80e4000=0x232f09cd4＝C 轮 mach_msg2 桩原址），pc−slide=`0x2a53619c0`＝_platform_memmove+0x9c0，与 roundb 的归属（[归属复核 §5](2026-10-28-roundb-memmove-attribution.md)：0x2b0fb59c0−0xbc54000）逐位相同。region 打印首次有数据：`- 0x290600000-0x2b5c00000`（无 vnode 名，区间含 pc；roundb pc 落在同一固定区间）。故障地址==x1==src 实参本身，六个垃圾值：0x1 ×3、0x80000c000c0000 ×5、ASCII「ness.cli」×2、「ntSystem」×2、0x21f80001254b、0x3e01000000000040，src 字段位置上是字符串字节或打包数据；x2 恒 0xc0(192) ×13 加 0x163(355) ×1。lr 12 个唯一值、无 PAC 位（全 <2^47）、全部 ≡0xc mod 0x4000（单一调用点、镜像内偏移 ≡0xc mod 16K、各代基址不同）、全部 <0x180000000＝共享缓存外的注入 dylib 区（日志尺寸行：libredwoodmetal 241,488 B、libredwoodair 13,983,936 B）；7 个 AIR 候选与 AIR +0x6b44 按余数全不匹配。**x0 ∩ 驱动 `rwa buffer: copied … buffer at` 的目标缓冲 = 9/10**（唯一例外 0x102856000），x1 ∩ copied-src = ∅，故障长度 192/355 与拷贝路径长度族（15360/16384/32768/62464）无一相同：故障点是往拷贝缓冲头部做的小额拷贝，src 指针字段已损坏。lead 复核后加的两条约束：lr=调用点+4，所以调用点指令本身 ≡0x8 mod 0x4000；`nm -u` 既有实测 libredwoodmetal（121 个未定义符号）只有 `_memcpy`、libredwoodair（190 个）才有 `_memmove`，而故障 pc 在 `_platform_memmove` 体内，筛选范围要含 AIR 的 394 个 `_memcpy` 与 27 个 `___memcpy_chk` 调用点（前提：`_platform_memcpy` 对某些长度尾调用进 memmove 体，尾调用保留 lr）。**display 据此定位出唯一解**：从 `otool -Iv` 间接符号表取两库的 mem* 桩（metal 只有 `_memcpy` 桩 0xf898；AIR 有 `___memcpy_chk` 0x431280、`_memcpy` 0x4316e0、`_memmove` 0x4316f0、`_memset` 0x431700），在各自 `__text` 枚举全部 bl/b 后按 (调用点+4) mod 0x4000 == 0xc 筛：metal 3 个候选 0 命中（排除），AIR 449 个候选（_memcpy 394、___memcpy_chk 27、_memset 21、_memmove 7）**恰好 1 个命中：指令 0x270008、返回 0x27000c、目标 `_memcpy` 桩**；14 行 lr（12 唯一值）全部减 0x27000c 后 14/14 十六 K 对齐，推出 12 个唯一基址，是唯一解的独立确认。调用点在 `_util_copy_rect+0x1ac`（函数起点 0x26fe5c），源码 Mesa 26.2.5 `src/util/format/u_format.c:94` 逐行分支；反汇编循环寄存器 x20=dst、x22=src、x21=行长、x23=行数与源码一致。display 的 C 判别结论（第二轮）：出错那次拷贝走的是纹理分支：`util_resource_copy_region`（u_surface.c:204）的 PIPE_BUFFER→PIPE_BUFFER 分支在 :317 是一条直接 memcpy、不进 `util_copy_rect`，只有纹理分支 :346 的 `util_copy_box`（编译后内联，产物里是 `_util_resource_copy_region+0x274` 直接调 `_util_copy_rect`）进，**src 与 dst 都是纹理资源**。长度重算：`util_copy_rect:76` 宽按块取整、`:85` `width *= blocksize`，:94 那条 memcpy 的长度是一行 = ceil(width/blockwidth)×blocksize；355 仍需 blocksize 1（没有 5 或 71 字节的块），即单通道 8 位格式、一行 355 像素；192 与 blocksize 1/2/3/4/6/8/12/16 都相容，定不下来。第一版「355=PIPE_BUFFER 按 R8 上传」与「192/355 是 setBytes: 小缓冲的 length」两个读法作废（数字相同没有证据连起来）。进 `util_copy_rect` 的六个 AIR 调用者里往 buffer 写的是 `_util_copy_box+0xb0`。入口链经 display 第二轮源码判别更正：第一版「metal `setBytes:` 家族或 NoCopy `_callerBytes` → air_metal.c:1534 `rwa_texture_write` → `texture_subdata` → `u_default_texture_subdata` → `util_copy_box`」作废，这条通路在设备路径上是断的：`util_copy_box` 在这个 dylib 里只有一个调用者 `_u_default_texture_subdata`，全树调 `texture_subdata` 的 5 处里 air_run.c 那 4 处符号 0 命中（自检路径，栈上 texels、长度与 192/355 对不上），`rwa_texture_write` 的唯一调用者是测试程序 `drawable_test.c:361`，`redwoodmetal.m` 从不调 `mesa.texture_write`。通路经 display 第三轮源码判别定在 unmap 的拷回：四个内部发起者里 dst 落在资源自己内存上的只有 `_fd_resource_transfer_unmap` → `util_resource_copy_region(资源 ← staging/shadow)`，另三个的 dst 都是新分配内存（`freedreno_resource.c:418-431` 的 Swap the backing bo's 与 `:431` 的 `SWAP(rsc->bo, shadow->bo)` 使 shadow 那次拷贝的 dst 是新 bo）。dst 资源是与那块 32768 字节缓冲共用 bo 的纹理，经 `rwa_texture_from_buffer`（air_metal.c:1337）或 `rwa_texture_from_surface`（:1274）走 `screen->resource_from_handle`（:1239）建出，metal 侧宿主方法是 `redwoodmetal.m:2759` 的 `newTextureWithDescriptor:offset:bytesPerRow:fromBuffer:`、调用在 :2780。**这条路径成功时不打印任何东西**（metal 只在 :2767 与 :2783 两个失败分支打、AIR 的 say() 只在 :1342/:1347/:1360 三个失败分支打），四轮日志查不到纹理格式与宽高是这条路径本来就不打印，不是采样覆盖缺口。首故障旁那两行 `texture-buffer alignment query: format=90 alignment=16 (buffer textures unsupported)` 的出处是 `redwoodmetal.m:2333` 的 `minimumTextureBufferAlignmentForPixelFormat:`，它打印括号里那句而返回 16；返回值告诉调用方这条路可以走，`:2759` 的 fromBuffer 实现与 :2780 的 `mesa.texture_from_buffer` 调用都在，括号里那句与返回值说的不一致，buffer 纹理这条路是开的，与共用 bo 纹理的存在一致；括号句是独立可修项（metal 侧、与修复轮不同批），display 报 lead 排期。format=90 树内无枚举头可核（公开编号 90 是 4 字节格式，若成立则 355 与 38 都不被 4 整除、那两次故障的纹理是别的格式），标未验证。排除的通路：`rwa_texture_read`（air_metal.c:1652）与 `rwa_depth_read`（:1745）两处 READ map 的 staging 拷贝方向是资源到新 staging、dst 不可能等于 metal 正在写的内存（与时序复核矛盾），且 `rwa_depth_read` 在 E/F 两轮全部 `pipeline seen` 行 depth 0 的条件下没有对象；:474 的 `pipe_buffer_map` 两侧都是 PIPE_BUFFER、走 u_surface.c:317 的直接 memcpy 到不了 copy_rect（「每建一个缓冲走一次」作为事实成立但与该故障无关）；:6961 的 `pipe->blit` 从不执行（:6948-6949 的 samples≤1 continue，五轮 samples 只有 1）。调用点本身不变（0x270008）。x0∩copied-dst 的时序复核（按 display 的地址复用预期做，结果与预期不同）：15 个唯一故障里 14 个落在**同代 pid 对同一地址的 32768 字节拷贝连发段中间**：最近一条 `copied … buffer at <x0>` 在故障前 2..8 行、同 pid、len 32768，故障后同地址同 pid 的 copied 行还继续 12..402 条；即故障时刻 x0 正被同代进程用作 rwa 缓冲目标，「曾被用作 rwa 缓冲的地址（跨代复用）」的读法不成立。唯一例外 0x102856000 全轮零 copied 行。三个地址（0x101c48000、0x102048000、0x102448000）确有跨代出现（pid 84/187/198、167/213/265、136/242 各自代内使用），但每个故障都落在自己代的连发段内。数据支持的读法是同一分配，display 第三轮判别已定到这个方向：dst 是与 32768 缓冲共用 bo 的纹理（metal 在 :2635 拷调用方字节进去、freedreno 的 unmap 拷回也以同一块内存为 dst）；故障与 32768 创建连发的贴近（2..8 行）与故障发生在缓冲创建序列里面的形状一致。顺 :431 读出一个独立风险：一次 shadow 事件会把资源的 bo 换掉，而 metal 的 `_contents` 是 :474 映射一次、按 :464-469 注释「Mapped once, for the buffer's whole life」持满生命期的指针，shadow 之后 metal 持的是旧 bo，freedreno 打算在 shadow 的 batch 退休之后释放它（:442-446 注释与 `assert(shadow->track->batch_mask == 0)`），「持满生命期的映射」配「会在底下换 bo 的驱动」；上游 :898-902 有一段同形 TODO。修复轮的唯一变量是在 `fd_try_shadow_resource` 入口加 is_shared 守卫（拒绝 shadow 一个 is_shared 的资源，覆盖全部三个调用点，`hackios-xnu-kernel/tools/mesa/freedreno-shared-no-shadow.patch`，编进 libredwoodair.dylib），配置＝round F 完整配置加这一个 patch、插桩保持不关；成功判据三条：bad access 归零、桌面仍然画对（带哈希判）、帧数与 C/D 健康段可比。判据带两条附加：若 bad access 归零而那 3 条晚代故障（x0=0x1、x1 全 0x80000c000c0000、rel 263.3/423.6/743.8）仍在，那是两个故障、守卫只覆盖前一个；判据②的真实风险是 `fd_resource_uncompress`（`freedreno_resource.c:554`）在守卫下拿到 false 后、:556-557 的 assert 在发布构建里是空操作、函数会在没有解压的情况下返回、调用方把压缩数据当线性读，画错而非崩溃，它的三个调用者都在 a6xx 后端、触发条件是 UBWC 压缩资源、导入的资源带线性 modifier 所以预期不触发，这一条是判断、判据②是实测。核心矛盾（不依赖机制前提）：`air_metal.c:464-472` 的注释写明 READ 位的作用是告诉驱动这个映射必须是真缓冲、而不是它稍后会上传的只写 staging 副本，而故障形状说明这条路上还是发生了一次拷贝。未判一环：共享缓存里 `_platform_memcpy` 为何落进 memmove 体（反汇编要用显式文件列表重查）；我补的支持数据：192 与 355 两个长度共用同一个 pc（+0x9c0），且都在归属文档 §5 的 64≤len<16384 域内，与「memcpy 按长度分派进 memmove 实现体」一致。机制前提已定案：**pipe 是裸 fd_context，「指针在延迟调用期间失效」的机制被排除**。守卫在 `freedreno_context.c:773-774`：`if (!(flags & PIPE_CONTEXT_PREFER_THREADED)) return pctx;`，而 `air_metal.c:320` 的 `context_create(screen, NULL, 0)` 传的 flags 是 0，`_threaded_context_create` 不会被调到；`air_metal.c:474` 那次 `pipe_buffer_map` 在调用线程上同步完成。perf 从 `:314-319` 的注释独立读到同一条；display 撤回第一版「线程化上下文是活的」推断，方法教训是从产物符号有调用者就推它被调到、守卫没读。C 判别的加打印归属随之改到 AIR/Mesa 侧（metal 侧不加，源码判断已定两条候选入口都不是）：打印位置是 `fd_resource_transfer_map` 的 shadow/staging 分支（哪个分支被走、资源指针、size、返回的 map）加 `rwa_buffer_create:474` 之后一行（资源指针、size、`buffer->map`），归 task-17 的 Mesa patch，与入口链判别同一次重建。另一个事实：首故障（rel 18.5、x1=0x3e01000000000040、x2=355）落在初代 bbd pid 38 的渲染管线初建阶段（±20 行上下文是 backboardd 38 的 pipeline 构建行），后续 13 次分布在各重启代，与新通路「每建一个缓冲就走一次」的形状一致。
+
+fb_hz 三项特有读数：①`swaps waited for the frame before`＝0、`gave up`＝0（8 个窗口全部）——120 Hz 没有引入队列阻塞；②shown 间隔按 8.33 ms 分档（n=77）：中位 33.36 ms，n=1 档 9 个、n=2 档 17、n=4 档 20、n=6 档 20，其余为秒级空档——**task-22 的决定性判别（CA 等待还是 CA 渲染）被形态翻转挡住**：首次故障在 18.5 s，没有留下持续的健康 120 Hz 渲染段，两个分支都拿不到样本，n=1 档的 9 个间隔只说明 120 Hz 栅格上有相邻帧出现过；③节拍等待 shown−ready 中位 0.000 ms（C 轮 7.244），44/78 帧「came a refresh late themselves」（C/D 是 4/3620），多数帧走迟到立即上屏分支，与 120 Hz 下迟到门槛从 25 ms 缩到 12.5 ms、本轮生产链 >12.5 ms 一致；等过节拍的仅 15 帧、每帧 6845 µs——**round E 没有否证 aim 那条预言，它只是没拿到样本**；且预言本身已被 perf 修正：aim=period×3/8 只是 `MiniIOMobileFramebuffer.cpp:925-929` 那个 1/8 步长逼近的目标，`:923-924` 的 `for (next = fBeat + period; next < began; next += period)` 先把 next 推到第一个不早于 began 的节拍上，等待时间由工作什么时候做完决定、周期减半它不跟着减半（E 实测 beat_us 6,845 对 C 的 7,080 基本相同），beat_us 不作刷新率判据。fb_hz=120 生效的判据是 shown 间隔出现约 8.33 ms 档：display 独立量定 8 个间隔落在 7.67..9.21 ms，perf 量过 63 轮 60 Hz 里最小单个间隔 9.56 ms、round C 的 3,606 个间隔最小 14.72 ms——低于 9.56 的间隔在 round E 之前没有出现过，两种取法是同一个读数的双证。onbeat 列 `-`（窗口全不满足 busy 门槛，与 roundb 同）。coverage 行（perf 修正后的 summary.py，`26c157b`）：span 266 s、largest gap 79.9 s、66 frames。已知限制照 task-22 文本记录：本轮能证明的是我们的节拍与 CA 读到的模式速率变了，不能证明面板扫描率变了（面板物理时序在 Android DTBO，实际档位读不到；若面板停在 60 Hz 而按 120 Hz 写，约一半帧可能从未显示且日志看不出来）；面板实际速率要 TE 读数的单独一轮回答。其余：thermal 3000 MHz 只守 150 s（5/13 窗口、peak 72.1 C、window 6 掉频，渲染早终止）；registration 4 条 stuck（extensionkitservice/iconservicesagent/pkd）；sig5 三进程本轮未出现（widget 只有 sig9 code0/1001）。对计划的影响：120 Hz 判别轮需要在故障路径修复或绕开之后重跑；round F（注入轮）是 fb_hz 默认 60＝C/D 构型，预期形态仍为冻结，不受本轮影响。
+
+## 11. 结论
+
+冻结形态在拷贝路径驱动加新内核上 2/2 复现（C 与 D 零改动重跑），四要素全部成立：双进程 exited code 0 条、帧号零断裂（1..3611／1..3620）、15 s 周期空档加提交永久停止、主线程 psynch_cvwait 等待对象恒定。主线程证据在旧冻结轮/C/D 三轮一致（同 tid 221、同 +0x65e8 桩、同 state 1/pri 47、settling 对象各自进程私有），三轮的冻结就主线程而言是同一个静止状态；主线程认定已是源码级判定（thread.c:1510 尾插加 queue_iterate 顺序）。据此「两种失败形态由驱动版本决定」的框架整体不成立：旧驱动 `31f2d6b7` 与拷贝路径驱动 `9d66dd36` 产生同一个主线程静止状态，roundb 的重启循环是第三种情况，与冻结不是同一件事的两个版本。round E（§10）把边界收得更紧：C/D 同一 payload 只加 `fb_hz=120` 就进入循环形态，故障 pc 与 roundb 逐位相同（_platform_memmove+0x9c0），lr 首次落地、指向共享缓存外注入 dylib 区里往拷贝缓冲头部做小额拷贝的单一调用点——形态对帧节拍时序敏感，驱动版本、内核版本、fb_hz 都不能单独决定形态。15 s 周期序列与 memmove 故障可分离：循环轮无 15 s 序列，冻结轮 492 次拷贝故障零触发。
+
+时间结构上，三轮冻结共享同一条 15 s 周期序列（起点 rel 30.3..33.8、间隔 15.0、长约 3.0、前 4 周期可恢复），提交永久停止是该序列第 5 个网格点起的终末事件，停止时刻 96.4/100.2/126.3 的差异 = 终末段残余交换次数差异；终末段残余交换与 widget 扩展 code1001 终止逐点对齐。home 键因果假设被五轮实测按键时刻否证（C/D 停止在按键前 3.2/5.1 s，旧轮按键后 24.8 s；round E 的崩溃从 rel 18.5 s 就开始、早于 home 按下 101.0 达 82.5 s——否证因此扩到循环轮，排除了「home 键只在冻结形态里无关」这个退路）；swipe 也不是触发点（C 轮退化早于自身 swipe）。settling 区间三轮都是 (84,108]，与终末段重叠，20 s dump 网格分辨不了 settling 与停止的先后——round F 的 80..130 s 单发网格为此设计。15 s 序列的 widget/chronod 候选已被 nochronod 与 bbm29 两轮排除（§2），网格锚定在首帧附近的事件上；剩余候选按指向强度排：显示/提交路径最强（两次换驱动加 round E 的 fb_hz 翻转共三个数据点，E 那条带限定），其次是各序列轮共有的用户态基座（SpringBoard/backboardd、iconservices 族、PosterBoard、pkd/lsd/installd/containermanagerd），再次是采集 harness（未做关闭对照）。
+
+交接文档 §1 的两处校准更正（提交停止 273 s 是设备钟、原轮内值 126.3 s；「内容冻后提交再持续 142 s」不成立）需要 display 改交接文档、desktop 改总账引用；`rc.jobs.freeze:14-18` 注释的「~180 s」同为设备钟，下轮改 jobs 时一并更正。
+
+正面证据单列：C/D 各 101 张截图全部 home screen、bad_shots=0，加渲染段 3611/3620 帧零断裂，是重启循环出现以来头两轮「桌面显示出来并保持」的完整读数。截图覆盖从 100.1 s 起是 `shot_from=100` 的设计值，渲染段画面由帧计数与 tier 判定支撑、无逐张截图；bad access 零条的覆盖限制有两维——时间上日志环并集约 rel −1..418 s，进程名上 bad-access 打印只覆盖 backboardd 与 SpringBoard，「零故障」只指这两个进程。
+
+拷贝路径相关性：强命题被 C+D 合计 492 raw 拷贝零故障否证，旧冻结轮 copied 零条说明冻结形态不需要拷贝路径；弱命题（拷贝路径是 roundb 故障链的必要参与项）无分辨力，等 task-18 的内核源码 delta 结论。轮间方差首轮实测：同 payload 两轮各量级一致、个位到十位数波动。
+
+**形态判决（round F 落地）：两个形态的区别是那次纹理侧拷贝有没有出错。** 链条在 round F 内逐代核验：17 次 sig11 终止里 16 次与最近一条 bad access 时差 +0.00 s（died 行与 fault 行相邻、同 µs 锚），唯一例外 pid155 @rel 59.8 一次没有记录到故障的终止；16 条故障每条 1 s 内都跟着一次终止；首故障前的 16.5 s 无帧期里零故障、其上下文是 render pipelines 21/22 built，首故障在第一个 13 帧爆发后 0.3-0.5 s，渲染与缓冲工作在前、故障在后。深静止段故障继续而重启退避：rel 263.3/423.6/743.8 三条各跟一次终止（pid 276/280/319），间隔 81/160/320 逐次加倍＝launchd 节流退避，183.1 之后每一代零帧就终止。跨轮共现：60 余个冻结与序列轮 bad access 全零（含 chronod 有无乘扩展宿主有无的四个组合），循环轮 round-a 5、roundb 11、E 14、F 16 唯一行，坏镜像轮 0；15 s 序列在所有无故障轮在、所有有故障轮缺席。E 与 F 是同一个故障（lr E 12/12、F 16/16 全部 ≡0xc mod 0x4000 且减 0x27000c 后余 0，pc−slide 跨轮逐位同 0x2a53619c0），fb_hz 与 jobs 层都不是原因，它们把系统推过同一个阈值：机制对多种扰动敏感，竞态窗口候选由此带上具体落点（这次拷贝）。未跟踪的时变变量一支保留且有具体检验方法（C/D 载荷的傍晚零变量轮，排在修复轮之后按修复结果定要不要跑）：若傍晚 C/D 载荷也出同调用点的 bad access，时刻混杂成立、E 与 F 的单变量翻转结论全部重判；若仍全零冻结，C/D 构型是窄的、机制对扰动敏感。15 s 序列候选的三级排序保留，权重让位于本判决：序列属于冻结形态一侧的读数。
+
+## 12. round F（注入轮）读数与第二次设备侧异常
+
+身份与开始时刻：jobs 源 `tools/k90auto/jobs/rc.jobs.freezef`（40 行、sha256 `e6ece111…`、提交 a51a085），镜像内 /etc/rc.jobs 43 行、jobs_sha256 `9a7be5c3…`；root.apfs `dfbc7e48…` 5,226,496 B，条目 diff 闸实测与 C/D/E 镜像 136=136 条、全字段差异恰 /etc/rc.jobs 一处；payload `out/handoff-12377-attr26-roundf.bin` sha256 `266313734450b5e2…` 25,437,256 B。开始时刻权威三项：QUEUE start 行原文 `QUEUE start kernel-12377-attr26-roundf 18:38:19 payload 266313734450b5e2…`、commands.jsonl 第一条命令 `getvar build-id`（host_monotonic 1270403.939）、该文件 birth 18:38:19 与 QUEUE 行逐秒一致、job id `bash-2e58ea41ccbe491a`。
+
+第二次设备侧异常与恢复：run-auto 的 python 在 18:44:22 停止写入（轮内约 238 s），harness 的 job 句柄消失且无完成通知（job_output 报 unknown job、job_list 空、ps 被沙箱挡住），内核无人监督约 18 分钟；原因不明，时间上与一批 host 侧长命令重合但因果未证实，归档按未定原因记。恢复顺序：先手动抢拉当前环（manual-s012-deepstatic.log，1,311,925 B）再 oem stop（42 s 转 hung-held）→ hung-held.log 与 hung-held-serial.log 存证 → reboot → fresh idle 三项验证（result idle 加 ramdisk-state idle 0 0 0）。「执行体失联而内核还在跑时第一动作是抢拉环」进协议，理由是环随时可能被覆盖或随 stop 丢失，本轮的深静止数据全靠这一次抢拉。存活轮询落地为 `tools/k90auto/liveness-watch.sh`（提交 9c31aee，每 30 s 核 commands.jsonl 的 mtime、150 s 无推进写 LIVENESS-ALERT、不执行 fastboot 命令），执行方式取 nohup 脱离 harness 作业管理；这两项是下一轮的硬门槛。
+
+覆盖与 B：12 份快照（轮内 0..238 s）加 44 张截图（100.4..235.0 s）加手动环（本轮输出极低、环跨度约 rel 263..1304 s）；丢失三项＝lsprobe t=300 第二锚、第三实例（241.3 s 启动）的 6 个深静止 dump、240..420 s 常规采样，都不影响两个主问题的窗口。B=842500191 单锚 t=60（配对 µs 行隔 1-2 行、统计 ±0.24 s），另有 lsprobe 从进程启动起计 t 带来的系统偏移，C/D/E 同法、跨轮 rel 一致；still 的 N 是 sleep(1) 加工作的迭代计数，N=1117 处欠计约 5 s，跨轮比 N 要换算。
+
+形态读数（循环家族）：bad access 116 raw／16 唯一（3 条只在手动环：rel 263.3/423.6/743.8、x0 退化 0x1、x1 全 0x80000c000c0000）；17 次 sig11 终止、pid 38 到 319；8 个代际爆发共 52 帧（id 1..65 缺 13 个＝终止于未上屏的代），首故障 rel 17.8；late 42.0%（21/50 唯一窗口行）＝循环家族档；8.33 ms 档 0（最小间隔 14.9 ms、n=2 档 24 个＝16.7 ms 刷新栅格，fb_hz 默认 60 生效）；swaps waited/gave up 全窗口 0/0；15 s 序列缺席（洞 16.5/20.8/10.3/31.1/20.5/41.0/40.4＝重启周期与节流退避）；shown−ready 中位 1.8 ms；thermal 3072 MHz 守 150 s、peak 73.3 C；registration 2 条 stuck；帧三口径 52/52/50（round-stats 交换交接／summary --verify frames／coverage shown 在跨度内）；官方四命令输出归档于 run 目录同级。
+
+七探针响应（三项独立读数）：六个探针窗（lock 146/161、volup 176、top-pull 191、swipe-bottom 206、tap 221）内 tl:v 全零；home@约 101 后 0.4 s 有 10 帧爆发但与约 10.2 s 重启节律重合、归属不定；still 自末帧 183.1 后无复位直到 N=1117 @rel 约 1304。截图 44 张全文件哈希 4 个唯一、真实内容变化 3 次且全在屏幕中部行 1185..1244（56 行、屏高 2.3%、列 0..1182 全宽、每次约 1.1 k 像素）：内容是黑底上一条横贯全宽的稀疏虚线、无可读文字或可辨认界面元素，状态间是虚线少数像素的亮度变化（采样灰值 148→214→237 逐态变亮），带外整屏自 100.4 s 起全黑；146-148 那次与 lock@146.0 重合且窗内零 CA 帧，首故障上下文有 `redwoodmetal[SpringBoard 30]` 的对齐查询与 62464 字节缓冲拷贝行（SB 有自己的 metal 上下文且在渲染），推断输入通到 SpringBoard 自身绘制、没走 CA 交换；同一带在 101.3 与 183.0 两个爆发时刻也变，存在两个写入来源或一个共享元素，内容身份定不下来。带 PNG 七张在 `docs/progress/evidence/k90auto/band-*.png`；跨轮同带对比：C/D 的这条带是壁纸斜条纹（30,192 个非黑像素、整轮恒定、C 与 D 像素集合逐位相同），F 的虚线像素对 C/D 带内容的包含比例 0.000——虚线是循环形态一侧的东西、不是 home 界面的一部分，与验收标准里「四角 45° 点线与 1 px 直线」同属稀疏点线族；判据②的参考基线因此取 C/D 的带状态（带哈希 `fab8e6b43c37`／`d0375b4f6dd7`）为画对一侧、round F 的全黑加虚线为失败一侧。
+
+修复轮（下一轮）：AIR 的输入差异是 `hackios-xnu-kernel/tools/mesa/freedreno-shared-no-shadow.patch`（perf 应用时 93 行、sha256 `95a40be2…`；当前 114 行、`7f100d1a…`；两版 diff 体逐字相同，体 sha256 `d6e8531dae1a888f06051d3927d859d74ea942da39b6976099265611dac5ffae`、30 行、hunk 头 `@@ -353,8 +353,26 @@`、源码侧纯插入；display 的编辑只在 `diff --git` 之前的散文前言，闭合证据是反向 dry-run 加构建记录）加一处诊断打印措辞（draw-perf2-extra.patch 的 10-28 09:35 版进过树、没进 08:09 那次构建的冻结产物 d7b9ced5），再加按 mtime 枚举出的其它文件清单（门槛 1，清单闭合前不打包）；配置＝本轮完整配置、插桩不关；对照读数＝本轮上面这些数。lead 裁定不重做：三项成功判据都不读 AIR 打印行（①读内核 sleh.c 打印、②读截图带哈希、③读内核 tl: v 行），措辞差异只影响性能分解的跨轮比对；重做的唯一办法是 mk-mesa.sh 全量重解包重打，会一次吸收四个文件改动（含 104,507 字节的 rebase-26/0003）且 :110 的 rm -rf 不可回退。重建走 display 的第三路（patch 应用到现有 mesa 树加 build-air.py 的 ninja，不跑 mk-mesa.sh，宿主机完成），新 AIR sha256 `1be6ebf7b41e5964…`、14,000,400 B、adhoc 签名、holds 九项全 true，守卫落在 freedreno_resource.c:373-374。打包前两条强制核验：构建树 `grep -c 'if (rsc->b.is_shared)' src/gallium/drivers/freedreno/freedreno_resource.c` 改前 0 改后 1（裸模式 `rsc->b.is_shared` 改前就有 4 处赋值、用它判会得假失败）、重建的 libredwoodair.dylib sha256 与冻结份 d7b9ced5 不同；`git apply` 在这棵树上不可用（out/ 被 kernel 仓 gitignore 忽略，git apply 静默跳过并退出 0、文件不动，--check 同样空过），最终判据只能是应用后的 grep 加 AIR sha。`UPDATE_BASELINE=1` 归我、在打包同一步执行（package.py:195-198/:589/:600），perf 写归档依据（含 PATCHES 戳旧值 216c4533 与四种组合新值都不相等、戳在本次之前已陈旧）；image-diff 预期差异先实测再写进配方对账。判据②（全轮截图加 12 带哈希加 roundc home 参考）的存活测试按带哈希数状态数、状态数 ≥3（perf 异议采纳：全文件哈希数会把 round F 的失败形态判成通过，它正好 4 个唯一全文件哈希），加带均值色与参考 ±10%、带内方差在参考范围、时间文本带自动掩膜；参考基线＝C/D 的带状态（壁纸条纹、30,192 非黑像素、带哈希 fab8e6b43c37/d0375b4f6dd7），失败一侧＝round F 的全黑加虚线。构建树另有五个 10-23 的 .rej（mk-mesa.sh:116 吞掉 hunk 失败），冻结份 d7b9ced5 与本次重建都出自这棵缺五个 hunk 的树，单变量成立，是否补齐归 lead 裁；其中 a6xx/fd6_draw.cc.rej 那处 CCU flush 修正被 rebase-26/0003 接住、树里有，C/D/E/F 四轮的 AIR 都带它，判据②的基线不受它影响；判据②参考基线的两侧（C/D 一侧与修复轮一侧）都带这个修正，比对不会因这一处产生假差异。ir3_nir_lower_io_offsets.c.rej 不同类：它要改的 nir_op_iadd 块在 26.2.5 这份源里零命中（文件被重构、传播点在 :322），辅助函数 shift_splits_over_iadd 在树里只有 :72 的定义、没有调用点，属于守卫没有对应位置、辅助函数成死代码，与本轮故障无关，排在修复轮之后。打包前两道门槛归 perf：mesa 源树（排除 build/）里 mtime 在 2026-10-28 08:09:11 与 20:11:04 之间的文件逐个枚举并归类到 draw-perf2 那次改动或别的东西，清单闭合才允许打包；summary.py 与 round-stats.py 里解析旧措辞（program calls、cache lookups）的位置核对，零命中而退出码 0 属于安静空读数，改工具或写明本轮该项不可用。跨轮比对限制三条：修复轮的 perf driver 行与 C/D/E/F 不同格式、逐字比对不成立；task-16 §8.2 与 §8.3 引的慢帧行原文出自冻结份、引用要标轮次；两个工具的旧措辞解析按门槛 2 结果标已改或本轮不可用。判据①的归因限定：bad access 归零时归因对象是守卫加打印措辞改动的组合，机制论证（打印路径与故障路径无交集）写进归档。v1→v2 的对照轮挂起：bad access 归零则不需要单独量，bad access 不变才补一轮把打印格式改动的效应单独量出来，归档记挂起与决定条件、不记已排除。打包顺序：perf 报 summary.py 与 round-stats.py 顶层仓文件已停、words 快照并合并、words 报完成之后我打包（快照含 perf 的改动，脏闸在合并后通过）。

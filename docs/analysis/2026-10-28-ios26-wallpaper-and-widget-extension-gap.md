@@ -15,7 +15,7 @@ iOS 26 的 launchd 从 `/System/Library/xpc/launchd.plist` 取任务，不读 `L
 
 733 条 `AppExtensions` 的分布是 584 条在 `/System/Library/...`、149 条在 `/Applications/...`、0 条在 `/private/var/staged_system_apps`。那 584 条不是坏条目：拿它们逐条去 `rootfs` 里找 `Info.plist`，728 条找得到，5 条找不到。所以「584 条不可解析」这个说法是我上一版数错分组得出的，站不住。
 
-真正没有被这份清单覆盖的是被搬进 `/Applications` 的那 50 个应用的扩展：Photos、Camera、Music、Weather、Passbook、MobileCal 等，Apple 的缓存对它们 0 条。原因是 Apple 生成缓存时这些应用还在 `private/var/staged_system_apps` 里没有安装。如果要从我们这边补齐，`_infoPlist` 的投影规则可以从现有 728 条反推：它是真实 `Info.plist` 去掉固定的一批键（`DTSDKBuild`、`CFBundleSupportedPlatforms`、`DTXcodeBuild`、`UIRequiredDeviceCapabilities`、`BuildMachineOSBuild`、`DTXcode`、`MinimumOSVersion`、`DTPlatformVersion`、`DTSDKName`、`DTCompiler`、`DTPlatformBuild`、`DTPlatformName`、`UIDeviceFamily` 等 728/728 全部命中的键），缓存里没有出现任何磁盘上没有的键。这一项现在不需要做。
+真正没有被这份清单覆盖的是被搬进 `/Applications` 的那 50 个应用的扩展：Photos、Camera、Music、Weather、Passbook、MobileCal 等，Apple 的缓存对它们 0 条。原因是 Apple 生成缓存时这些应用还在 `private/var/staged_system_apps` 里没有安装。如果要从我们这边补齐，`_infoPlist` 生成镜像内 plist 的规则可以从现有 728 条反推：它是真实 `Info.plist` 去掉固定的一批键（`DTSDKBuild`、`CFBundleSupportedPlatforms`、`DTXcodeBuild`、`UIRequiredDeviceCapabilities`、`BuildMachineOSBuild`、`DTXcode`、`MinimumOSVersion`、`DTPlatformVersion`、`DTSDKName`、`DTCompiler`、`DTPlatformBuild`、`DTPlatformName`、`UIDeviceFamily` 等 728/728 全部命中的键），缓存里没有出现任何磁盘上没有的键。这一项现在不需要做。
 
 ## 3. QEMU 对照否掉了缓存假设
 
@@ -149,6 +149,6 @@ Process[201] crashed: BarcodeScannerWi. Too many corpses being created.
 
 第一版放在 `bsd/dev/redwood_threads.c`，device 用 `compile_commands.json` 里 `redwood_input.c` 的命令单独编它，报了 18 个 error：`struct task` 是前向声明（完整定义在 `osfmk/kern/task.h:117` 的 `#ifdef MACH_KERNEL_PRIVATE` 段里）、`task_lock` 与 `task->threads` 都不可见，而这棵树没有 `kern/task_private.h` 可补。这是结构问题：BSD 侧的文件只带 `XNU_KERNEL_PRIVATE`。
 
-所以实现移到 `osfmk/kern/redwood_threads.c`，在 `osfmk/conf/files` 注册。移动时顺手去掉了唯一一处要读 `struct proc` 私有字段的地方：头一行原本打印 `p->p_stat`（来自 `bsd/sys/proc_internal.h` 的私有段），现在只打印 `threads`。**用不到就不读私有字段**：`proc_find()` 给 pid 的进程、`proc_task()` 给任务，线程事实全部来自 task 一侧，这样这个文件只依赖一个私有条件的头，而不是两个。
+所以实现移到 `osfmk/kern/redwood_threads.c`，在 `osfmk/conf/files` 注册。移动时同时去掉了唯一一处要读 `struct proc` 私有字段的地方：头一行原本打印 `p->p_stat`（来自 `bsd/sys/proc_internal.h` 的私有段），现在只打印 `threads`。**用不到就不读私有字段**：`proc_find()` 给 pid 的进程、`proc_task()` 给任务，线程事实全部来自 task 一侧，这样这个文件只依赖一个私有条件的头，而不是两个。
 
 `/dev/redwood-touch` 的环满丢最旧、`write()` 永不报没人读这一条记在 `bsd/sys/redwood_input.h` 的接口说明里（提交 `2cf75a5`），它当晚两次把判断带偏。

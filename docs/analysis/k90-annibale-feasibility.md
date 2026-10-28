@@ -77,7 +77,7 @@ $ fastboot boot boot_a.img            → Sending 'boot.img' (98304 KB)  OKAY [2
   | 分区 | 原因 |
   |---|---|
   | `init_boot_b` | KernelSU 刷入（4 月之后打的补丁）——KSU 只动活动槽 init_boot，与 boot_a/b 未变互相印证 |
-  | `modemst1`/`modemst2` | 基带 NV/字库是运行时会写入的，活机备份必然漂移 |
+  | `modemst1`/`modemst2` | 基带 NV/字库是运行时会写入的，活机备份必然变化 |
   | `persist`/`metadata`/`vm-persist` | 厂商守护进程状态 / dm-key 元数据 / Gunyah VM 状态，属动态数据 |
 - 4 个"NAS 缺失"（dbg、xbl_ramdump_a/b、xbl_sc_logs）是 NAS 当时有意跳过的日志区，本次已补。
 - 结论：两份备份互为印证、可互为恢复源。恢复方法见 `../annibale-backup/README.md`。

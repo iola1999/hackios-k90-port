@@ -14,7 +14,7 @@
 - KaanapaliPkg（SM8850，OnePlus 15）也已 Active——8 Elite 世代架构经验已沉淀。
 - **但小米 pkg 全是老机型**（polaris=SDM845 … onyx=8s Gen4），org 内无 "redwood"、无任何小米 8 Elite 设备 → annibale/myron 需自己出 pkg。
 - 移植方法学现成：[Silicium Porting 指南](https://github.com/Project-Silicium/Guides/tree/main/Silicium/Porting/Snapdragon)；原厂 DXE 提取复用体系：[Project-Silicium/Device-Binaries](https://github.com/Project-Silicium/Device-Binaries) （含 dodge=SM8750 的 xbl DXE + 面板 XML；解包用 [xbltools](https://github.com/linux-msm/xbltools)）。
-- ⚠️ 已知维护风险：XBL 协议地址随 HyperOS 固件版本漂移需逐版重扫（[PR #1937](https://github.com/Project-Silicium/Mu-Silicium/pull/1937) 先例）。
+- ⚠️ 已知维护风险：XBL 协议地址随 HyperOS 固件版本变化需逐版重扫（[PR #1937](https://github.com/Project-Silicium/Mu-Silicium/pull/1937) 先例）。
 
 ## 3. 姊妹机型入口已被打通：gbl-chainload-myron
 
@@ -32,7 +32,7 @@
 
 | 序 | 方案 | 工作量 | 最大不确定点 |
 |---|---|---|---|
-| ① | **Mu-Silicium 基座出 annibale pkg（参考姊妹 myron 化裁剪）**（Pakala 部件复用 + 本机 DXE 提取） | 1–3 月 | HyperOS XBL/ABL 协议地址漂移逐版重扫；面板 DSI 点亮 |
+| ① | **Mu-Silicium 基座出 annibale pkg（参考姊妹 myron 化裁剪）**（Pakala 部件复用 + 本机 DXE 提取） | 1–3 月 | HyperOS XBL/ABL 协议地址变化逐版重扫；面板 DSI 点亮 |
 | ② | 原厂 uefi.elf 内存 patch + EFISP（gbl-chainload-myron 模式） | 数周 | 原厂 UEFI 的 BDS/GOP 完整度不可控 |
 | ③ | 跟随/贡献 SunUEFI（EDK2，同 SoC 同 HyperOS 生态） | 不可控 | 目前只有平板；手机版未出 |
 | ④ | fork edk2-msm 从零写 sun | 最大 | 无任何现成代码 |

@@ -4,7 +4,7 @@
 
 ## 1. 结论
 
-- 收尾全程不需要人按键。本轮从 idle loader 起跑一次（证据目录 `docs/progress/evidence/k90auto/kernel-12377-attr-teardown-a/`）：`oem stop` 后 50 秒 loader 判 `hung-held`，主机保存日志并 `reboot`，复位落到 B 槽 Android，`recover-loader.py` 经 ADB 回到 LK、`set_active a`、再回到 loader，`result` 为 `idle`、`ramdisk-state` 为空。
+- 收尾全程不需要人按键。本轮从 idle loader 开始跑了一次（证据目录 `docs/progress/evidence/k90auto/kernel-12377-attr-teardown-a/`）：`oem stop` 后 50 秒 loader 判 `hung-held`，主机保存日志并 `reboot`，复位落到 B 槽 Android，`recover-loader.py` 经 ADB 回到 LK、`set_active a`、再回到 loader，`result` 为 `idle`、`ramdisk-state` 为空。
 - 2026-10-27 的 16 轮（`kernel-12377-attr-bbmetal8`～`bbmetal25`）复位直接回 loader：`oem stop` 到 `hung-held` 50.5～51.5 秒，判 `hung-held` 到发出 `reboot` 0.1 秒，`reboot` 到 `result: idle` 16.8～17.9 秒，单轮收尾 67～70 秒。
 - 那 50 秒是 loader 对内核心跳的静默预算，内核在这段时间停在停止路径的 park 自旋上。本轮 `oem stop` 后 2 秒取到的快照里已经同时有 host-stop banner 和 `adreno8: GPU probe requires host cold reset before reusing kernel memory`，此后日志没有新内容（`run/stop1.log` 第 7611 行起）。
 

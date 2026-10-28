@@ -14,11 +14,11 @@
 
 日志 `adreno8: N external buffers unmapped in X ms, Y us waiting for the GPU to be idle in all` 的第二个数是窗口跨度，第三个数是窗口内累计等待。`1028 external buffers unmapped in 7511 ms, 99486 us waiting` 摊到每次是 97 µs，占该窗口 1.3%。
 
-整轮 37 个窗口累计等待 858 ms，跨越 350 秒，即墙上时间的 0.25%，均值 115 µs 一次。TLB publish 同样便宜：平均 4 µs 一次，5 秒窗口里 1011 次（`adreno8: page tables published …`）。
+整轮 37 个窗口累计等待 858 ms，跨越 350 秒，即墙上时间的 0.25%，均值 115 µs 一次。TLB publish 同样耗时短：平均 4 µs 一次，5 秒窗口里 1011 次（`adreno8: page tables published …`）。
 
 按 41.7 ms 一帧折算，一个 5 秒窗口约 120 帧，99 ms 的累计等待摊到每帧不到 1 ms。
 
-## 3. 为什么等，以及三条更便宜的做法
+## 3. 为什么等，以及三条改动更小的做法
 
 `adreno8_bo_unmap` 要清 SMMU 的 PTE，若 GPU 仍在用那个 VA 会取指或取数出错，所以先等 idle 再改表。
 
