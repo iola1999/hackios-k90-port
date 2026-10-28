@@ -148,9 +148,44 @@ SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_BYTES = 1156, 2510, 4
 # rounds; the tiers are wide apart, so the exact count does not matter.
 SCREEN_STRIDE = 997
 LOCK_SCREEN_MAX, HOME_SCREEN_MIN = 0.005, 0.10
-# The kernel log ring the evidence snapshots are read from; the figure decides what an absent
-# line proves (see ring_coverage).
+# The rolling part of the kernel log the evidence snapshots are read from; the figure decides what an
+# absent line proves (see ring_coverage). A snapshot is this ring plus a fixed head of boot content
+# that does not roll: measured byte for byte, the head is 263,349 bytes in round C and round D and
+# 263,350 in roundb, and head plus ring is the 1,311,925 byte snapshot ceiling. So this constant is
+# the ring's exact size and the head is deliberately not in it.
 RING_BYTES = 1024 * 1024
+
+# Which tl: lines carry a reading of the device's own clock, and which field of them to take. One
+# value per line. A whole-line scan for the first run of nine or more digits reads the pc field of a
+# tl: td thread dump as a timestamp whenever that pc's hex digits are all decimal: round D had
+# 0x237103808 and 0x237104120, 61 such lines, and the span came out 4707 s against a real 418 s.
+# tools/k90auto/summary.py carries the same table as TL_TIME; change the two together.
+TL_TIME = (
+    re.compile(r"^tl: [wQsfp] .*? at (\d+)"),
+    re.compile(r"^tl: v \d+ ready (\d+)"),
+    re.compile(r"^tl: a (\d+)"),
+    re.compile(r"^tl: i \d+ posted (\d+)"),
+    re.compile(r"^tl: c before \d+ seen (\d+)"),
+)
+
+
+def tl_time(line):
+    """The device-clock microseconds this tl: line reports, or None when it reports no clock reading.
+
+    A physical line carrying two records is skipped whole. The ring seam cuts a record mid-field, so
+    the first record on such a line can lose digits: bbm29's hung-held.log:3730 reads
+    "tl: a 35278776tl: f fence 2380 at 352787871" while every other tl: a on that round carries a
+    nine-digit value. Taking the truncated one puts the span's minimum ten times too early and moves
+    a published coverage figure by 203 s. The second record on the line is intact, and dropping it
+    costs one timestamp out of hundreds of thousands.
+    """
+    if line.find("tl: ", 4) != -1:
+        return None
+    for pattern in TL_TIME:
+        matched = pattern.match(line)
+        if matched:
+            return int(matched.group(1))
+    return None
 
 
 TOUCH_WINDOW_US = 30_000_000
@@ -434,13 +469,18 @@ def fence_probe(lines):
 def ring_coverage(lines):
     """How much of the round the log ring could hold, and therefore what absence proves.
 
-    The ring holds roughly a megabyte and the snapshots are taken about every twenty seconds, so
-    the number that decides whether a missing line means anything is how many seconds of this
-    round's own logging fit in that megabyte. A round at seventeen seconds of log cannot be read
-    as "it did not happen"; a round at eighty-five can.
+    The ring is exactly 1,048,576 bytes and does not include the snapshot's fixed head of boot
+    content, which measures 263,349 bytes in round C and round D and 263,350 in roundb; head plus
+    ring is the 1,311,925 byte snapshot ceiling. The snapshots are taken about every twenty seconds,
+    so the number that decides whether a missing line means anything is how many seconds of this
+    round's own logging fit in the ring. That figure depends on the round's own line rate and cannot
+    be carried over: it was 17 s and 85 s on the rounds this tool was written against, and it is
+    148 s on roundb and 166 s on round C, where roundb's lines average 1.8 times round C's because
+    each of its bad access lines carries a region dump.
     """
     section("ring coverage")
-    tl = [int(m.group(1)) / 1e6 for m in (re.search(r"^tl: .*?(\d{9,})", line) for line in lines) if m]
+    tl = [t / 1e6 for t in (tl_time(line) for line in lines) if t is not None]
+    joined = sum(1 for line in lines if line.startswith("tl: ") and line.find("tl: ", 4) != -1)
     if not tl or len(lines) < 2:
         print("not enough tl: lines to estimate")
         return
@@ -449,8 +489,11 @@ def ring_coverage(lines):
     held = RING_BYTES / average
     seconds = held / (len(lines) / span) if span else 0.0
     print(f"{len(lines)} lines over {span:.0f} s, {average:.0f} bytes per line")
-    print(f"a {RING_BYTES // 1024} KiB ring holds about {held:.0f} lines, "
-          f"about {seconds:.0f} s of this round's logging")
+    if joined:
+        print(f"{joined} tl: line(s) carry two records joined at a ring seam and are left out of "
+              f"the span; see tl_time()")
+    print(f"the {RING_BYTES // 1024} KiB rolling ring, excluding the snapshot's fixed head, "
+          f"holds about {held:.0f} lines, about {seconds:.0f} s of this round's logging")
     print("absence of a line proves nothing when that figure is below the snapshot interval (~20 s)")
 
 

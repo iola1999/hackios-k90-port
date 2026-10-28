@@ -33,7 +33,7 @@ python3 tools/k90auto/gestures.py docs/progress/evidence/k90auto/kernel-NAME-LAB
 ## 4. 判读
 
 - 汇总的帧间隔只统计帧数不少于 20 且报告帧率不低于 10 帧/秒的窗口，静止屏幕几十秒里的零星重绘不计入；低于 18 ms 的比例用于检查帧间隔分布。各手势的实际帧率由 `gestures.py` 按主动画时间轴计算。
-- `summary.py` 只把 `s[0-9]*.log` 当日志快照（`system-upload.log` 是 fastboot 的上传记录），并把同一轮的快照按重叠部分对接：loader 的日志是 256 KB 的头加 1 MB 的环，一轮 300 秒能写到 1.18 MB，环满之后开头的帧窗口被覆盖。同一窗口只算一次。
+- `summary.py` 只把 `s[0-9]*.log` 当日志快照（`system-upload.log` 是 fastboot 的上传记录），并把同一轮的快照按重叠部分对接：loader 的日志区是 263,349 字节的头加 1,048,576 字节的环（单份快照上限 1,311,925 字节，roundb、round C、round D 三轮实测一致，结构与 30 字节差值备注见[运行协议 §6](../../docs/plan/k90auto-run-protocol.md)），一轮 300 秒能写到 1.18 MB，环满之后开头的帧窗口被覆盖。同一窗口只算一次。
 - 异常截图指 GMEM 分 bin 边界下方出现状态栏蓝色块的截图，对应 2026-10-25 的 framebuffer fetch 缓存问题。其他显示异常（例如控制中心背景纯黑）需要看拼图，或由人在设备旁确认。
 - 温度和 CPU 档位来自 `cpufreq=1` 或 `2` 时内核每 30 s 写的日志。窗口行尾部的 `N by temperature, M without a reading` 区分限频由读数触发还是没有读数触发，`sensor sets changed` 是有读数传感器集合的变化次数，接近 `ticks` 说明 VALID 位每拍都在掉；紧跟的 `hot ticks` 一行给出热段内的档位占比，判断限频是否守住看这一行，窗口峰值 `hottest` 说明不了 30 s 的占比。
 - 震动、亮度、声音等需要人感知的项目不在这组脚本的判定范围内。

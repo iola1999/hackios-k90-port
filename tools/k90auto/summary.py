@@ -35,6 +35,19 @@ FRAME_PAUSE = 90                        # ms; the driver's FRAME_PAUSE, from her
 
 WINDOW_HEAD = re.compile(r'MiniIOMobileFramebuffer: (\d+) frames in (\d+) ms \((\d+) a second\)')
 WINDOW_LINE = re.compile(r'^MiniIOMobileFramebuffer: \d+ frames in .*$', re.M)
+# The second half of the driver's window line, which the distribution regex above skips over on its way
+# to "from one frame to the next:". It is read separately so the group indices that half already has
+# stay where they are. "us for the next refresh" is the driver's own count of the beat wait, the
+# clock_delay_until() in MiniIOMobileFramebuffer.cpp show(); it is the largest single piece of a frame
+# at 60 Hz and until now it had to be recovered by subtracting two other readings. The three counts
+# after it are how often a swap had to wait for the one before, gave up, or was itself late: all three
+# read 0 in round C, which is what makes "the driver never made CoreAnimation wait" a reading rather
+# than an inference.
+WINDOW_BEAT = re.compile(
+    r'MiniIOMobileFramebuffer: \d+ frames in \d+ ms \(\d+ a second\), \d+ us each in the driver, '
+    r'after \d+ us waiting for the GPU and, (\d+) of them, (\d+) us for the next refresh; '
+    r'(\d+) swaps waited for the frame before, (\d+) gave up; '
+    r'(\d+) swaps came a refresh late themselves')
 FRAME = re.compile(r'tl: v \d+ ready (\d+) shown')
 FRAME_LINE = re.compile(r'^tl: v \d+ ready .*$', re.M)
 
@@ -117,17 +130,19 @@ def window_list(text):
     numbers when its distribution line survived. A window's frames are those since the window before
     it closed; the driver keeps its last-frame mark across windows, so the interval from that frame to
     this window's first counts here and nowhere else. Only touch_lat=1 runs print the frame lines, and
-    a window whose distribution the ring cut has no numbers: it is listed all the same."""
+    a window whose distribution the ring cut has no numbers: it is listed all the same. 'beat' holds the
+    window's beat-wait and swap-queue counts, read by their own regex, and is None on the same terms."""
     numbers = {m.start(): m.groups() for m in re.finditer(
         r'MiniIOMobileFramebuffer: (\d+) frames in (\d+) ms \((\d+) a second\), (\d+) us each in the driver, '
         r'after (\d+) us waiting(?:(?!MiniIOMobileFramebuffer: \d+ frames in).)*?from one frame to the next: '
         r'(\d+) times under 10 ms, (\d+) under 18, (\d+) under 26, (\d+) under 35, (\d+) longer', text, re.S)}
+    beat = {m.start(): m.groups() for m in WINDOW_BEAT.finditer(text)}
     out, frames = [], []
     for m in re.finditer(r'tl: v \d+ ready (\d+) shown|MiniIOMobileFramebuffer: (\d+) frames in (\d+) ms \((\d+) a second\)', text):
         if m.group(1):
             frames.append(int(m.group(1)) / 1000)       # microseconds to ms
             continue
-        out.append({'frames': frames, 'numbers': numbers.get(m.start())})
+        out.append({'frames': frames, 'numbers': numbers.get(m.start()), 'beat': beat.get(m.start())})
         frames = []
     return out
 
@@ -187,6 +202,10 @@ def summarize(base, detail=False):
     frames = sum(int(w['numbers'][0]) for w in busy)
     ms = sum(int(w['numbers'][1]) for w in busy)
     buckets = [sum(int(w['numbers'][5 + i]) for w in busy) for i in range(5)]
+    # The beat fields come from their own regex, so a window can have one and not the other when the
+    # ring cut a line in half. Only windows that reported a beat wait and had at least one frame
+    # waiting count; a window with 0 of them would divide by zero and says nothing about the wait.
+    beat_windows = [w for w in busy if w['beat'] and int(w['beat'][0]) > 0]
     n = sum(buckets) or 1
     fast = [moving(w) for w in busy]
     moving_frames, moving_ms = sum(f[0] for f in fast), sum(f[1] for f in fast)
@@ -214,6 +233,14 @@ def summarize(base, detail=False):
         'fps_mv': 1000 * moving_frames / moving_ms if moving_ms else None,
         'static': 100 * (1 - moving_ms / ms) if moving_ms else None,
         'driver_us': sum(int(w['numbers'][3]) for w in busy) / len(busy) if busy else 0,
+        # Weighted by the frames that actually waited, not by the window count: a window reports the
+        # mean over its own waiting frames, and the windows differ in how many frames those are.
+        'beat_us': (sum(int(w['beat'][0]) * int(w['beat'][1]) for w in beat_windows)
+                    / sum(int(w['beat'][0]) for w in beat_windows)) if beat_windows else None,
+        'onbeat': 100 * sum(int(w['beat'][0]) for w in beat_windows) / frames if beat_windows and frames else None,
+        'swap_held': sum(int(w['beat'][2]) for w in beat_windows),
+        'swap_lost': sum(int(w['beat'][3]) for w in beat_windows),
+        'swap_late': sum(int(w['beat'][4]) for w in beat_windows),
         'gl_p50': percentile(gl, 0.5) / 1000, 'gl_p90': percentile(gl, 0.9) / 1000,
         'under18': 100 * (buckets[0] + buckets[1]) / n, 'mid': 100 * (buckets[2] + buckets[3]) / n, 'long': 100 * buckets[4] / n,
         'long_count': buckets[4],
@@ -230,7 +257,41 @@ def summarize(base, detail=False):
     }
 
 
-TL_TIME = re.compile(r'^tl: .*?(\d{9,})', re.M)
+# Which tl: lines carry a reading of the device's own clock, and which field of them to take. One
+# value per line, the same field a whole-line scan for the first run of nine or more digits landed
+# on, so a round whose lines all predate this table reports the coverage it always did.
+#
+# tl: td stays out on purpose. It heads a thread dump and its numbers are a pid, tid, state, pri, a
+# wait channel and a pc. A pc whose hex digits happen to be all decimal (round D had 0x237103808)
+# is nine digits long and reads as a plausible microsecond value, and taking it reported a 4707 s
+# span and a 4289.2 s largest gap on a round whose real span is about 418 s. Round C did not trip
+# it because every pc there carries a hex letter. tl: split and tl: init carry durations and limits
+# rather than clock readings; their fields are short enough that a whole-line scan never matched
+# them, and they stay out for the same reason tl: td does.
+TL_TIME = (
+    re.compile(r'^tl: [wQsfp] .*? at (\d+)'),
+    re.compile(r'^tl: v \d+ ready (\d+)'),
+    re.compile(r'^tl: a (\d+)'),
+    re.compile(r'^tl: i \d+ posted (\d+)'),
+    re.compile(r'^tl: c before \d+ seen (\d+)'),
+)
+
+
+def tl_time(line):
+    """The device-clock microseconds this tl: line reports, or None when it reports no clock reading.
+
+    A physical line carrying two records is skipped whole, for the reason recorded beside TL_TIME in
+    tools/round-stats.py: the ring seam cuts a record mid-field, and the truncated first record can
+    report a value ten times too small. bbm29 has 41 such lines and its coverage span drops from
+    608.5 s to 405.7 s once they are left out.
+    """
+    if line.find('tl: ', 4) != -1:
+        return None
+    for pattern in TL_TIME:
+        matched = pattern.match(line)
+        if matched:
+            return int(matched.group(1))
+    return None
 
 CPUFREQ_WINDOW = re.compile(
     r'cpufreq: domain 1 in (\d+) s:([^;]*); (\d+) changes, \d+ us each; \d+ times at the limit; '
@@ -277,8 +338,8 @@ def coverage(base):
     dropped, so the earliest and latest tl: timestamps are reported in absolute microseconds as well as
     their span: an earliest of 238 s on a run that began at boot is the fact that a span alone hides."""
     merged = merged_log(os.path.join(base, 'run'))
-    times = [int(m.group(1)) for line in merged.splitlines() if line.startswith('tl: ')
-             for m in [TL_TIME.match(line + '\n')] if m]
+    times = [t for t in (tl_time(line) for line in merged.splitlines()
+                         if line.startswith('tl: ')) if t is not None]
     if not times:
         return None
     first, last = min(times), max(times)
@@ -376,6 +437,20 @@ def main():
                 # 能发现整段缺失的是「相邻 tl: 时间戳之间最大的空档」，正常不会超过快照间隔太多。
                 print(f'  coverage: tl: {c["first"]} to {c["last"]} us, span {c["span"] / 1e6:.0f} s, '
                       f'largest gap between tl: lines {c["gap"] / 1e6:.1f} s, {c["frames"]} frames')
+            # The driver's own count of how often a swap had to wait, over the windows that reported it.
+            # All three at 0 is the reading behind "the driver never held CoreAnimation up": present()
+            # only blocks its caller while the swap queue is full, so a nonzero first count is the only
+            # way this driver can cost a frame its place in the beat.
+            beat = [w['beat'] for w in window_list(merged_log(os.path.join(base, 'run'))) if w['beat']]
+            waited = sum(int(b[0]) for b in beat)
+            if beat:
+                print(f'  swap queue: over {len(beat)} window(s), {sum(int(b[2]) for b in beat)} swaps waited '
+                      f'for the frame before, {sum(int(b[3]) for b in beat)} gave up, '
+                      f'{sum(int(b[4]) for b in beat)} came a refresh late themselves; '
+                      f'{waited} frames waited for the next refresh'
+                      + (f', {sum(int(b[0]) * int(b[1]) for b in beat) / waited:.0f} us each' if waited else ''))
+            else:
+                print('  swap queue: no window line carried the beat fields, the wait is unknown')
             hits = registration_health(base)
             if hits:
                 print(f'  registration: {len(hits)} stuck judgement(s) on ' + ', '.join(sorted(set(hits))) +
@@ -409,7 +484,8 @@ def main():
                       f'{took:.0f} ms ({1000 * quick / took if took else 0:.1f} a second)')
     cols = [('run', '{}'), ('commit', '{}'), ('args', '{}'), ('seconds', '{:.0f}'), ('panic', '{}'), ('fps', '{:.1f}'),
             ('fps_mv', '{:.1f}'), ('static', '{:.0f}%'),
-            ('driver_us', '{:.0f}'), ('gl_p50', '{:.1f}'), ('gl_p90', '{:.1f}'), ('under18', '{:.0f}%'), ('mid', '{:.0f}%'),
+            ('driver_us', '{:.0f}'), ('beat_us', '{:.0f}'), ('onbeat', '{:.0f}%'),
+            ('gl_p50', '{:.1f}'), ('gl_p90', '{:.1f}'), ('under18', '{:.0f}%'), ('mid', '{:.0f}%'),
             ('long', '{:.0f}%'), ('long_count', '{}'), ('hottest', '{:.1f}'), ('lowest_share', '{:.0f}%'),
             ('ff_s', '{:.0f}'), ('shots', '{}'),
             ('bad_shots', '{}'), ('crashes', '{}')]
