@@ -42,12 +42,16 @@ GPU 初始化可能已经把内存交给设备或安全固件。日志 `GPU prob
 | LK fastboot 可达 | 核对 product、current-slot 与 A/B 槽状态，按实验目标选择槽位 | 启动后出现预期 loader 身份及状态 |
 | Android 已启动且 ADB 为 `device` | 核对机型与 `ro.boot.slot_suffix`，通过 ADB reboot bootloader 返回 LK | LK 身份可读，再决定是否恢复 A 槽 |
 | 软件入口不可达，或可达入口的恢复动作失败 | 保存已有输出，并请用户按电源键＋音量下进入 FASTBOOT | 用户确认画面后，主机重新枚举并查询身份 |
+| `adb devices`、`fastboot devices`、`ioreg -p IOUSB` 三处同时查不到设备 | 停止一切命令尝试，请用户长按电源键冷启 | 主机重新枚举；按下一次前先读 `slot-retry-count:a`，不足 3 时先 `set_active a` |
+| `adb devices` 列出一行但序列号为空 | 按未枚举处理，只轮询，不发任何命令 | 序列号能原样读出来，才算枚举 |
 
 复位后同时检查 fastboot 与 ADB 枚举。A 槽连续实验启动未标记成功，重试次数耗尽后可能回退到 B 槽 Android。ADB 可用就通过 reboot bootloader 返回 LK，检查 `slot-successful:a`、`slot-unbootable:a` 和 `slot-retry-count:a`，核对 A 槽镜像后再决定是否执行 `set_active a`。连续实验按实际读取的重试状态安排恢复。
 
 恢复目标要写清楚：回到 loader idle 可以使用已验证的普通 reboot；进入 LK 需要对应的目标切换入口。请求按键前，记录当前状态下的软件恢复尝试及返回。一次调用被中止、空 stdout、真正超时和 USB 断开分别记录。
 
 同一故障尚在等待用户操作，保留一个明确请求即可。收到新的画面或状态反馈，先重新枚举，再决定后续动作。
+
+设备整个从 USB 上消失与「枚举了但不答」是两种处置。2026-10-29 的一次实测：`adb devices` 曾短暂列出一台但序列号为空，`adb reboot bootloader` 回答 `unknown command`，随后两分钟内 `adb devices` 与 `fastboot devices` 都是空，`ioreg -p IOUSB` 与 `system_profiler SPUSBDataType` 也查不到 `annibale`。这种形态软件侧没有恢复路径，反复发命令只会增加主机残留客户端，唯一做法是请用户长按电源键冷启。
 
 ## 5. 把恢复纳入每轮验收
 

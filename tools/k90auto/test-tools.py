@@ -156,12 +156,27 @@ class ToolsTests(unittest.TestCase):
             bins = root / "bin"
             bins.mkdir()
             marker = root / "runs"
+            # Two kinds of python3 call reach this shim: the queue's own `python3 -c` that reads the
+            # manifest guard, and the runner itself. Only the second one records a run, so `-c` goes
+            # to the real interpreter.
             python = bins / "python3"
-            python.write_text('#!/bin/bash\necho "$2" >> "$QUEUE_MARKER"\nexit "${QUEUE_EXIT:-0}"\n')
+            python.write_text('#!/bin/bash\n'
+                              'if [ "$1" = "-c" ]; then exec ' + sys.executable + ' "$@"; fi\n'
+                              'echo "$2" >> "$QUEUE_MARKER"\n'
+                              'exit "${QUEUE_EXIT:-0}"\n')
             fastboot = bins / "fastboot"
             fastboot.write_text('#!/bin/bash\necho "result: idle" >&2\n')
             for tool in (python, fastboot):
                 tool.chmod(0o755)
+            # Each run directory carries the manifest the queue reads back; a directory without one
+            # is the case the guard refuses.
+            for name in ("first", "second"):
+                run_dir = root / name
+                run_dir.mkdir()
+                payload = run_dir / "payload.bin"
+                payload.write_bytes(b"XNUP" + bytes(60))
+                (run_dir / "manifest.json").write_text(json.dumps(
+                    {"payload": {"path": str(payload), "sha256": digest(payload)}}) + "\n")
             env = dict(os.environ, PATH=str(bins) + os.pathsep + os.environ["PATH"],
                        QUEUE_MARKER=str(marker), QUEUE_EXIT=str(7 if failed else 0))
             result = subprocess.run(["bash", str(HERE / "run-queue.sh"), str(root / "first"), str(root / "second")],
@@ -195,10 +210,15 @@ class RunAutoTests(unittest.TestCase):
             (root / "bin" / name).chmod(0o755)
         payload = root / "hackios-xnu-kernel/out/payload.bin"
         payload.write_bytes(b"XNUP" + bytes(60))
+        ramdisk = root / "hackios-xnu-kernel/out/ramdisk.img"
+        ramdisk.write_bytes(b"XNUR" + bytes(60))
         image = root / "hackios-xnu-kernel/userland/system.apfs"
         with image.open("wb") as stream:
             stream.truncate(system_bytes)         # sparse: a 4 GiB image costs no disk
+        # The manifest carries three files: the payload, the packed root RAM disk it boots with, and
+        # the system image that gets staged over the disk. run-auto checks all three.
         record = {"payload": {"path": "hackios-xnu-kernel/out/payload.bin", "sha256": digest(payload)},
+                  "ramdisk": {"path": "hackios-xnu-kernel/out/ramdisk.img", "sha256": digest(ramdisk)},
                   "system": {"path": "hackios-xnu-kernel/userland/system.apfs", "bytes": system_bytes,
                              "sha256": system_sha256 or digest(image)}}
         if window:

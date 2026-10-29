@@ -12,19 +12,22 @@ UniXNU 的 GopFramebuffer 把这条路径写在提交说明与代码注释里：
 
 backboardd 的段错误在 Mesa 上游没有对应修复。`fd_try_shadow_resource` 在 `main` 上不检查 `is_shared`，freedreno 也从不读这个标志；上游对「别人的分配器给的内存」只在 buffer 换存储和 map 同步两处有保护。我们的守卫补丁补的是上游空位，可以保留，但按上游自己的约定，更贴近的做法是给导入模板带上 `PIPE_BIND_SHARED`。
 
-「iOS 17 on K90 Pro Max」没有找到源码、设备页、发布物或实测记录。UniXNU 设备表把 K90 Pro Max（myron，SM8850）记为「Core and driver forks; device repository and hardware result pending」。K90（annibale，SM8750）在 UniXNU 组织、设备表、派生仓库中都没有仓库、分支或提交。
+「iOS 17 on K90 Pro Max」在 2026-10-29 出现了可读的源码：`Typeun/myron-device` 同日进入 UniXNU 设备表，自述把 iPadOS 17.7.11 起到 SpringBoard、触摸可用、Adreno 840 经 NativeMetal／Turnip 跑 Metal。它的设备表把显示与 GPU 记为部分完成（面板未重新初始化、刷新是 work-loop 定时器、扫描输出交接间歇卡住），USB 记为不可用。120 Hz 只以一个可选参数 `sheng-vsync=120` 出现，没有帧率读数。
+
+K90（annibale，SM8750）在 UniXNU 组织、设备表、派生仓库中都没有仓库、分支或提交。
 
 ## 2. 核对范围与固定版本
 
 | 来源 | 固定版本 | 本次读到的内容 |
 |---|---|---|
-| UniXNU 组织 | 2026-10-28 16:19 UTC 各仓库最后一次推送 | 33 个仓库，无 annibale／k90／sm8750 设备仓库 |
-| `UniXNU/UniXNU` | `main`，`docs/` 稀疏克隆 | `devices.toml` 166 条设备记录，移植、驱动、启动参数文档 |
+| UniXNU 组织 | 2026-10-29 05:17 UTC 各仓库最后一次推送 | 33 个仓库，无 annibale／k90／sm8750 设备仓库 |
+| `UniXNU/UniXNU` | `main`，`docs/` 稀疏克隆 | `devices.toml` 168 条设备记录，移植、驱动、启动参数文档 |
 | `UniXNU/GopFramebuffer` | `main`，提交到 `33e941a8`（2026-10-25） | 刷新率报告、交换退休、扫描输出、逐阶段时间戳 |
 | `UniXNU/AdrenoMetal` | `main`，提交到 `ce5e19e3`（2026-10-25） | 表面导入缓存、no-copy 释放顺序、影子图像策略、诊断 |
 | Mesa | `main` = `732f32f1714e93ac1f59fbad501b362f985c09a5`（2026-10-28） | `fd_try_shadow_resource`、`is_shared` 的赋值与消费方 |
 | Linux | `drm-next` 合入 `22739ca2`（2026-10-11） | 导入 dma-buf 的页数组与 mmap 改动 |
 | 派生仓库 | `lechaukha12/xnu-xzs`、`Allenwdk/UniXNU-uke`、`GFander/UniXNU-kebab` | 无 K90／annibale／SM8750 分支 |
+| K90 Pro Max 设备仓库 | `Typeun/myron-device`，`main` 到 `0ce30745`（2026-10-29） | 板级文件、Metal 插件、扫描输出 watchdog、存储审计 |
 
 `sheng` 是上游唯一有 GPU、显示、120 Hz 实测记录的目标设备（SM8550／A740，iPadOS 17.7.11）。下面的设备侧数字都出自它的设备记录，换到 annibale 需要重新验证。
 
@@ -89,7 +92,23 @@ backboardd 的段错误在 Mesa 上游没有对应修复。`fd_try_shadow_resour
 
 上游没有在 CoreAnimation 内部埋点，可比的数字来自 GPU 与显示侧。sheng 设备记录里 GPU 段写着「Jobs take about 5 ms against the client's 1 ms waits」，证据行写着「325 BO maps at 0.20 ms each（`i568` 为 0.66 ms），1024 MiB pool，0 fallbacks；130 fps idle, delay 4.9 ms mean, 14 ms max」。同一记录写空闲桌面在 120 Hz 下每 250 ms 提交 6 个命令缓冲。
 
-### 3.7 本节对应的阻塞项与下一步
+### 3.7 GPU 交接卡死后的自愈与客户端侧容错
+
+社区设备仓库 `Typeun/myron-device` 的 [`7329ab92`](https://github.com/Typeun/myron-device/commit/7329ab92) 给出这条失败链与处置，脚本为 `scripts/myron-scanout-watchdog.py`：
+
+| 环节 | 读到的行为 |
+|---|---|
+| 交接约定 | 显示驱动向渲染服务器的扫描输出工作线程交付一帧，同一时刻只允许一帧未完成；显示侧的交换只在该线程回 `NGP_METHOD_COMPLETE_SWAP` 后退休 |
+| 线程循环 | `while (client.serveOne(500))`，`serveOne` 对超时以外的 `WAIT_SWAP` 错误和任何 `COMPLETE_SWAP` 错误都返回 false，一次瞬时失败就结束该工作线程 |
+| 后果 | 已交付的帧永不完成，`swap.offered` 一直为真，后续交付全被拒绝，IOMFB 的 `swap_wait_gated` 等一个永不退休的交换，5 秒超时后 panic |
+| 处置一 | `NativeGOPresenter::watchdog()` 每 200 毫秒检查，超过 `myron-gop-stale-ms`（默认 3 秒）的帧被收回，映射保留给迟到的完成，同时告知显示侧按失败处理、改用 CPU 复制并退休该帧 |
+| 处置二 | `GpuScanoutClient` 侧把失败的 `WAIT_SWAP`／`COMPLETE_SWAP` 当作丢一帧（暂停 1 毫秒并计数），线程不退出 |
+
+同一仓库的 `80708c33` 加了诊断两行：加速器最后一次挂载失败的原因，以及被拒绝连接最多的进程及次数，说明里记了一组读数「24 successful accelerator opens, 23 refusals and 22 closes while poster extensions failed with Vulkan(-3)」。
+
+这些是设备仓库里的源码补丁脚本，锚定 `NativeMetal a96fece` 与 `39ba232` 两个修订，换到本项目要按自己的源码核对锚点。
+
+### 3.8 本节对应的阻塞项与下一步
 
 对 120 Hz 有用，做法明确。下一步是在本项目自写的 framebuffer 驱动里覆盖 slot 301：
 
@@ -167,11 +186,31 @@ sheng 默认用 `sheng-fb-gpu=1`，即由 GPU 把帧复制进固件帧缓冲，�
 
 ## 5. 只作线索的
 
-### 5.1 K90 Pro Max 上跑 iOS 17 的说法没有可核对的产出
+### 5.1 K90 Pro Max 有登记在案的设备仓库，状态比帖文说法保守
 
-UniXNU 的 [`devices.toml`](https://github.com/UniXNU/UniXNU/blob/main/devices.toml) 里 myron 条目写着：仓库 `zg7681/UniXNU-myron`，标题「Redmi K90 Pro Max / Poco F8 Ultra」，SoC `SM8850`，摘要「Core and driver forks; device repository and hardware result pending」。设备记录只有摘要字段，没有 areas、没有结果行。
+2026-10-29 05:07 UTC 新建 `Typeun/myron-device`，同日进入 UniXNU 设备表，条目名 `myron-typeun`，标题「Redmi K90 Pro Max (Typeun)」，board 与 SoC 为 `myron`／`SM8850`，revision `9d7acbd1`。这是目前唯一挂在 UniXNU 目录下、自述能在 K90 Pro Max 上起系统的仓库。
 
-上游为这两个驱动各写了一页社区文档，状态一栏只有一句：`No hardware result is documented`。见 [NativeAdreno-myron](https://github.com/UniXNU/UniXNU/blob/main/docs/drivers/community-native-adreno-myron.md) 与 [NativeUfs-myron](https://github.com/UniXNU/UniXNU/blob/main/docs/drivers/community-native-ufs-myron.md)。
+该仓库 README 的状态一节写：Mu-Silicium 端口经 `fastboot boot` 到启动管理器；在这之上把 iPadOS 17.7.11（iPad7,1 用户态）起到 SpringBoard，界面出在固件帧缓冲上，触摸可用，Adreno 840 经 NativeMetal／Turnip 跑 Metal，`unixnu` UFS 分区承载持久 Data store。全部为 RAM 启动。
+
+其「Device support」表与帖文说法有出入：
+
+| 功能 | 状态 | 说明 |
+|---|---|---|
+| 显示 | ⚠️ | 用固件 GOP 帧缓冲 1220×2656，面板未重新初始化（无 DSC 初始化），刷新是一个 work-loop 定时器 |
+| GPU | ⚠️ | Adreno 840／A8XX，Metal 走 NativeMetal 与 Turnip；界面能渲染，部分壁纸与预览仍空白，扫描输出交接间歇卡住 |
+| 触摸 | ✅ | FT3683 在 QUP SE19 SPI 上 |
+| USB | ❌ | |
+| 相机、音频、Wi-Fi、蓝牙、传感器、电池、睡眠 | ❌ | |
+
+120 Hz 在该仓库只以一个可选启动参数出现：`sheng-vsync=120`，注释为「optional: publish 120 Hz (a work-loop timer, not the panel's vblank)」。README 与设备表都没有给出帧率或帧间隔读数，也没有对应 GopFramebuffer 的 `sheng-vsync-fixed`。
+
+帖文说 USB 已完成、120 Hz 已完成，与该仓库的自述不一致。两者是否同一个项目无法从现有公开材料确认。
+
+### 5.2 另外两个 myron 来源的登记状态
+
+UniXNU 的 `devices.toml` 里另有一条 `myron`，仓库 `zg7681/UniXNU-myron`，摘要「Core and driver forks; device repository and hardware result pending」。
+
+上游为配套的两个驱动各写了一页社区文档，状态一栏只有一句 `No hardware result is documented`。见 [NativeAdreno-myron](https://github.com/UniXNU/UniXNU/blob/main/docs/drivers/community-native-adreno-myron.md) 与 [NativeUfs-myron](https://github.com/UniXNU/UniXNU/blob/main/docs/drivers/community-native-ufs-myron.md)。
 
 `zg7681/UniXNU-myron` 有 `myron`、`myron-next` 两个设备分支。[`4ae097ae`](https://github.com/zg7681/UniXNU-myron/commit/4ae097ae)（2026-10-26）「feat(myron): the bring-up patches and build scripts from the 2026-10-23..26 sessions」改了 15 个文件：
 
@@ -181,13 +220,11 @@ UniXNU 的 [`devices.toml`](https://github.com/UniXNU/UniXNU/blob/main/devices.t
 | GPU | `turnip-darwin-kmd.patch`、`build-native-metal-bridge.py`、`make-gpu-addon.py` |
 | 脚本 | `make-wallpaper-overlay.py`、`seed-data-skip-setup.py`、`payload.py` |
 
-这组文件里没有刷新率相关改动，没有显示时序探针，也没有 GPU 或 USB 的结果记录。仓库没有 releases，没有 tags，文档目录只有 sheng 的设备页。
+这组文件里没有刷新率相关改动，没有显示时序探针，也没有帧率读数。该仓库没有 releases 与 tags。
 
-该仓库的 `myron` 分支文档提到「MobileGestalt identity and gestures」，与用户态身份相关，与 120 Hz 和 backboardd 无关。
+K90（annibale，SM8750）在 UniXNU 组织 33 个仓库、`devices.toml` 168 条记录、以及检索到的全部派生仓库中都没有出现。
 
-K90（annibale，SM8750）在 UniXNU 组织 33 个仓库、`devices.toml` 166 条记录、以及检索到的全部派生仓库中都没有出现。
-
-### 5.2 三个派生仓库是同源关系，且没有 K90 分支
+### 5.3 三个派生仓库是同源关系，且没有 K90 分支
 
 | 仓库 | 最后推送 | 分支 | 与本项目的关系 |
 |---|---|---|---|
@@ -197,21 +234,25 @@ K90（annibale，SM8750）在 UniXNU 组织 33 个仓库、`devices.toml` 166 �
 
 三者都没有 `k90`、`annibale`、`sm8750`、`myron` 相关分支。按同源只算一个来源处理，其中一个近期有价值的线索是 `UniXNU-kebab` 的 USB 与 KDP 提交（`0ac1193f` 给调试器一条不经过发送门控的接收路径，`1b55cb61` 把裸 KDP 数据报翻译成 xnu 的串口封装）。
 
-### 5.3 帖文本身没有找到原文
+### 5.4 帖文本身没有找到原文
 
-按作者名与设备名检索，只找到该作者的历史改造项目与被引用记录，没有找到声称 iOS 17 在 K90 Pro Max 上运行并完成 GPU、多核、120 Hz、USB 的原始帖文，也没有找到与之对应的开源产出。该说法停留在社区声称一档。
+按作者名与设备名检索，只找到该作者的历史改造项目与被引用记录，没有找到声称 iOS 17 在 K90 Pro Max 上运行并完成 GPU、多核、120 Hz、USB 的原始帖文。
 
-### 5.4 同类项目中与本故障同形的处理
+帖文与 5.1 的仓库是否同一项目无法确认：帖文说 USB 完成、120 Hz 完成，而 5.1 的自述里 USB 为不可用、刷新是 work-loop 定时器。该说法停留在社区声称一档。
+
+### 5.5 同类项目中与本故障同形的处理
 
 检索同类项目的源码与 issue，没有找到专门处理「memmove 源指向已释放内存、目标是自己管理的缓冲」的修复。最近的一处同形处理是 3.4 的 `891d951e`（把所有者释放推迟到运行时释放导入之后）与 3.3 的 `d67af6a2`（把导入做成每表面一次并按内核映射编号缓存）。
 
 `gh search issues backboardd` 命中的条目都来自 iOS 越狱插件与模拟器工具链，与本项目的故障没有代码关系。
 
-### 5.5 本节对应的阻塞项与下一步
+### 5.6 本节对应的阻塞项与下一步
 
-对 K90 Pro Max 线索的处置是降低优先级：没有源码就没有可借用的实现，等该仓库出现 myron 设备页或发布物再核对。可验证的下一步是给 `zg7681/UniXNU-myron` 的 `myron-next` 分支设一次观察，出现设备记录或 release 时再读。
+对 K90 Pro Max 线索：现在有可读的源码了，见 5.1 的 `Typeun/myron-device`，但它的显示与 GPU 都是部分完成，且面板未重新初始化。可验证的下一步是读该仓库的 `configs/myron_defconfig` 与 `board.toml`，把它的 GPU 与显示启动参数与我们的一一对照，特别是 `myron-gpu=11`、`sheng-fb-gpu=1` 与 `sheng-vsync=120` 三处。
 
-对 120 Hz 没有直接帮助；对 USB 调试链有帮助的是 5.2 里 kebab 的两个提交，若后续要接 KDP 可以从那里读实现。
+对 120 Hz 有用的一点：它把 `sheng-vsync=120` 描述为 work-loop 定时器发布刷新率，面板本身仍是固件帧缓冲、未重新初始化。这与 3.1 的结论一致，即该参数只发布率，帧周期由渲染服务器按上报的间隔定速；按 3.8 的下一步先做 slot 301 覆盖再看它是否够用。
+
+对 backboardd 与 GPU 合成有用的是 3.7 的交接 watchdog 与客户端容错：它处理的是「一帧交付后永不完成」这一类问题，与我们故障形态的边界需要分开判读。
 
 ## 6. 未查到与未验证
 
@@ -219,4 +260,5 @@ K90（annibale，SM8750）在 UniXNU 组织 33 个仓库、`devices.toml` 166 �
 - sheng 的「130 fps idle, delay 4.9 ms mean」只标明来自 `read-sheng-log.py` 与一个固定 revision，`delay` 指哪一段等待没有在该记录里写清；按 3.6 的观测点推测是呈现侧等待，未确认。
 - Mesa 上游是否存在过「导入资源不应被影子替换」的讨论，本轮用合并请求检索未命中；检索面有限，不能据此断言从未讨论。
 - 本项目守卫补丁在 `fd_resource_uncompress` 调用方上的静默返回是否真的不会触发，本轮只做了源码推理，没有实测。
+- `Typeun/myron-device` 自述把 iPadOS 17.7.11 起到 SpringBoard、Adreno 840 跑 Metal、扫描输出交接间歇卡住，这些本轮只读了 README 与提交说明，未在真机核对，也未读它的补丁全文。该仓库今天刚建，提交数是 5 笔，`myron-uefi` 兄弟仓库本轮没有访问。
 - 与此相关的一处上游经验记在 UniXNU 的 [Adreno740 文档](https://github.com/UniXNU/UniXNU/blob/main/docs/drivers/adreno740.md)：「The published device turns off backboardd's deep and compressed framebuffers」。本项目是否也需要同样的处置，未核对。

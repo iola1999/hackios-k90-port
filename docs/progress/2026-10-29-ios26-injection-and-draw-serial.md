@@ -58,6 +58,31 @@ fd draw seg slow: state wall 824045 cpu 128 flt 196 us
 
 `emit`／`streamout`／`allclean` 三段各 0 条。缺页 196 次与 824 毫秒的比值是每次 4.2 毫秒，普通匿名页路径在微秒量级，而 device pager 映射可能不同——`RedwoodGPUMemory.inc:313-315` 用 `IOBufferMemoryDescriptor::inTaskWithOptions(kernel_task, …)` 建缓冲，用户侧经 `IOUserClient.cpp:4784` 的 `createMappingInTask` 建 device pager 映射，整份文件没有 `prepare()` 调用也没有 `kIOMemoryWired`。
 
+### 3.4 GPU 侧已够快，瓶颈不在这里
+
+同一轮的日志里有两类现成的内核统计行，取自 `kernel-12377-attr26-diag3x-statefault/run/s00*.log`：
+
+```
+RedwoodGPU: the GPU worked 995 us on each of 160 (5 under 0.1 ms, 1 under 0.25, 0 under 0.5, 130 under 1, 4 under 2, 20 under 4, 0 longer; 159 ms in all)
+RedwoodGPU: GPU at 342 MHz, 1 speed changes since it started
+```
+
+GPU 每次提交约 1 毫秒、最长的 20 次落在 4 毫秒以内，整窗 160 次合计 159 毫秒。按每秒 60 次提交算，GPU 占用不到 7%，所以「GPU 算不过来」解释不了线程等一秒以上。
+
+同一组统计里还有三行，把提交路径的成本也摊开了：
+
+```
+RedwoodGPU: 160 submissions in 5003 ms: 1230 us each in the kernel, 40 of them waiting for room in the queue; 181 command buffers and 6562 buffers named, 10488 KB out of the cache in 1101 us a submission
+RedwoodGPU: 3 submissions in 16919 ms: 1221 us each in the kernel, 13 of them waiting for room in the queue; 5 command buffers and 76 buffers named, 10922 KB out of the cache in 645 us a submission
+RedwoodGPU: 147 waits of 1703 us, 0 over before they began; 0 IOSurfaces taken as buffers in 0 us each; 161 buffers, 85 MB
+```
+
+健康窗口是 5 秒 160 次提交（约每秒 32 次），每次在内核侧花 1.23 毫秒，其中 40 次等过队列空位；每次提交要刷出约 10 MB 缓存、点名约 41 个缓冲。冻结窗口是 17 秒只有 3 次提交，同样每次 1.22 毫秒。
+
+内核侧的 `gpuWait` 在健康窗口里 147 次、平均 1.7 毫秒，没有一次提前返回。这三条合起来说明：提交本身的成本、GPU 的执行时间、以及内核里的等待，都在毫秒量级，没有哪一项能造成一秒以上的停顿。一秒级的等待发生在别处，下一轮的线程快照才可能指出来。
+
+342 MHz 是 `adreno8_speed` 这个启动参数给定的档位：`adreno8_speed_tick()` 在 `adreno8_speed_asked <= 1` 时直接返回，档位只在参数给定时才随负载和触摸变化。这一轮只变过一次档，说明当时给的是较低的档。这一条只说明 GPU 有余量，不说明档位选得对；档位对不对要单独按验收口径验。
+
 ## 4. 未完成
 
 - `state` 段内部分段游标与首次映射预落页已编进同一份 AIR（`57fdb85c…`，14,051,376 字节），设备在两轮之间掉线，读数未取。两版同时在场，一次运行可同时取两组读数。
@@ -71,3 +96,5 @@ fd draw seg slow: state wall 824045 cpu 128 flt 196 us
 | 驱动 | `d6d45b6825e9101cc8ef6b78c569fd2a2715db415ea9b1aa590e1358fbcca1c6`（242,128 字节）；探针版 `868677669a794310ce1159ac37721eca9e5f726221a714e4f9ea3bd6afd71d44`（242,224 字节） |
 | AIR | `95ce99956630ad64eb67ca71a67412a77a3f779d2be590640538c34d1d9e1523`（14,018,416 字节）；`state` 分段＋预落页版 `57fdb85c38bcf6892de3394ffa184963d881a99a091dae828c85dba5cb22e8eb`（14,051,376 字节） |
 | `libredwood.dylib` | `1d7278335752c53cee5e43294136f52ddafb6442b542aa9db61258372911421b`（91,232 字节，arm64e、adhoc） |
+
+装车的库不是 `userland/root/lib/` 下那几份。`package.py` 把驱动与 AIR 分别从 `out/ios26-resume/bbmetal-device/` 与 `out/ios26-resume/mesa-arm64e/…` 取，`libredwood.dylib` 才取 `userland/root/lib/` 那一份（`package.py:412`、`:417`）。`userland/root/lib/libredwoodmetal.dylib` 停在 09:40 的 `774c8cd7…`（241,152 字节），`userland/root/lib/libredwoodair.dylib` 同样较旧，这两个路径上的文件不参与打包，比对时按上面的来源取。

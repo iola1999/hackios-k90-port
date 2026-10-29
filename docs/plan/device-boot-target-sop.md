@@ -118,7 +118,11 @@ fastboot -s "${ANDROID_SERIAL}" getvar slot-unbootable:b
 
 轮次中途若发现设备身份与预期不符（例如 `adb devices` 变空、`fastboot devices` 列出 `xnuloader`，或槽位与起轮时读到的不一致），立即停下并向协调人报告，不自行续跑；身份不符时继续发命令会让后续读数无法归因。
 
-轮次收尾停在 loader，不回安卓。`run-auto.py` 的收尾已经把内核停掉并复位，落在 fresh idle loader；下一轮直接从 loader 起，`run-auto.py` 本来就向 `xnuloader` 交载荷。回安卓只在两种情况下做：用户要用手机，或接下来较长时间不跑。收尾停在 loader 时核两项——`result: idle` 与 `ramdisk-state: idle 0 0 0`——并在报告里写一句「设备当前停在 loader，可软件恢复」。
+轮次收尾停在 loader，不回安卓。`run-auto.py` 的收尾已经把内核停掉并复位，落在 fresh idle loader。**下一轮起轮前仍要走一次 §5.3 的整轮重启**（见本节第一条的理由），所以「收尾停在 loader」只说明设备当前可软件恢复，不构成下一轮可以直接起轮的依据。回安卓只在两种情况下做：用户要用手机，或接下来较长时间不跑。收尾停在 loader 时核三项——`result: idle`、`ramdisk-state: idle 0 0 0`、`product` 为 `xnuloader`——三项都满足才算正常收尾，任一项不满足即停整条队列，见 [AGENTS.md](../../AGENTS.md) 第 5 节。
+
+连续起轮有预算：loader 每次启动消耗 2 次 A 槽重试且不标记成功，连续轮次每满 3 轮做一次冷启动检查点再继续；一个诊断批次最多 3 轮，到数停下汇报。2026-10-29 一天连跑十几轮没有做任何检查点，最后一次起轮时 loader 已从 USB 消失，只能长按电源键恢复。
+
+序列号为空时禁止发命令。`adb devices` 列出但序列号读不出来，按未枚举处理，除轮询外不发任何命令；`adb reboot bootloader` 这类命令在没有序列号时执行过一次并返回 `unknown command`，此后设备整段 USB 消失。
 
 一条历史记录（原因未知，只记事实）：2026-10-29 16:37 设备已回到安卓并核过可用，16:40 再查时 `adb devices` 为空、`fastboot devices` 列出 `xnuloader`、loader 为 fresh idle（`result: idle`、`ramdisk-state: idle 0 0 0`），即 A 槽在这三分钟内被切过并复位了一次；`slot-retry-count:b=6` 与 `slot-unbootable:b=no` 两个值与切前相同，可排除「安卓反复启动失败后回退到 A 槽」。设备侧只有 device 被授权执行 `fastboot`／`adb`，其余成员为只读。
 

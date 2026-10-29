@@ -119,6 +119,7 @@ fastboot -s xnuloader get_staged /tmp/hackios-stop2.log
 - `oem logwrite` 会覆盖 `boot_a` 开头，不能用于保存启动后的日志。当前真机调试使用 USB 日志。
 - 桌面 wch 串口属于其他设备。手机 UART 为 GENI `0xa9c000`、`115200n8`，当前没有连接调试线，默认保持关闭。
 - Android 整组 `pinmux-pins`／`pinconf-pins` 调试读取后曾发生重启。优先使用已保存的设备树和驱动定义，再决定定点读取；文件读取的硬件副作用需按实现检查。
+- 2026-10-29 事故：一天内连续起轮十几轮后，loader 从 USB 消失。起轮时 `ATTEMPT` 的 `left`／`elapsed` 全为空，`adb devices` 短暂列出一台但序列号为空，随后 `adb reboot bootloader` 返回 `unknown command`，两分钟内 `adb devices`、`fastboot devices`、`ioreg -p IOUSB`、`system_profiler SPUSBDataType` 全部查不到设备，只能长按电源键冷启。处置与约束见 [AGENTS.md](../../AGENTS.md) 第 5 节，故障形态见 [USB 恢复经验](../analysis/2026-10-25-usb-recovery-lessons.md) 第 4 节。
 
 ## 7. 四阶段验收
 
