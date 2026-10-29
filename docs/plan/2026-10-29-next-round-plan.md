@@ -77,7 +77,7 @@ python3 hackios-xnu-kernel/tools/apfs/apfs.py cat hackios-xnu-kernel/out/ios26-r
 python3 hackios-xnu-kernel/tools/apfs/apfs.py cat hackios-xnu-kernel/out/ios26-resume/bbmetal-device/root.apfs /etc/rc.jobs | shasum -a 256
 ```
 
-四项与轮次 `manifest.json` 的 `pack` 段逐项相等才起轮，`/etc/rc.jobs` 的哈希应当是 `16462e32…`。打包之前再核对四条格式串还在各自的库里，一条不在就停：AIR 的 `fd draw state segs` 与 `fd bo prefault slow`，驱动的 `redwood: stall pc`，注入库的 `tl: b`。
+四项与轮次 `manifest.json` 的 `pack` 段逐项相等才起轮，`/etc/rc.jobs` 的哈希应当是 `16462e32…`。打包之前再核对四条格式串还在各自的库里，一条不在就停：AIR 的 `fd draw state segs` 与 `fd bo prefault slow`，驱动的 `redwood: stall pc`，注入库的 `tl: b`。2026-10-29 离线反汇编过 `57fdb85c…` 的 `__fd_bo_map`：预落页循环内联在里面（先看 `prefaulted` 标志、再读 `bo->map` 与 `bo->size`、调 `os_time_get_nano`），返回前执行，不是只留了一个格式串。
 
 ### 2.3 这一轮同时回答的问题
 
