@@ -302,6 +302,8 @@ libsystem_kernel+0xcd8  mov x16, #-0x30     ; -48 = macx_swapon
 
 正反两个方向都是 209，比例 11.8%。这个数的读法要限定：崩溃与 `copied` 在时间上挨着，而 88.2% 的 `copied` 之后没有崩溃，所以「每次拷贝都导致崩溃」不成立；成立的是「崩溃前紧邻的那几行里有拷贝」。`tl: w` 那一行夹在中间，217 对 225 说明这个位置关系在这一轮里几乎恒定。
 
+`rwa buffer: copied … buffer at …` 这一行的出处是 `hackios-xnu-kernel/userland/src/redwoodmetal.m:2641`，位于 `RedwoodMetalBuffer` 用调用方内存创建缓冲的路径里：`copied <地址> of N bytes` 是创建时从调用方内存一次性拷进去的 N 字节，`buffer at <地址>` 是新建缓冲 `_contents` 的映射地址。所以上表「上两行含 `rwa buffer: copied`」读作「崩溃前紧邻一次缓冲创建」，不读作「崩溃前紧邻一次行拷贝」；`x0` 落在这些行里说明它是被创建出来的缓冲映射，不说明那行就是故障拷贝。
+
 按协议 §5，同一时刻的两条打印只证明它们一起出现。要把「拷贝路径与崩溃相关」从相邻推到因果，现在手上只有 freeze 轮 0 起对 roundb 15 起这一个对照，样本是一对轮次，不足以定因果。
 
 ## 9. 共享缓存里的字符串命中

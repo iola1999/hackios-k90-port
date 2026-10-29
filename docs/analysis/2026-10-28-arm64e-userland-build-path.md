@@ -1,5 +1,34 @@
 # 26 线 arm64e 用户态产物的宿主构建路径（2026-10-28）
 
+## 0. 两条内核构建线，以及哪一条是项目的
+
+**26 线（本项目内核，唯一可用于真机）**
+
+```
+cd hackios-xnu-kernel && XNU26_SRC=out/xnu12377 xnu26/build-macos.sh -j10 BUILD_DSYM=0
+```
+
+产物 `out/xnu12377/BUILD/obj/mach.development.bcm2837`（符号链接自 `BUILD/obj/DEVELOPMENT_ARM64_BCM2837/`），基线 20,210,232 字节、sha256 `cf1502f5632284af4ab11d182f62913663f7205ec4376f4abc0f274f834b2492`。2026-10-29 在这棵树上不加任何源码改动重跑，得到的正是这个哈希。
+
+**8796 线（容器，另作它用）**
+
+`tools/k90auto/build-kernel.py` 在 `kbuild` 容器里编 `/work/repo/xnu-src/xnu-8796.121.2`，产物是 `out/handoff-mach-attr26-*`，约 19.3 MB。**它的产物不作为本项目内核使用。** 2026-10-29 有四颗这样的内核被当作「新内核」送上真机，全部 0 帧，当晚的归因结论因此作废。
+
+**身份口径**
+
+`out/xnu12377` 的**构建树工作状态**是可复现身份：HEAD 加脏的已跟踪文件加未跟踪文件内容。`xnu/files/` 只是 8796 线的输入，`xnu26/patches/` 同理。改 26 线内核时直接改构建树里的文件，不改 `xnu/files/`。
+
+这棵树本来就带脏的已跟踪文件（`bsd/kern/bsd_init.c`、`kern_exec.c`、`devfs_vfsops.c`、`config/MASTER.arm64.bcm2837`、`iokit/Kernel/IOStartIOKit.cpp` 等），它们属于身份的一部分，不能为了「干净」而还原。
+
+**两边同名文件当前内容一致，这是状态不是机制**
+
+`out/xnu12377/iokit/Kernel/` 下的 `MiniIOMobileFramebuffer.cpp` 与 `RedwoodGPU.cpp` 与 `xnu/files/` 里的同名文件当前 `cmp` 相同，但两者之间没有任何同步机制，`xnu/files/` 从未参与 26 线构建。2026-10-29 把「两边一致」当成「改哪份都行」的机制，改了不生效的那一份，代价是四颗内核与六次真机引导。
+
+**编完自检**
+
+比产物 sha 与期望值：纯净构建应为 `cf1502f5…`，叠加改动后应为该轮记录的值。不相等就停下核对，不把产物送上设备。
+
+
 roundb 装车那份 arm64e 驱动与 AIR 库是怎么编出来的，这一页给答案。结论是两条已存在于仓库的宿主构建入口，都在 `tools/k90auto/`：`package.py` 编驱动、shim、探针并打 `root.apfs`，`build-air.py` 编 AIR 库。命令行逐字记在 round 目录的 `manifest.json` 与 `air-build-record.json` 里，工具链是宿主的 Apple clang，架构 arm64e，签名 adhoc。`userland/build.sh` 服务的是 16.5 线，26 线的产物不经过它。
 
 调查只读，没有跑任何构建，没有改脚本，没有碰设备与 round 目录里的产物。
@@ -33,6 +62,30 @@ probe   /usr/bin/xcrun -sdk iphoneos clang -arch arm64e -miphoneos-version-min=2
 | `root/lib/libredwoodair.dylib` | 13,983,936 | `d7b9ced5a115c08c` | `0x100000c` | `0x80000002` | 6 | adhoc |
 
 `cpusubtype` 的 `0x80000002` 是 LIB64 位加 ARM64E，正是 task-7 那个架构闸要求的值；容器里的 clang 18 出的是 `0x00000002`。
+
+### 1.1 重建这份驱动库的步骤与可复现条件
+
+源码在 `hackios-xnu-kernel/tools/userland-driver/`（两个 `.m`、两个 `.h`、七个 `.inc`，其中 `air_metal_copy.h` 也在这份源码集里；`redwoodmetal_mesa.inc` 的 include 写的是同目录）。`tools/k90auto/package.py` 的 `DRIVER_SOURCES` 指向该目录。
+
+```
+cd hackios-xnu-kernel
+/usr/bin/xcrun -sdk iphoneos clang -arch arm64e -miphoneos-version-min=26.0 -O1 \
+  -framework Foundation -framework IOKit -framework Metal -fno-objc-arc \
+  -dynamiclib -install_name /redwood/lib/libredwoodmetal.dylib \
+  tools/userland-driver/redwoodmetal.m tools/userland-driver/redwooddrawable.m \
+  -lobjc -o <目录>/libredwoodmetal.dylib
+codesign --force --sign - <目录>/libredwoodmetal.dylib
+```
+
+**输出文件名必须是 `libredwoodmetal.dylib`。** adhoc 签名把标识符写成 `<文件名>-<UUID>`，输出叫别的名字时签名 blob 随之改写，整份 sha256 完全不同，而 `__TEXT,__text` 与 `LC_UUID` 都一样。2026-10-29 曾因此误判成「工具链变了」，实际同一台机器、同一套 clang（21.0.0、SDK 27.1）就能编出 `9d66dd36d09af4d…`。
+
+核对两项：241,488 字节、sha256 `9d66dd367d09af4d9b526c73c8407627357d1e32d0cd392639bd5e2b35600f26`。源文件路径不写进产物，所以从 `userland/src/` 或 `tools/userland-driver/` 编出的结果相同；能改哈希的只有输出文件名。
+
+### 1.2 kbuild 容器是持久仓库
+
+`tools/k90auto/build-kernel.py` 用的 `kbuild` 容器跨构建保留它的内核仓库与展开后的源码树，可能停在另一条线上。2026-10-29 它停在 `c4f5dd9`，这个提交在本地存在但不是当前分支的祖先，`git merge --ff-only` 在源码同步之后才报 `fatal: Not possible to fast-forward`，一次构建就此作废。
+
+脚本现在在建之前先判「容器 HEAD 是不是本次提交的祖先」，不是就停下并打印两边的哈希与两条处理路径（把那条线 cherry-pick 进本分支，或把容器指到本次提交）。判断之外不改容器里的任何东西。
 
 ## 2. AIR 库：`tools/k90auto/build-air.py`
 
@@ -118,3 +171,88 @@ probe   /usr/bin/xcrun -sdk iphoneos clang -arch arm64e -miphoneos-version-min=2
 - `mesa-arm64e/` 根下那份 13,949,888 字节、`7b8e29ed` 的 `libredwoodair.dylib` 来历没有查。
 - 两个脚本只读了构建与打包相关的部分，没有逐行读通（`package.py` 663 行、`build-air.py` 125 行）。
 - 那三条命令行今天重跑会不会给出与 roundb 相同的字节，没有验证；`manifest.json` 里的 `source_sha256` 与当前工作树是否仍逐项相同，也没有对（`redwoodmetal.m` 在 roundb 之后有一次仅注释的改动，`.userland.git` `e0b7b62`，行数未变）。
+
+### 1.3 容器里那条线与主线不是包含关系
+
+2026-10-29 发现 kbuild 容器的 `/work/repo` 停在 `c4f5dd9`，与主线分叉，`merge --ff-only` 过不去。取证结果：
+
+- 容器 HEAD `c4f5dd98652eea30e81e1703e0b56c3990a7a09d`，分支 `k90-port`，`git status` 干净，相对它自己的 `origin/k90-port` 是 ahead 200、behind 4。
+- 那条线以六笔 BlueTool 探针提交为主：`baa499c`（boot-arg `bt_probe=1` 注册 BlueTool 找的两个控制套接字，只记录不回包）、`a48a496`（连接与断开行带累计计数）、`01bc649`（去掉 `ctl_enable`）、`fc9c340`（每十秒打一行累计值）、`1133be5`（心跳行打真实秒数），以及 `caa71dc`（`mhi_pcie` 阶段 6 读 GBPA 与全局故障状态）；其上还有两笔 `check-launchd-programs.py` 的工具提交 `3fc04f0`、`c4f5dd9`。
+- 两条线不是包含关系：容器带着 `redwood_bt_probe.c` 的 34 行后续，主线带着线程转储的源文件（`bsd/dev/redwood_threads.c` 178 行、`osfmk/kern/redwood_threads.c` 68 行）、`redwood_input.h` 与 `redwood_input.c` 的改动、驱动源码入库（`tools/userland-driver/`）与两份 mesa 补丁。
+
+合并之前必须解决一件事：`xnu26/patches/04-bsd%conf%files.patch` 与 `46-osfmk%conf%files.patch` 里 `redwood_bt_probe.c`、`redwood_threads.c` 的登记归属。两边各登记了自己那份源文件，直接合并会在构建清单上出现缺项或重复登记，要单独核对一次，合成一份完整登记。
+
+取回与复现这条线的方式（下次不用再摸索）：
+
+```
+docker exec -w /work/repo kbuild git bundle create /work/container-line.bundle --all
+docker cp kbuild:/work/container-line.bundle /tmp/container-line.bundle
+cd hackios-xnu-kernel && git fetch /tmp/container-line.bundle 'refs/heads/*:refs/container/*'
+git log --oneline refs/container/k90-port -6      # c4f5dd9 及其以下六笔
+```
+
+取回之后容器可以安全地 `git reset --hard` 回主线提交：那条线已经在本地仓库里可达。2026-10-29 按这个顺序执行过，容器从 `c4f5dd9` 指到 `8fe1b15`。
+
+### 1.4 构建实际消费哪一棵树
+
+构建链上有两棵同名的 XNU 树，2026-10-29 因为它们混用废掉了一次内核构建：
+
+- **构建实际消费的**：容器里 `/work/repo/xnu-src/xnu-8796.121.2`，由 `tools/k90auto/build-kernel.py` 从 git 归档应用 `xnu/files/` 覆盖与 `xnu26/patches/` 之后展开。产物从这棵树的 `BUILD/obj/DEVELOPMENT_ARM64_BCM2837/` 里取。
+- **`hackios-xnu-kernel/out/xnu12377`**：另一条构建路径留下的展开树，版本不同。`san/memory/ubsan_minimal.c` 在这棵里有 `kern/trap_telemetry.h`、早期 panic 分支在第 81 行；8796 那棵没有那个头文件，分支在第 229 行。
+- **seed 来源**：容器里的 `/work/xnu-tag-source`，`XNU_URL=file:///work/xnu-tag-source` 指的就是它。需要某个 Apple 原文件的原文时从这里取。
+
+改 XNU 源码之前，先确认手上的文件来自构建树（`/work/repo/xnu-src/xnu-8796.121.2` 或 `/work/xnu-tag-source`），不从任何 `out/` 目录下取。`out/` 下的树是历史构建的残留，同名不同版本。
+
+三条同类问题的前两条是 §1.2 的容器仓库分叉与 §1.3 的另一条线，加上这一条，它们的共同点是构建输入不明确。
+
+### 1.5 判新鲜度用内容哈希，不用 mtime
+
+2026-10-29 有两次「工具按时间戳判定、结果是陈旧产物」。内核构建那一次有源码依据：`apply.sh` 用 `copy2` 保留了归档里的旧 mtime，`make` 因此跳过重编，一颗内核的 `K9CANARY` 标记连续留在后面三颗产物里，修复在 `6ebca15`。
+
+打包那一次我推测 `build()` 也有同样的跳过逻辑，**这个推测是错的**：`package.py` 里没有 `st_mtime`／`getmtime`，`build()` 每次都跑 clang。查找原因时只有「形状相似」这一条依据，没有源码支持。`62d368b` 里落的两道断言与这条口径仍然成立，但它们解决的是另一个问题：镜像里实际装的驱动必须等于刚编出来的那份、也等于基线记的那份。
+
+两次的共同结论写成一句：任何「产物是否最新」的判断都用内容哈希，不用 mtime；推出机制时要先找到源码里的那一行，形状相似不算依据。
+
+## 10. `tools/mesa-patches/*.patch` 的应用链：补丁可复现，构建树不可重建
+
+`hackios-xnu-kernel/tools/mesa-patches/` 下有两个已跟踪的补丁（`fixguard6-shadow-counters.patch`、`freedreno-shared-no-shadow.patch`），仓库里没有脚本应用它们。在 `hackios-xnu-kernel` 的 `tools/` 下 88 个已跟踪的 `.sh`／`.py` 与顶层 `tools/` 下 47 个同类文件里检索 `mesa-patches`，匹配数是 0。写 `tools/mesa/*.patch` 的是另一条链：`tools/mk-mesa.sh:99` 把 `tools/mesa/*.patch` 与 `tools/mesa/rebase-26/*.patch` 的内容算成一个 sha256 存进 `PATCHES`，`:116` 逐个 `patch -p1` 打进容器里的 `mesa-$VERSION`，`:128` 把那个哈希写进 `.redwood-patches`。`tools/mesa-patches/` 不在这条链上。
+
+构建树 `out/ios26-resume/mesa-arm64e/mesa-26.2.5` 不属于任何 git 仓：`git check-ignore -v` 给的是 `hackios-xnu-kernel/.gitignore:4:/*`，`git ls-files out/ios26-resume` 是 0 项。它由 `xnu-deps/build/mesa/mesa-26.2.5` 复制而来（`out/ios26-resume/mesa-arm64e/setup-inputs.json` 的 `source` 字段，`created_at` 是 2026-10-26T21:36:44）。两个 `tools/mesa-patches/` 补丁的改动只存在于这棵树里：2026-10-29 实测源树 `xnu-deps/build/mesa/mesa-26.2.5/src/util/format/u_format.c` 里 `rwa_copy_record` 出现 0 次、`rwa row` 0 次，`src/gallium/drivers/freedreno/freedreno_resource.c` 里 `fd_shadow_calls` 也是 0 次；构建树同名两份分别是 3 次与 4 次。重新复制一次源树会丢掉这两块改动，从零重建这棵树要把两个补丁手打上去。
+
+**补丁可复现与树可重建是两件事。**
+
+- 补丁文件可复现：同一份补丁打到同一份原文上，得到逐字节相同的文件。2026-10-29 改 `u_format.c` 时按本节的方法验过。
+- 树不可重建：仓库里没有那份原文。`xnu-deps/build/mesa/mesa-26.2.5` 由 `tools/mk-mesa.sh` 打出（同目录有 `patch.log`），它自己不在版本控制里。所以「打了补丁」只说明在这一棵树上做了这一处改动，说明不了这棵树能重建出来。
+- 一个容易读错的标记：构建树里也有 `mesa-26.2.5/.redwood-patches`，按 `tools/mk-mesa.sh:99` 它只由 `tools/mesa/*.patch` 与 `tools/mesa/rebase-26/*.patch` 算出，见到这个文件不代表 `tools/mesa-patches/` 打过了。两棵树的这个值当前不同：`xnu-deps/build/mesa/mesa-26.2.5` 是 `3a43c7c4…`，arm64e 构建树是 `216c4533…`。
+
+**与 §0 的内核身份口径并列**：`out/xnu12377` 的可复现身份是「构建树工作状态」，即 HEAD 加脏的已跟踪文件加未跟踪文件内容，那些改动落在 `out/xnu12377` 那个 git 仓里。AIR 这棵树没有这样的身份。它上面的改动只由 `tools/mesa-patches/*.patch` 记录，而 `air-build-record.json` 的 `source_sha256`／`tree_sha256` 只覆盖 `build-air.py` 的 `FILES` 三项（`air_metal.c`、`air_metal.h`、`air_to_nir.c`），`u_format.c` 与 `freedreno_resource.c` 不在其中。查一轮的 AIR 库由什么编出来，前三项读构建记录，这两份读补丁文件的提交。
+
+**改这类文件走四步**（2026-10-29 改 `u_format.c` 时走了一遍）：
+
+1. 拿改动前树里的那份反向应用旧补丁，得到原文：
+
+```sh
+cp out/ios26-resume/mesa-arm64e/mesa-26.2.5/src/util/format/u_format.c post.c
+python3 - <<'PY'
+t = open('tools/mesa-patches/fixguard6-shadow-counters.patch').read()
+i = t.index('--- a/src/util/format/u_format.c\n')
+open('/tmp/uf.patch', 'w').write(t[i:])          # 该文件那一段
+PY
+mkdir -p tree/src/util/format && cp post.c tree/src/util/format/u_format.c
+cd tree && patch -p1 -R < /tmp/uf.patch && cp src/util/format/u_format.c ../pristine.c
+```
+
+2. 在 `pristine.c` 上改出目标内容，另存为 `new.c`。
+3. 生成新段，替换补丁文件里从 `--- a/src/util/format/u_format.c` 那一行到文件末尾的部分：
+
+```sh
+diff -u pristine.c new.c \
+  | sed -e '1s|^--- .*|--- a/src/util/format/u_format.c|' \
+        -e '2s|^+++ .*|+++ b/src/util/format/u_format.c|' > uf-new.patch
+```
+
+4. 把新补丁打回 `pristine.c` 的副本，`cmp` 与 `new.c` 比较，一致再拷进构建树。
+
+**检查法**：改完 `tools/mesa-patches/` 覆盖的文件、跑 `build-air.py` 之前，先 `cmp <构建树里那份> <按补丁打出来的那份>`，不一致就停下再改。补丁是记录，构建树是编译输入，两者不一致时构建照样成功、库照样有效，唯一的迹象是一轮跑完在日志里少几行。
+
+这两份补丁既不进 `package.py` 的库哈希闸，也不进 `air-build-record.json` 的源摘要。要判「这一轮的库里有没有这份插桩」，用 `strings <库> | grep -c '<格式串>'`；`build-air.py` 的 `holds` 段做的是同一件事。

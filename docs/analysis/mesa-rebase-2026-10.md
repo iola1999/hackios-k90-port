@@ -51,7 +51,7 @@ upstream 027ccd963b（2025-03-04，自 25.1-branchpoint 起生效）整体删除
 
 ## 5. AIR 前端 26.x API 差异（已按第 8 节迁移完成）
 
-`src/compiler/air`（copy 目录）在 26.2.5 下 `air_run` 与 `libredwoodair` 编译失败（每 TU 20 错误被截断），归为 12 类机械问题：
+`src/compiler/air`（copy 目录）在 26.2.5 下 `air_run` 与 `libredwoodair` 编译失败（每 TU 20 错误被截断），归为 12 类机械问题。这个 12 是最初按编译错误归类时的判定，依据是当时的编译日志、不在仓库里；本文第 9 节实际落地的差异按 §8.1 的 8 项清单加 §8.2 的 5 项新发现计为 13 类。下表 8 项即 §8.1 那一组：
 
 - `PIPE_SHADER_*`→`MESA_SHADER_*`
 - `gl_shader_stage`→`mesa_shader_stage` 及 `gl_shader_stage_name` 转内部

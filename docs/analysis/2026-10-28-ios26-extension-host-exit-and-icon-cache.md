@@ -102,48 +102,108 @@ lsprobe t=60 workspace=258 workspace_extensions=296
 | 11 | 文件提供者（`fileprovider-nonui` 6、`fileprovider-actionsui` 2、`fileprovider-ui`、`DocumentManager.Service`、`fskit.fsmodule`） | 按需 |
 | 2 | 壁纸（`com.apple.posterkit.provider`：`InfographPoster.appex`、`MonogramPosterExtension.appex`） | 选中 poster 相关时才走 |
 
-会被 SpringBoard／`chronod` 主动要内容的只有 33 条 widgetkit 加 2 条 posterkit，共 **35 条，35 个不同宿主**：
+会被 SpringBoard／`chronod` 主动要内容的只有 33 条 widgetkit 加 2 条 posterkit，共 **35 条，35 个不同宿主**。名单按 `hackios-xnu-kernel/ios26/rootfs/System/Library/xpc/launchd.plist` 的 `AppExtensions`（733 个 key）按 `NSExtensionPointIdentifier` 重算：`com.apple.widgetkit-extension` 33 条、`com.apple.posterkit.provider` 2 条，与正文的 35 一致。此前名单列了 38 项而正文写 35，差额的成因在 2026-10-29 核清：6 项在 733 条里不存在、漏了 3 条、4 项是同一对象的写法差异，现已按来源更正。
 
-- `CalculatorWidget`
-- `HomeWidget`
-- `SleepWidgetExtension`
-- `TypeToSiriWidgetExtension`
-- `AdaptiveMusicWidget`
-- `AdaptiveMusicControl`
-- `BarcodeScannerWidgetExtension`
-- `BatteriesWidgetExtension`
-- `BatteriesAvocadoWidgetExtension`
-- `CalendarWidgetExtension`
-- `FindMyWidgetItems`
-- `FitnessWidget`
-- `HealthBalanceWidget`
-- `ScreenTimeWidgetExtension`
-- `PrintCenterWidgetExtension`
-- `PeopleWidget_iOSExtension`
-- `GCWidgets`
-- `TVRemoteWidgetExtension`
-- `TrackingUIServiceWidgetExtension`
-- `VPNAppIntentWidgetExtension`
 - `AccessibilityControlsExtension`
+- `AdaptiveMusicControl`
+- `AdaptiveMusicWidget`
+- `AirDropSettingsIntents`
+- `AssistantSettingsControlsExtension`
+- `BarcodeScannerWidgetExtension`
+- `BatteriesAvocadoWidgetExtension`
+- `BatteriesWidgetExtension`
+- `BatterySettingsIntentsExtension`
 - `ControlCenterControlsExtension`
+- `DefaultAppsSettingsIntents`
+- `GAXAppWidgetExtension`
+- `GCWidgets`
+- `GeneralSettingsIntents`
+- `InCallActivitiesExtension`
+- `InfographPoster`
+- `IntelligenceIntentsExtension`
+- `MessagesSettingsWidgetKitExtension`
+- `MonogramPosterExtension`
+- `MusicRecognitionControls`
+- `NotificationsSettingsExtension`
+- `PeopleWidget_iOSExtension`
+- `PersonalHotspotControlExtension`
+- `PrintCenterWidgetExtension.iOS`
+- `ScreenTimeWidgetExtension`
+- `SleepWidgetExtension`
+- `SoundAndHapticsControls`
+- `TVRemoteWidgetExtension`
 - `ToggleAirplaneModeExtension`
 - `ToggleCellularDataModeExtension`
+- `TrackingUIServiceWidgetExtension`
+- `TypeToSiriWidgetExtension`
+- `VPNAppIntentWidgetExtension`
 - `WiFiSettingsControlsExtension`
 - `WirelessModemSettingsControlsExtension`
-- `PersonalHotspotControlExtension`
-- `SoundAndHapticsControls`
-- `MusicRecognitionControls`
-- `BatterySettingsIntentsExtension`
-- `DefaultAppsSettingsIntentsExtension`
-- `GeneralSettingsIntentsExtension`
-- `NotificationsSettingsExtension`
-- `IntelligenceIntentsExtension`
-- `AirDropSettingsIntentsExtension`
-- `MessagesSettingsWidgetKitExtension`
-- `InfographPoster`
-- `MonogramPosterExtension`
 
 这份清单的第二个用途：降级时正好是这 35 条要摘掉，其余 698 条不参与「起了就退」。
+
+
+### 5.1 宿主分组（同一份来源重算）
+
+35 条按宿主分三段，都在 `AppExtensions` 的 733 个 key 里按扩展点筛出。按「appex 路径的父目录」直接解析会把第三段那 16 条误并成一个叫 `Extensions` 的宿主：它们在 `/System/Library/ExtensionKit/Extensions/` 下，镜像里没有宿主 app，运行时由 `extensionkitservice` 拉起。
+
+宿主是 app 的 17 条（15 个 app，其中 `AdaptiveMusicApp.app` 与 `Batteries.app` 各带 2 条）：
+
+| 宿主 app | 扩展 | 扩展点 | 扩展 bundle id |
+|---|---|---|---|
+| `AccessibilityUIServer.app` | `AccessibilityControlsExtension` | widgetkit | `com.apple.AccessibilityUIServer.AccessibilityControlsExtension` |
+| `AdaptiveMusicApp.app` | `AdaptiveMusicControl` | widgetkit | `com.apple.AdaptiveMusicApp.AdaptiveMusicControl` |
+| `AdaptiveMusicApp.app` | `AdaptiveMusicWidget` | widgetkit | `com.apple.AdaptiveMusicApp.AdaptiveMusicWidget` |
+| `BarcodeScanner.app` | `BarcodeScannerWidgetExtension` | widgetkit | `com.apple.BarcodeScanner.BarcodeScannerWidgetExtension` |
+| `Batteries.app` | `BatteriesAvocadoWidgetExtension` | widgetkit | `com.apple.Batteries.BatteriesAvocadoWidgetExtension` |
+| `Batteries.app` | `BatteriesWidgetExtension` | widgetkit | `com.apple.Batteries.BatteriesWidget` |
+| `GameCenterWidgets.app` | `GCWidgets` | widgetkit | `com.apple.gamecenter.widgets.extension` |
+| `GAXApp.app` | `GAXAppWidgetExtension` | widgetkit | `com.apple.GAXApp.GAXAppWidget` |
+| `InCallService.app` | `InCallActivitiesExtension` | widgetkit | `com.apple.InCallService.InCallActivities` |
+| `MusicRecognition.app` | `MusicRecognitionControls` | widgetkit | `com.apple.musicrecognition.MusicRecognitionControls` |
+| `PeopleViewService.app` | `PeopleWidget_iOSExtension` | widgetkit | `com.apple.PeopleViewService.PeopleWidget-iOS` |
+| `Print Center.app` | `PrintCenterWidgetExtension.iOS` | widgetkit | `com.apple.printcenter.PrintCenterWidget` |
+| `Screen Time.app` | `ScreenTimeWidgetExtension` | widgetkit | `com.apple.ScreenTimeWidgetApplication.ScreenTimeWidgetExtension` |
+| `Siri.app` | `TypeToSiriWidgetExtension` | widgetkit | `com.apple.siri.TypeToSiriWidget` |
+| `SleepWidgetContainer.app` | `SleepWidgetExtension` | widgetkit | `com.apple.Health.Sleep.SleepWidgetExtension` |
+| `TrackingUIService.app` | `TrackingUIServiceWidgetExtension` | widgetkit | `com.apple.dockkit.TrackingUIService.TrackingUIServiceWidget` |
+| `TVRemoteUIService.app` | `TVRemoteWidgetExtension` | widgetkit | `com.apple.TVRemoteUIService.TVRemoteWidget` |
+
+宿主是 framework 的 2 条（都是 posterkit）：
+
+| 宿主 framework | 扩展 | 扩展点 | 扩展 bundle id |
+|---|---|---|---|
+| `AmbientUI.framework` | `InfographPoster` | poster | `com.apple.ambient.AmbientUI.InfographPoster` |
+| `ContactsUI.framework` | `MonogramPosterExtension` | poster | `com.apple.ContactsUI.MonogramPosterExtension` |
+
+镜像里没有宿主 app 的 16 条：
+
+| 扩展 | 扩展点 | 扩展 bundle id |
+|---|---|---|
+| `AirDropSettingsIntents` | widgetkit | `com.apple.AirDropSettingsIntents` |
+| `AssistantSettingsControlsExtension` | widgetkit | `com.apple.siri.AssistantSettingsControls` |
+| `BatterySettingsIntentsExtension` | widgetkit | `com.apple.batteryui.BatterySettingsIntents` |
+| `ControlCenterControlsExtension` | widgetkit | `com.apple.ControlCenter.ControlCenterControlsExtension` |
+| `DefaultAppsSettingsIntents` | widgetkit | `com.apple.DefaultAppsSettingsIntents` |
+| `GeneralSettingsIntents` | widgetkit | `com.apple.GeneralSettingsIntents` |
+| `IntelligenceIntentsExtension` | widgetkit | `com.apple.TelephonyUtilities.IntelligenceIntents` |
+| `MessagesSettingsWidgetKitExtension` | widgetkit | `com.apple.conference.MessagesSettingsWidgetKitExtension` |
+| `NotificationsSettingsExtension` | widgetkit | `com.apple.NotificationsSettingsExtension` |
+| `PersonalHotspotControlExtension` | widgetkit | `com.apple.WiFiKit.PersonalHotspotControl` |
+| `SoundAndHapticsControls` | widgetkit | `com.apple.settingsandcoreapps.SoundAndHapticsControls` |
+| `ToggleAirplaneModeExtension` | widgetkit | `com.apple.coretelephony.ToggleAirplaneMode` |
+| `ToggleCellularDataModeExtension` | widgetkit | `com.apple.coretelephony.ToggleCellularData` |
+| `VPNAppIntentWidgetExtension` | widgetkit | `com.apple.VPNAppIntentWidget` |
+| `WiFiSettingsControlsExtension` | widgetkit | `com.apple.wifi.settingscontrols` |
+| `WirelessModemSettingsControlsExtension` | widgetkit | `com.apple.WirelessModemSettingsControls` |
+
+三段条数 17 + 2 + 16 = 35，与第 5 节清单一致。
+
+对下一轮减量实验的三点：
+
+- 按扩展点摘除会让 15 个 app 的 `PlugIns/` 变空（两个各带 2 条、其余 13 个各 1 条），`launchd.plist` 里这些 app 不再有任何 AppExtensions 记录。
+- 第三段那 16 条摘除后不会留下空目录引用的 app，它们本来就没有 app 宿主；`extensionkitservice` 自己的 220 条 ExtensionKit 记录不受影响。
+- 第二段的两条由 `AmbientUI.framework`／`ContactsUI.framework` 提供，与壁纸这条产品语义一致；摘掉后只影响壁纸选择，不影响桌面图标与 Dock。
 
 ## 6. 宿主 `Info.plist` 里的加载前提：没有可疑项
 
