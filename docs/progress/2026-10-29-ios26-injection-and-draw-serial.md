@@ -41,12 +41,13 @@
 
 ### 3.2 已排除的候选
 
-- **着色器编译**：`prog_builds` 全轮累计为 0。
 - **批提交**：`batch submit` 的全局最差 1 微秒；`fd_batch_check_size` 一次没有超过 50 毫秒。
 - **显式映射等待**：`fd_bo_cpu_prep` 的包装探针 0 行。
 - **早退分支**：五个早退点各埋读数，0 行；同轮 `fd draw calls` 有 33 条，说明探针在执行。
 - **触摸注入**：无输入对照轮 `wall` 累计 8.95 秒、`cpu` 累计 28,828 微秒，与带触摸那轮的 14.3 秒同一量级。
 - **`tc_draw_vbo`**：`rwa draw call` 打出的 `draw_vbo` 符号名一律是 `fd_draw_vbo`；`air_metal.c:776` 建 context 时 `flags` 传 0，`fd_context_init_tc` 因此不包 threaded context。
+
+着色器编译没有排除：`prog_builds` 的 0 是整数除法截断的结果，慢 draw 与新建 pipeline 的对应见[晚间会话审查](../analysis/2026-10-29-evening-session-review.md) §2、§3。
 
 ### 3.3 当前落点
 

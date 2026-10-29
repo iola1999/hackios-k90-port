@@ -272,7 +272,56 @@ Android 进不去时，用 `tools/k90auto/reboot-lk.py <新目录> --return-load
 - `f99ff4a` 起 `pack.source_sha256` 包含驱动六个 `#include` 文件（`redwoodmetal_commandbuffer.inc` 等）；之前的轮次没有它们，身份靠产物哈希。重建时仍按 `library-baseline.json` 的 `529d19bf…` 核产物。
 - `package.py` 会重建驱动。重编出来不是 `529d19bf…` 就停下核源码，不要用 `ALLOW_DRIVER_CHANGE=1` 绕过。
 
-## 8. 相关文档
+## 8. 第三轮：`ir3_cache_lookup()` 内部与编译队列
+
+第二轮把慢 draw 定在 `ir3_cache_lookup()` 这一次调用里（[`state` 段分段三轮](../progress/2026-10-29-state-segment-rounds.md) §4）。第三轮相对第二轮只换 AIR，内核、驱动、注入库、作业与 cmdline 不变。为什么同时补编译队列的读数，见[晚间会话审查](../analysis/2026-10-29-evening-session-review.md) §3 到 §5。
+
+### 8.1 身份与探针
+
+| 项 | 值 |
+|---|---|
+| AIR | `b5b44d51ddf6a2d3651a3c14448c74b5a9532ef2131baf57e3bc077964a8a434`，14,068,000 字节 |
+| 补丁 | `hackios-xnu-kernel/tools/mesa/prog-lookup-segs.patch`（八个子段）与 `ir3-compile-queue-probe.patch`（三类新行） |
+| 轮次目录 | `kernel-12377-attr26-diag3x-statecursor4` |
+
+新增的三类行：
+
+- `ir3q job: <stage> <name> tid <tid> ahead <n> queued <us> run <us> cpu <us> flt <n> us`：每个初始变体编译任务一行。`ahead` 是入队时排在前面、还没开始的任务数，不含正在执行的那个；`queued` 是入队到开始，`run` 是执行墙钟，`cpu` 是编译线程自己的 CPU；`flt` 是整个进程在任务期间的缺页数。
+- `ir3 wait: <stage> <name> <us> us tid <tid>`：`ir3_get_shader()` 在 fence 上等了 1 毫秒以上，`tid` 是等待的线程，即绘制线程。
+- `fd bo new slow: <bytes> bytes flags <0x…> <us> us tid <tid>`：`bo_new()` 里向内核驱动要新缓冲用了 5 毫秒以上。
+
+段名在第二轮的基础上，`prog_lookup` 之前插了 `prog_hash`、`prog_search`、`prog_hit`（只在命中时出现）、`prog_shaders`、`prog_build`、`prog_constlen`、`prog_rebuild`、`prog_binning`。`prog_lookup` 在这一版里只剩 `prog_binning` 之后到 `ir3_cache_lookup()` 返回的部分，其中主要是 `create_state` 建程序状态。
+
+### 8.2 判据
+
+判据零沿用 §3.1，另加两条：日志里至少有一行 `ir3q job:`；`fd draw state segs` 行的段名与 8.1 一致。
+
+| 判据 | 通过条件 | 结论 |
+|---|---|---|
+| K1 | `prog_shaders` ≥ 0.60 × `T` | 绘制线程在 fence 上等初始变体编译，按 8.3 读编译队列 |
+| K2 | `prog_build` 与 `prog_rebuild` 之和 ≥ 0.60 × `T` | 时间在绘制线程自己取变体的那一步 |
+| K3 | `prog_lookup` ≥ 0.60 × `T` | 时间在建程序状态，看同一 draw 窗口里的 `fd bo new slow` |
+| K4 | 以上都不成立 | 落点分散，按条记录各段份额，不再加轮 |
+
+### 8.3 K1 成立时读编译队列
+
+一条慢 draw 对应它前面同一 `tid` 的 `ir3 wait` 行；被等的着色器按 stage 与名字对上它的 `ir3q job` 行。记那个任务的 `queued`、`run`、`cpu`，以及这条 `ir3 wait` 的等待时长 `w`。
+
+| 判据 | 通过条件 | 结论 |
+|---|---|---|
+| Q1 | `queued` ≥ 0.5 × `w` | 任务排在别的编译任务后面，单线程队列串行是主因 |
+| Q2 | `run` ≥ 0.5 × `w` 且 `cpu` ≥ 0.5 × `run` | 编译本身在算，耗时在编译量 |
+| Q3 | `run` ≥ 0.5 × `w` 且 `cpu` < 0.2 × `run` | 编译线程自己在等，用线程快照里编译线程的 `tid` 看它停在哪个系统调用 |
+| Q4 | 以上都不成立 | 排队与执行各占一部分，照抄两项数值 |
+
+线程快照里，`ir3 wait` 的 `tid` 是绘制线程，`ir3q job` 的 `tid` 是编译线程，两者的 pc 按 §3.4 的方法解名。
+
+### 8.4 本轮的边界
+
+- 这一轮是本批第三轮，读完按 8.2、8.3 分流后停下汇报，修法放到下一批。
+- 如果起轮前换装了带屏显的 loader v9，轮次注记写明。loader 不在被测的图形栈里，8.2 读的是 `ir3_cache_lookup()` 内部的份额，loader 换版影响不到这个比例。
+
+## 9. 相关文档
 
 - 会话复盘与当前卡点：[会话复盘](../analysis/2026-10-29-session-review.md)
 - 慢 draw 的缺页口径与替代判据：[缺页计数口径核对](../analysis/2026-10-29-slow-draw-fault-accounting.md)

@@ -84,7 +84,7 @@ backboardd 每约 10 秒段错误一次。根因是 `rwa_buffer_destroy` 不清 
 | 设备从 USB 消失 | 物理 | `adb`、`fastboot`、`ioreg -p IOUSB`、`system_profiler SPUSBDataType` 四处连续为空 | 电量（见 §7.5） |
 | 帧流永久停止 | 合成 | 输入开始后陡停且不恢复，A 39 秒、B 22 秒、C 21 秒、D 不到 1 秒；停止后 `tl: v`／`s`／`f`／`w` 同秒停，`tl: p` 再跑 25 秒 | fence 等待、交换队列门、节拍停止 |
 | 15 秒周期约 3 秒空洞 | 合成 | 9 轮里 8 轮复现；29 个长洞宽度 3,015,427 到 3,053,745 微秒，周期中位 14,999,996 微秒 | chronod、扩展宿主、widget 栈 |
-| 慢 draw 1 到 2.5 秒 | 图形栈 | `state` 段 `wall 824045 cpu 128 flt 196` | 着色器编译、批提交、早退分支、触摸注入、threaded context、`fd_bo_cpu_prep` |
+| 慢 draw 1 到 2.5 秒 | 图形栈 | `state` 段 `wall 824045 cpu 128 flt 196` | 批提交、早退分支、触摸注入、threaded context、`fd_bo_cpu_prep`；着色器编译的排除已撤回，见[晚间会话审查](2026-10-29-evening-session-review.md) §2 |
 | 120 Hz | 显示 | 非节拍段 9.41 毫秒，8.333 毫秒槽差 1.08 毫秒 | 面板路径未重新初始化（上游同样如此） |
 | 验收门槛 | 度量 | 30 秒单段最好 759 帧，门槛 1,650 | 五轮全部判样本不足 |
 
