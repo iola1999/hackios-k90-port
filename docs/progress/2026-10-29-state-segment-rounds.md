@@ -49,6 +49,18 @@
 
 两轮的慢 draw 都紧跟在新建 render pipeline 之后，统计见[晚间会话审查](../analysis/2026-10-29-evening-session-review.md) §3。
 
-## 5. 第三轮的准备
+## 5. 第三轮：`statecursor4`
 
-`ir3_cache_lookup()` 内部按 `prog_hash`、`prog_search`、`prog_hit`、`prog_shaders`、`prog_build`、`prog_constlen`、`prog_rebuild`、`prog_binning` 八处插点，补丁是 `hackios-xnu-kernel/tools/mesa/prog-lookup-segs.patch`，AIR 编出 `35cc6646…`，`library-baseline.json` 已按 `UPDATE_BASELINE=1` 更新。载荷还没有打包。起轮前要按审查 §5 补三组探针并登记判据。
+相对第二轮只换 AIR：`b5b44d51…`，`ir3_cache_lookup()` 内部八个子段，加上编译队列、fence 等待与新缓冲分配三类读数，判据见[下一轮方案](../plan/2026-10-29-next-round-plan.md) §8。载荷 `b87a9342…`，25,470,024 字节。
+
+起轮前在整轮重启途中换装 loader v9（`handoff-loader-v9.img`，build-id `893f478…`）。LK 侧读数：`slot-retry-count:a` 5、`slot-retry-count:b` 6、`slot-successful:b` yes；B 槽 Android 22 秒到 `sys.boot_completed=1`，电量 85%、33.1 °C；刷入后 `set_active a` 计数回到 7，19 秒枚举出 `xnuloader`。屏显在真机截图里可见，连续四张截图里方块的位置依次为第 3、0、2、3 格。loader 不在被测的图形栈里，本轮读的是 `ir3_cache_lookup()` 内部的份额，不受换版影响。
+
+- 判据零满足，`ir3q job` 149 行、`ir3 wait` 62 行、`fd bo new slow` 3 行。
+- 22 条慢 draw 全部满足 K1：`prog_shaders` 占 `T` 的 99.7%～100%，绘制线程（tid 360）在 fence 上等初始变体编译。另一线程 tid 475 等的是计算着色器。
+- 编译线程有两个（tid 298、299）：tid 360 等的任务都在 298 上，tid 475 等的都在 299 上。62 条等待里多数满足 Q1：入队时前面排着 1～34 个任务，排队最长 2,521,740 µs，任务本身中位只跑 3,124 µs。
+- 堵住队列的是少数长任务（Q3）：31 个任务墙钟超过 100 毫秒，其中 `D8F18H` 1,076,039 µs、`D8F18V` 1,146,807 µs、`D2F10H` 959,924 µs；这 31 个任务的 CPU 在 0.9～52 毫秒之间。
+- `fd bo new slow` 3 条，都是 16,384 字节：tid 299 一次 981,494 µs，另两次 20,483 与 40,227 µs。
+- 线程快照 3 份：编译线程 298 一次停在 `mach_msg2_trap`，一次在 `psynch_mutexdrop`，一次在 AIR 代码里；绘制线程 360 两次在 `psynch_cvwait`。
+- run-auto 在 100.1 秒判定停帧：末帧 855，之后 19.6 秒没有新帧。帧流在 236.2 秒到 261.8 秒之间静默 25.6 秒，期间有 3,165 个触摸采样，横坐标走完一整段水平拖动，没有触摸被丢弃的日志；23:16:00 时钟跳分钟时又出了 18 帧（838～855），之后再次静默。末帧之后到日志结束（31 秒）没有背光或 `displayState` 变化。
+
+这一轮的停帧是锁屏对水平慢拖没有画面反应，渲染链路在整分钟时仍能出帧。第二轮的末帧 771 同样落在整分钟（21:24:00.058）。三轮到数，本批停止。

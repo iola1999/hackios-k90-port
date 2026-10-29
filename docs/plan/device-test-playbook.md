@@ -21,12 +21,14 @@
 
 Android 可连接时，通过 `adb -s "${ANDROID_SERIAL}" reboot bootloader` 进入 LK。驻留 loader 可连接且符合第 10 节前置条件时，使用软件 LK 入口。内核无响应先保存可读日志并检查软件停止与返回能力；软件恢复不可用，再请用户长按电源键和音量下进入 FASTBOOT。沿用用户已尝试过的动作和结果，减少重复操作。
 
-2026-10-25 已安装 `hackios-xnu-kernel/out/handoff-loader-v7.img`，build-id 为 `7160d4dadd9bf27cbb2b4c42e2629b9e0aa3a460`，镜像 SHA-256 为 `bc08a4b4d338be7e31984b49f8d81caedac0e80d1c4c5fba3bc712baa8048b4c`。本轮已验证空闲 15 秒后的首条查询、中止截图上传后的查询与重启，以及 GPU 停止后第 65 秒的查询与 USB 复位；后者 17.46 秒重新枚举并返回 `idle`。完整范围见[恢复审查记录](../progress/2026-10-25-gpu-resume-review.md)。重装前仍核对实际文件与哈希；v5 还原镜像保留。`out/` 中的文件是本地构建产物。
+2026-10-29 已安装 `hackios-xnu-kernel/out/handoff-loader-v9.img`，build-id 为 `893f478634533bd9b6fb086def780458b07fd2a3`，镜像 SHA-256 为 `e860325ace27bf78c449df8341f9694c94b595c96e41d4ac2196b8b3653c9ec5`。v9 在 USB 等待与传输期间往屏幕下方画阶段、进度条与日志尾部，内核接管屏幕后不再画；镜像由 `hackios-xnu-kernel/tools/reseal-loader-img.py` 以 v8 为参考重封，shim、FD 与 DTB 与 v8 相同。
+
+上一版 v8（`7ffbdd44…`，build-id `unknown`）与 v7、v5 的镜像都保留，回退时按同样的命令刷回。v7 的 USB 恢复验证范围见[恢复审查记录](../progress/2026-10-25-gpu-resume-review.md)。重装前仍核对实际文件与哈希。`out/` 中的文件是本地构建产物。
 
 ```sh
 fastboot -s "${ANDROID_SERIAL}" getvar product
 fastboot -s "${ANDROID_SERIAL}" getvar current-slot
-fastboot -s "${ANDROID_SERIAL}" flash boot_a hackios-xnu-kernel/out/handoff-loader-v7.img
+fastboot -s "${ANDROID_SERIAL}" flash boot_a hackios-xnu-kernel/out/handoff-loader-v9.img
 fastboot -s "${ANDROID_SERIAL}" set_active a
 fastboot -s "${ANDROID_SERIAL}" reboot
 fastboot -s xnuloader getvar product
