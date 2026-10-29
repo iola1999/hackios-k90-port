@@ -1,11 +1,22 @@
 #!/usr/bin/env python3
-"""Run a payload, collect logs and screenshots, then leave the loader idle again.
+"""Run a payload, collect logs, take screenshots only when asked, then leave the loader idle again.
 
 usage: tools/k90auto/run-auto.py RUN_DIR [SECONDS] [SHOT_EVERY,SHOT_FROM,LOG_EVERY]
 
 RUN_DIR is what make-payload.py printed. Its manifest.json names the payload and the system image
 the loader keeps resident; an image over 0xffffffff bytes also needs the window recorded there, and
 is transferred by hackios-xnu-kernel/tools/stage-system.sh one 256 MiB block at a time.
+
+The third argument defaults to 0,100,20: no periodic screenshots, log snapshots every 20 seconds.
+A periodic screenshot costs the USB channel a 11.6 MB transfer, and the log is what a round is read
+from, so the default spends the channel on logs. SHOT_EVERY>0 still takes a shot every that many
+seconds from SHOT_FROM on, for a round that wants a time series instead of the log.
+
+Screenshots are otherwise on demand. A run watches RUN_DIR/shot-request; whoever performed an action
+worth recording writes that file (tools/k90auto/shot-now.py does it), and the run takes exactly one
+shot when it next looks, named by the elapsed second the shot was taken at, so the file name still
+reads the same way as in the rounds taken with a fixed interval. Set SHOT_ON_ACTION=0 to ignore the
+request file.
 
 The run always ends with the device back in a fresh idle loader. A kernel that held GPU resources
 reaches hung-held, which keeps every page until a cold reset, so the teardown saves the log the
@@ -31,7 +42,16 @@ def digest(path):
 
 base = Path(sys.argv[1])
 duration = int(sys.argv[2]) if len(sys.argv) > 2 else 240
-shot_every, shot_from, log_every = (int(x) for x in (sys.argv[3] if len(sys.argv) > 3 else "3,100,20").split(","))
+shot_every, shot_from, log_every = (int(x) for x in (sys.argv[3] if len(sys.argv) > 3 else "0,100,20").split(","))
+# A request file is how an action taken outside this process asks for one shot. The run unlinks it
+# before shooting, so a request that arrives while the shot is being staged is served next time.
+shot_on_action = os.environ.get("SHOT_ON_ACTION", "1") != "0"
+# A desktop that stops producing frames never ends a fixed-length round by itself: the kernel keeps
+# logging and the loader keeps answering running until the clock runs out. The round therefore ends
+# early once frames have stopped for this many seconds, which is about one snapshot interval plus
+# the snapshot cadence. K90_FREEZE_SECONDS=0 or K90_FREEZE_OFF=1 keeps the old fixed-length behaviour.
+freeze_seconds = int(os.environ.get("K90_FREEZE_SECONDS", "20"))
+freeze_watch = freeze_seconds > 0 and os.environ.get("K90_FREEZE_OFF", "0") != "1"
 manifest = json.loads((base / "manifest.json").read_text())
 # A failed pack leaves no new payload behind, and the queue used to run whatever directory it was
 # handed: on 2026-10-28 make-payload.py stopped on an existing directory and the round ran the first
@@ -60,6 +80,7 @@ run = base / "run"
 # A run directory is one run's record: files left by an earlier attempt would be read as this one's.
 assert not run.exists() or not any(run.iterdir()), f"{run} is not empty"
 run.mkdir(exist_ok=True)
+shot_request = run / "shot-request"
 
 # Runs recorded before make-payload.py wrote the system image carry the 16.5 one this tool checked.
 system = manifest.get("system") or {"path": "hackios-xnu-kernel/userland/system.apfs",
@@ -146,9 +167,49 @@ call(["oem", "run"])
 print("RUN_STARTED", flush=True)
 
 
+FRAME_LINE = re.compile(r"^tl: v (\d+) ready (\d+) shown (\d+) done (\d+)", re.M)
+TL_LINE = re.compile(r"^tl: .+ (\d+)$", re.M)
+STILL_NO_FRAMES = re.compile(r"framewatch: still no frames, (\d+) s")
+
+
+def frame_progress(path):
+    """What a snapshot says about frames: highest id, when that frame finished, the newest tl:
+    timestamp anywhere in it, and the largest gap between consecutive frames' `done` values. A
+    snapshot that does not exist yet reads as no frames, which the caller treats as no progress."""
+    if not path.is_file():
+        return None
+    text = path.read_text(errors="replace")
+    quiet = max((int(x) for x in STILL_NO_FRAMES.findall(text)), default=0)
+    frames = FRAME_LINE.findall(text)
+    if not frames:
+        # A snapshot with no frame lines at all still carries framewatch's own count of quiet
+        # seconds, which is the only freeze signal once the ring has aged every frame line out.
+        return {"frame_id": None, "frame_done_us": None, "newest_tl_us": None,
+                "max_gap_seconds": 0.0, "quiet_seconds": quiet}
+    ids = [int(f[0]) for f in frames]
+    done = [int(f[3]) for f in frames]
+    newest_tl = max((int(x) for x in TL_LINE.findall(text)), default=0)
+    gaps = [(b - a) / 1e6 for a, b in zip(done, done[1:]) if b >= a]
+    last = max(range(len(frames)), key=lambda i: done[i])
+    return {"frame_id": ids[last], "frame_done_us": done[last], "newest_tl_us": newest_tl,
+            "max_gap_seconds": round(max(gaps), 3) if gaps else 0.0, "quiet_seconds": quiet}
+
+
+def take_shot(elapsed):
+    """One screenshot at the given elapsed second. The name keeps the fixed-interval format so a
+    reader converts a file name to a moment the same way it did for the earlier rounds."""
+    if call(["oem", "screenshot"], 8, False)["rc"] == 0:
+        call(["get_staged", run / f"shot-{int(elapsed * 10):05d}.raw"], 30, False)
+
+
 index = 0
 failed = None
 last_shot = -1e9
+shots = 0
+progress = None          # the newest snapshot's frame reading
+progress_wall = None    # host time that reading was taken at
+last_frame_id = -1
+frozen = None
 while time.monotonic() - start < duration:
     elapsed = time.monotonic() - start
     name = state()
@@ -159,11 +220,44 @@ while time.monotonic() - start < duration:
     if elapsed >= log_every * index:
         if call(["oem", "log"], 8, False)["rc"] == 0:
             call(["get_staged", run / f"s{index:03d}.log"], 20, False)
+        snap_path = run / f"s{index:03d}.log"
         index += 1
-    if elapsed >= shot_from and elapsed - last_shot >= shot_every:
+        if freeze_watch:
+            reading = frame_progress(snap_path)
+            if reading is not None:
+                if reading["frame_id"] is not None and reading["frame_id"] != last_frame_id:
+                    last_frame_id = reading["frame_id"]
+                    progress_wall = time.monotonic()
+                no_new = None if progress_wall is None else time.monotonic() - progress_wall
+                # Three independent readings of the same stop: frames did not advance since the
+                # last snapshot, the newest frame already trails the newest line by the threshold,
+                # or framewatch itself has counted that many quiet seconds.
+                if reading["frame_done_us"] is None:
+                    trailing = 0.0
+                else:
+                    trailing = (reading["newest_tl_us"] - reading["frame_done_us"]) / 1e6
+                quiet = reading["quiet_seconds"]
+                if (no_new is not None and no_new >= freeze_seconds) or trailing >= freeze_seconds \
+                        or quiet >= freeze_seconds:
+                    progress = reading
+                    frozen = {"elapsed_seconds": elapsed, "snapshot": snap_path.name,
+                              "last_frame_id": last_frame_id,
+                              "no_new_frame_seconds": None if no_new is None else round(no_new, 2),
+                              "frame_trailing_seconds": round(trailing, 2),
+                              "framewatch_quiet_seconds": quiet,
+                              "max_frame_gap_seconds": reading["max_gap_seconds"]}
+                    print(f"FROZEN_AT {elapsed:.1f}", flush=True)
+                    failed = {"state": "frozen", "elapsed_seconds": elapsed}
+                    break
+                progress = reading
+    if shot_every > 0 and elapsed >= shot_from and elapsed - last_shot >= shot_every:
         last_shot = elapsed
-        if call(["oem", "screenshot"], 8, False)["rc"] == 0:
-            call(["get_staged", run / f"shot-{int(elapsed * 10):05d}.raw"], 30, False)
+        take_shot(elapsed)
+        shots += 1
+    if shot_on_action and shot_request.exists():
+        shot_request.unlink()
+        take_shot(elapsed)
+        shots += 1
     time.sleep(0.5)
 print("SAMPLED_SECONDS", time.monotonic() - start, "failed_call", failed, flush=True)
 
@@ -232,6 +326,13 @@ summary = {"off_seen": off_seen, "mode": mode, "seconds": seconds, "left": left,
            # the daily evidence for "the device never stays somewhere only a person can leave it":
            # after every round the loader must still identify as xnuloader and answer idle.
            "product": call(["getvar", "product"], 8, False)["output"] if mode == "loader" else None}
+# Log sizes are what the round's coverage claim rests on, so the teardown records them instead of
+# leaving the reader to stat the directory.
+summary["shots"] = shots
+if frozen is not None:
+    summary["frozen"] = frozen
+summary["logs"] = {path.name: path.stat().st_size
+                   for path in sorted(run.glob("*.log"))}
 (run / "reboot.json").write_text(json.dumps(summary, indent=2) + "\n")
 print("REBOOT_END", summary, flush=True)
 if failed is not None or mode not in ("loader", "android"):

@@ -172,7 +172,15 @@ SDK = ["/usr/bin/xcrun", "-sdk", "iphoneos", "clang", "-arch", "arm64e", "-mipho
 SHIM_SOURCES = ["userland/src/sb_metal_experiment.m"]
 SHIM_FLAGS = ["-Os", "-Wall", "-Wextra", "-Werror", "-framework", "Foundation", "-framework", "Metal",
               "-framework", "UIKit", "-framework", "IOKit"]
-DRIVER_SOURCES = ["userland/src/redwoodmetal.m", "userland/src/redwooddrawable.m"]
+# The iOS 26 driver's sources live in the kernel checkout under tools/userland-driver/, not under
+# userland/src/: that tree is excluded by the checkout's .gitignore, so a print added there has no
+# rebuildable origin. The library this pack ships is built from exactly these files, and the build
+# is reproducible: 241,488 bytes, sha256 9d66dd36… from clang 21.0.0 and SDK 27.1, provided the
+# output keeps the name libredwoodmetal.dylib -- the adhoc signature's identifier is
+# <filename>-<UUID>, so any other output name yields a different whole-file hash with the same
+# __text and LC_UUID. Steps are in docs/analysis/2026-10-28-arm64e-userland-build-path.md §1.1.
+DRIVER_SOURCES = ["tools/userland-driver/redwoodmetal.m",
+                  "tools/userland-driver/redwooddrawable.m"]
 DRIVER_FLAGS = ["-O1", "-framework", "Foundation", "-framework", "IOKit", "-framework", "Metal"]
 
 # The run this image is compared against used exactly these.
@@ -383,6 +391,11 @@ def main():
     shim = OUT / "libredwood-sbmetal-experiment.dylib"
     driver = OUT / "libredwoodmetal.dylib"
     air = OUT / "libredwoodair.dylib"
+    # build.sh's own product, which this pack used to take from the base root: a change to
+    # userland/src/inject.c then never reached an image, and on 2026-10-29 tl: b was in obj/ and in
+    # userland/root/ while the packed /lib/libredwood.dylib was e527b342… from an earlier round.
+    userland = SRC_ROOT / "userland/root/lib/libredwood.dylib"
+    assert userland.is_file(), f"{userland} is userland/build.sh's product; run it before packing"
     assert air.is_file(), f"{air} is the ninja build of the patched tools/mesa/air/air_metal.c"
     # The ninja build leaves the library unsigned, and dyld refuses it: the image then boots,
     # composits on the CPU and records plausible frame times with no GPU submission at all.
@@ -396,7 +409,7 @@ def main():
     if PROBE:
         commands["probe"] = build(PROBE_SOURCES, "", PROBE_FLAGS, probe, dynamic=False)
     sources = {name: sha(SRC_ROOT / name)
-               for name in [*SHIM_SOURCES, *DRIVER_SOURCES, "userland/src/redwoodmetal_blit.inc",
+               for name in [*SHIM_SOURCES, *DRIVER_SOURCES, "tools/userland-driver/redwoodmetal_blit.inc",
                             "userland/src/sb_metal_registration_sequence.inc",
                             "userland/src/sb_metal_compression_policy.inc",
                             "tools/mesa/air/air_metal.c", "tools/mesa/air/air_to_nir.c",
@@ -441,7 +454,14 @@ def main():
             f"directory and the round cannot test anything that needs it")
     shutil.copy2(shim, dest / "lib/libredwood-sbmetal-experiment.dylib")
     shutil.copy2(driver, dest / "lib/libredwoodmetal.dylib")
+    # What lands in the image has to be the library that was just built: on 2026-10-29 a pack left
+    # 9d66dd36… in the root while the staging copy was d296b5a4…, and nothing noticed.
+    assert sha(dest / "lib/libredwoodmetal.dylib") == sha(driver), \
+        "the driver in the image is not the one this pack built"
     shutil.copy2(air, dest / "lib/libredwoodair.dylib")
+    shutil.copy2(userland, dest / "lib/libredwood.dylib")
+    assert sha(dest / "lib/libredwood.dylib") == sha(userland), \
+        "libredwood.dylib in the image is not the one build.sh produced"
     for program in EXTRA_PROGRAMS:
         assert program.is_file(), f"{program} is named in PAYLOAD_PROGRAMS and is not a file"
         shutil.copy2(program, dest / "bin" / program.name)
@@ -512,6 +532,12 @@ def main():
                        stdout=log, stderr=log, check=True, cwd=WORKSPACE)
 
     after, bodies = records(OUT / "root.apfs")
+    # The staged root and the finished image are two different things: the check above reads the
+    # directory this script filled, and only this one answers what the device will load.
+    for name, product in (("/lib/libredwood.dylib", userland),
+                          ("/lib/libredwoodmetal.dylib", driver)):
+        assert after[name]["sha256"] == sha(product), \
+            f"{name} in root.apfs is not what this pack built"
     added = ({"/LaunchDaemons/" + name for name in EXTRA_JOBS if name not in JOBS_DROP}
              | ({"/bin/lsprobe"} if PROBE else set())
              | {"/bin/" + program.name for program in EXTRA_PROGRAMS})
@@ -523,7 +549,8 @@ def main():
     for name in added:
         changes[name] = {"sha256": [None, after[name]["sha256"]]}
     expected = {"/lib/libredwood-sbmetal-experiment.dylib", "/lib/libredwoodmetal.dylib",
-                "/lib/libredwoodair.dylib", "/etc/inject.conf", "/etc/rc.jobs", "/" + JOB,
+                "/lib/libredwoodair.dylib", "/lib/libredwood.dylib", "/etc/inject.conf",
+                "/etc/rc.jobs", "/" + JOB,
                 "/xpc/launchd.plist", *["/bin/" + program.name for program in EXTRA_PROGRAMS],
                 # Anything added under a directory changes that directory's own times, and records()
                 # reports the directory alongside the file, so the parent of every added file belongs
@@ -590,6 +617,16 @@ def main():
             "both hashes in that round's notes.")
     if drift:
         print(f"accepted library change under ALLOW_DRIVER_CHANGE=1: {json.dumps(drift)}")
+    # The baseline above is compared against what was just built; this compares it against what the
+    # image actually carries, which is a different object when anything between the build and the copy
+    # goes wrong. Content hashes, not mtimes: two silent failures on 2026-10-29 both came from a tool
+    # deciding freshness by timestamp.
+    if BASELINE.is_file() and not UPDATE_BASELINE:
+        recorded = json.loads(BASELINE.read_text()).get("driver_sha256")
+        in_image = sha(dest / "lib/libredwoodmetal.dylib")
+        if recorded and recorded != in_image:
+            raise SystemExit(f"the image carries driver {in_image[:16]}… but the baseline records "
+                             f"{recorded[:16]}…; commit the change or rebuild the library")
     if not BASELINE.is_file() or UPDATE_BASELINE:
         # The source hashes go in with the product hashes. Without them a baseline records only what
         # came out, so when a value cannot be reproduced from any tree there is nothing to compare
@@ -611,7 +648,12 @@ def main():
         "old_shim_sha256": OLD_SHIM_SHA256, "new_shim_sha256": sha(shim),
         "old_driver_sha256": OLD_DRIVER_SHA256, "new_driver_sha256": sha(driver),
         "old_air_sha256": OLD_AIR_SHA256, "new_air_sha256": sha(air), "air_source_sha256": air_source,
+        "userland_sha256": sha(userland), "userland_bytes": userland.stat().st_size,
+        "inject_source_sha256": sha(SRC_ROOT / "userland/src/inject.c"),
         "air_sources": air_sources,
+        # Every source this pack read, with its sha256: shim, driver, probe, AIR, and the kernel commit
+        # is in `kernel` below. Without this section a round cannot be asked which code it ran.
+        "sources": sources,
         # What this round ran. A round is a set of choices, and the manifest has to name them: the
         # gesture script, the probe sources, the job set, the libraries, the kernel. air_sources above
         # closed half of that gap; these close the other half.
@@ -646,6 +688,16 @@ def main():
                             "OS_REASON_COREANIMATION", "nowhere for that store to go"],
         "protected_verified": protected,
     }
+    # The manifest has to say which sources this pack read. quiet20 is unaccountable for exactly one
+    # reason: its manifest carried no `sources` section, so nothing recorded whether the driver in the
+    # image came from the tree that has the dealloc prints. A pack that cannot name its inputs is not
+    # written at all, rather than left for somebody to reconstruct later.
+    required = [*SHIM_SOURCES, *DRIVER_SOURCES, "tools/mesa/air/air_metal.c", "tools/mesa/air/air_to_nir.c"]
+    absent = [name for name in required if not report.get("sources", {}).get(name)]
+    if not report.get("sources") or absent:
+        raise SystemExit("the manifest would not record the build inputs, missing: "
+                         + (", ".join(absent) if absent else "the whole sources section")
+                         + f"\n(the kernel commit is {report.get('kernel', {}).get('commit', '?')})")
     (OUT / "manifest.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({k: report[k] for k in
                       ["variable", "new_shim_sha256", "new_driver_sha256", "new_air_sha256",

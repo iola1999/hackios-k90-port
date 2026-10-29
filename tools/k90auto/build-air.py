@@ -62,7 +62,6 @@ def main():
         assert src.is_file(), f"{src} is missing"
         same = tree.is_file() and digest(src) == digest(tree)
         record[f"source_sha256:{name}"] = digest(src)
-        record[f"tree_sha256:{name}"] = digest(tree) if tree.is_file() else None
         if not same:
             if check_only:
                 print(f"out of sync: {name} (source {digest(src)[:16]}, tree "
@@ -79,6 +78,9 @@ def main():
 
     for name in FILES:      # the copy above is what the build reads; prove it took
         assert digest(SRC / name) == digest(MESA / name), f"{name} did not reach the build tree"
+        # Read back after the copy, so the record names the file the compiler read. Taken before it,
+        # every build that had to copy recorded the previous version as the one compiled.
+        record[f"tree_sha256:{name}"] = digest(MESA / name)
 
     # Every other file here is copied by hand when it changes, so an edit can reach tools/mesa/air
     # and never the build tree, and the library would be built from stale sources without a word.
@@ -111,7 +113,8 @@ def main():
         # caller that expects one checks it here rather than in a log 420 seconds later
         "holds": {name: name in text for name in (
             "resolve %llu", "batch cuts", "verts %llu", "calls %llu in", "clock pair adds",
-            "perf flush totals", "phase marks off", "perf draw: timing on", "rwa draw:")},
+            "perf flush totals", "phase marks off", "perf draw: timing on", "rwa draw:",
+            "rwa shadow:", "tl: x", "tl: y", "tl: z", "tl: z2", "tl: z3", "tl: z4", "tl: z5", "tl: z6", "tl: z7", "tl: z8", "tl: z9", "tl: za", "tl: zb", "tl: zc")},
     })
     RECORD.write_text(json.dumps(record, indent=2) + "\n")
     print(f"{OUT.relative_to(WORKSPACE)}: {record['library_bytes']} bytes, "

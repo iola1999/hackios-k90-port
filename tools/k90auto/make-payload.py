@@ -25,13 +25,19 @@ import re
 import subprocess
 import sys
 import time
+# The system image bounds live beside this script so the replay test exercises the same code.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import system_guard
 
 name, label, ramdisk_arg, extra = sys.argv[1:5]
 assert re.fullmatch(r"[a-z0-9-]+", label) and re.fullmatch(r"[A-Za-z0-9_=.,: -]*", extra)
 evidence = Path(os.environ.get("K90_EVIDENCE", "docs/progress/evidence/k90auto"))
 record = json.loads((evidence / ("kernel-" + name) / "kernel.json").read_text())
 base = evidence / f"kernel-{name}-{label}"
-base.mkdir()
+# The round directory is what keeps two packs with the same label from sharing a record, so the
+# collision is checked here. Creating it here instead left an empty directory behind whenever an
+# assertion below fired (hit on 2026-10-28); it is created when the record is ready to write.
+assert not base.exists(), f"{base} already exists: this label has a round record"
 root = Path("hackios-xnu-kernel")
 kernel = Path(record["kernel"]["path"])
 ramdisk = root / ramdisk_arg
@@ -46,12 +52,15 @@ def digest(path):
 
 
 assert digest(kernel) == record["kernel"]["sha256"]
-system_image = Path(os.environ.get("SYSTEM", "hackios-xnu-kernel/userland/system.apfs"))
+system_image = Path(os.environ.get("SYSTEM", system_guard.DEFAULT_SYSTEM))
 window = os.environ.get("SYSTEM_WINDOW", "")
 assert system_image.is_file(), system_image
 if window:
     assert re.fullmatch(r"0x[0-9a-fA-F]+", window) and int(window, 16) % (32 << 20) == 0, window
-assert window or system_image.stat().st_size <= 0xffffffff, "an image over 0xffffffff bytes needs SYSTEM_WINDOW"
+system_bytes = system_image.stat().st_size
+system_error = system_guard.identity_error(system_image, system_bytes,
+                                           os.environ.get("SYSTEM"), window)
+assert system_error is None, system_error
 cpu_args = os.environ.get("CPU_ARGS", "cpus=2 bootcpu=7 small_cores_after=0")
 gpu_speed = int(os.environ.get("GPU_SPEED", "3"))
 memsize = os.environ.get("MEMSIZE", "")       # iOS 26 needs the RAM it is staged into: 300000000
@@ -113,12 +122,13 @@ record.update({"ramdisk": {"path": str(ramdisk), "bytes": ramdisk.stat().st_size
                "cmdline": cmdline, "boot_cmdline": cmdline, "gpu_speed": gpu_speed,
                "cpu_args": cpu_args, "extra_boot_args": extra, "argv": argv,
                "required_cmdline": list(REQUIRED),
-               "system": {"path": str(system_image), "bytes": system_image.stat().st_size,
+               "system": {"path": str(system_image), "bytes": system_bytes,
                           "sha256": digest(system_image)},
                "payload": {"path": str(payload), "bytes": payload.stat().st_size, "sha256": digest(payload)},
                "pack": pack, "patch_rejects": patch_rejects})
 if window:
     record["window"] = window
+base.mkdir()
 (base / "manifest.json").write_text(json.dumps(record, indent=2) + "\n")
 print(base)
 # The GPU speed is the one setting whose default (3) differs from what almost every earlier round

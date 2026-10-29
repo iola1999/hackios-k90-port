@@ -1,14 +1,14 @@
 {
-  "driver_sha256": "9d66dd367d09af4d9b526c73c8407627357d1e32d0cd392639bd5e2b35600f26",
-  "air_sha256": "1be6ebf7b41e5964b293fba8beaaa8cf70f2f0f098f82ad99af35ba0540b4bb9",
+  "driver_sha256": "827045e48792cf0b9ef46137eb068b4e9d65fb6353e70f961215339d921daa8f",
+  "air_sha256": "f67df047e9abee96fa75569ec3c7ef4ce1427b8c65427b55d7684da1aa1df2b2",
   "source_sha256": {
     "userland/src/sb_metal_experiment.m": "987f9154f441db2b9cc5e5f4ff649839d86bebacea1ef52f2527b95dc455cff2",
-    "userland/src/redwoodmetal.m": "015aad3285ae1d6987c0ccc5825beea566c5b6e971c6054ea323902d47f1d1cc",
-    "userland/src/redwooddrawable.m": "0a994aff638ec66e775d74cc54613665adab63a28b3aebcba43c4a93dc08fcec",
-    "userland/src/redwoodmetal_blit.inc": "add5b13f9dc48b1fab019ecafd85180cd8004887859d8dadeb47627242e59a00",
+    "tools/userland-driver/redwoodmetal.m": "4513f3e823a70d6c4c88cb50405193dea4f7e53b4428b61b40ee2a06dc8b5e34",
+    "tools/userland-driver/redwooddrawable.m": "0a994aff638ec66e775d74cc54613665adab63a28b3aebcba43c4a93dc08fcec",
+    "tools/userland-driver/redwoodmetal_blit.inc": "add5b13f9dc48b1fab019ecafd85180cd8004887859d8dadeb47627242e59a00",
     "userland/src/sb_metal_registration_sequence.inc": "de79f8ab7741192e4e2c05d2a97ec289c8af628bb98eb4ef33e90c8fa3a6a03e",
     "userland/src/sb_metal_compression_policy.inc": "48f80b66df1e987429438c01c46baaebef40ebece26f74c9f15ca5402b7aad29",
-    "tools/mesa/air/air_metal.c": "e85482501842ee83c2e70efc5d8ea2cd6557deb260f3cd1a930c1dee6e73438c",
+    "tools/mesa/air/air_metal.c": "439a8aab35c10eb93923cadb7e3861639f37ef9a645d24f62ac8ae720b212fcf",
     "tools/mesa/air/air_to_nir.c": "35b6f62ef90982f98e34b85dbd2eae83208269a0841bb2dca106994df8f16074",
     "userland/src/lsprobe.m": "85311cacf6b531382553e5110cf36b31e3a3cbf0017e86312da37df87131bd35"
   }

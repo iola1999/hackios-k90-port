@@ -1,0 +1,34 @@
+# perf-sustain: three 35 s back-and-forth drags on the frame stream, so input covers the whole stream.
+#
+# The five rounds measured on 2026-10-29 all put their gestures after the frames had stopped: the touch
+# covered 4 to 34 frames of the 3,616 the round produced, which is why round-gate.py answers
+# NOT ENOUGH SAMPLES. This file puts three 35 s drags on the frame stream instead of one late gesture.
+#
+# Three segments, not two: the stream keeps producing frames after the last finger lifts (fixguard6
+# stops at 245.8 s while a gesture ending at 223 s leaves 22 s uncovered), and two segments span 73 s
+# of a 93.8 s stream, which is 76 %. Three span 111 s and cover either length.
+#
+# Each segment is a horizontal pair, `drag 0.9 0.5 0.1 0.5 16000 0` and back, because a vertical
+# zigzag runs over a home screen that does not scroll vertically: the samples would arrive at 8 ms and
+# the content would stay put, which round-gate reads as a healthy touch and a zero frame rate. Each
+# leg is 16 s in one direction so the content never reaches its end and stops repainting, and the
+# lift between the two legs is a few milliseconds, far below the 300 ms that would split the pair into
+# two touches.
+#
+# 32 s per segment: on 2026-10-29 two rounds with 17,500 ms legs put the whole gesture span at 237.4
+# to 264.8 s while the frame stream ran 148.0 to 238.3 s, so the touch overlapped the stream for less
+# than a second and round-gate.py answered 1.3 %. Two legs of 16,000 ms give a 32.1 s continuous
+# touch, above the gate's 30 s floor, and three such segments with 3 s between them span 102 s, which
+# runs slightly past a 90 s stream: the third segment is measured on whatever frames remain.
+#
+# wait 2 starts the first drag at the round's start rather than at wait 90. The frame stream arrives at
+# 148 s of kernel time in both rounds measured, so a start near the round's beginning puts the first
+# segment before the stream and the second and third inside it; the earlier wait 90 landed the entire
+# gesture span after the stream had stopped. A fixed wait cannot be right in every round, so the
+# verdict is round-gate.py's overlap, not this number.
+#
+# init waits for each line, so every background line ends with & and goes before rwtouch.
+/redwood/bin/lsprobe 60 &
+/redwood/bin/lsprobe 300 &
+/redwood/bin/framewatch --every 20 --count 30 SpringBoard backboardd &
+/redwood/bin/rwtouch wait 2 drag 0.9 0.5 0.1 0.5 16000 0 drag 0.1 0.5 0.9 0.5 16000 0 wait 3 drag 0.9 0.5 0.1 0.5 16000 0 drag 0.1 0.5 0.9 0.5 16000 0 wait 3 drag 0.9 0.5 0.1 0.5 16000 0 drag 0.1 0.5 0.9 0.5 16000 0

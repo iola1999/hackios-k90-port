@@ -1,0 +1,14 @@
+# taptest: the frame stream with no continuous input, and one 0.5 s single-finger tap partway in.
+#
+# The question is whether a touch changes a state that stops the frames, or whether only sustained
+# high-rate input costs the frames. One tap and nothing after it tells the two apart: a dip that
+# never recovers means the state changed; a dip that recovers, or no dip at all, means the input
+# itself is not what stops the stream.
+#
+# The tap comes at wait 40 rather than later because the measured frame stream starts within a few
+# seconds of the job and lasts 25 to 90 s; a later tap can fall after the stream has stopped, which
+# is the one place this probe cannot answer anything.
+/redwood/bin/lsprobe 60 &
+/redwood/bin/lsprobe 300 &
+/redwood/bin/framewatch --every 20 --count 30 SpringBoard backboardd &
+/redwood/bin/rwtouch wait 40 tap 0.5 0.5 wait 260

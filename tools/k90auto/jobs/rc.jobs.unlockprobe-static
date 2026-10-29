@@ -1,0 +1,10 @@
+# Static arm of the unlock probe: the same anchors as rc.jobs.unlockprobe with the rwtouch line removed.
+#
+# rc.jobs.unlockprobe performs one swipe up at 120 s, which leaves open whether the crash needs an input
+# at all. This file keeps the two lsprobe anchors and the periodic framewatch and injects nothing, so a
+# crash in this arm happens with no input from either side.
+#
+# init waits for each line, so every background line ends with & and goes before rwtouch.
+/redwood/bin/lsprobe 60 &
+/redwood/bin/lsprobe 300 &
+/redwood/bin/framewatch --every 20 --count 20 SpringBoard backboardd &

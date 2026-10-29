@@ -1,0 +1,15 @@
+# Unlock probe: one swipe up and nothing else, so the swipe is the only gesture in the round and the
+# freeze the user reports can be placed on a single action.
+#
+# The other jobs files spend their first hundred seconds on probes and gestures of their own, which
+# makes "the desktop froze after unlocking" indistinguishable from "the desktop froze after the
+# third lock/unlock pair". This file keeps the anchors a round is read from (two lsprobe instances,
+# one periodic framewatch) and adds one rwtouch line that waits 120 s and then performs the short
+# upward swipe that unlocks the device. 120 s is well after the desktop is up: in the fixguard rounds
+# the first frames appear within the first two snapshots and the desktop stays up for two minutes.
+#
+# init waits for each line, so every background line ends with & and goes before rwtouch.
+/redwood/bin/lsprobe 60 &
+/redwood/bin/lsprobe 300 &
+/redwood/bin/framewatch --every 20 --count 20 SpringBoard backboardd &
+/redwood/bin/rwtouch wait 120 swipe 0.5 0.985 0.5 0.3 250
