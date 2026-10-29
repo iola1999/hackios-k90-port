@@ -15,8 +15,8 @@
 | O7 | `tl: b` 实测语义与判据修订 | `docs/analysis/2026-10-29-tl-b-semantics.md` | 完成 |
 | O8 | 3 秒空洞的边界与触发点 | `docs/analysis/2026-10-29-hole-boundary-trigger.md` | 完成 |
 | O9 | 帧流永久停止的边界次序 | `docs/analysis/2026-10-29-frame-stop-boundary.md` | 进行 |
-| O10 | 面板节拍与 120 Hz 的可判程度 | `docs/analysis/2026-10-29-display-beat.md` | 进行 |
-| O11 | QuartzCore 抽取、26 常量补齐与 IDA 核对 | `docs/analysis/2026-10-29-quartzcore-static-followup.md` | 进行 |
+| O10 | 面板节拍与 120 Hz 的可判程度 | `docs/analysis/2026-10-29-display-beat.md` | 完成 |
+| O11 | QuartzCore 抽取、26 常量补齐与 IDA 核对 | `docs/analysis/2026-10-29-quartzcore-static-followup.md` | 完成 |
 
 ## 2. O1 虚表定位
 
@@ -68,3 +68,5 @@
 - O5：下一轮的身份、载荷、打包校验、六组探针、五条判据与结果分支都已写定，判据在读数之前登记。见[下一轮实验方案](2026-10-29-next-round-plan.md)。
 - O7：`tl: b` 按主循环的醒睡打印，不按帧打印，四轮 313 条对 900 到 11,600 帧；洞内条数与任意 3 秒窗口同档，原 H1／H2 会误报，已改。见 [`tl: b` 实测语义](../analysis/2026-10-29-tl-b-semantics.md)。
 - O8：29 个洞的释放动作 29/29 同形，起点缺的是 A 帧的 `tl: w`；洞的起点落在 35-buffer 提交段的末尾（35 段 60～62 条、48 段 179～180 条，周期 240 条提交）。见[洞的起止动作](../analysis/2026-10-29-hole-boundary-trigger.md)。
+- O10：帧行只量软件节拍与生产节奏，83 轮 189,790 个相邻间隔里没有 8.333 毫秒的到达帧间隔；`fb_hz=120` 轮把节拍改成 8.333 后帧周期仍是 16.6 毫秒。面板扫描时刻在现有日志里没有读数，三种可能区分不了。见[显示节拍](../analysis/2026-10-29-display-beat.md)。
+- O11：`hackios-xnu-kernel/tools/dsc/` 落地（五个文件约 1,490 行），QuartzCore 抽成独立 Mach-O 后能被 IDA 打开；三个已知槽复核一致，`is_ready` 落 0xe0、`EAGLServer` 与 `GLESContext` 的 26 虚表定位，均属推断证据强。见[QuartzCore 静态补全](../analysis/2026-10-29-quartzcore-static-followup.md)。

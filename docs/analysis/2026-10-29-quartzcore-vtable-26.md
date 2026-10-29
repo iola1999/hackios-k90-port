@@ -193,6 +193,8 @@ window_server_vtable_ok(void)
 
 IDA 交叉验证没有做成。idalib 打开主缓存文件直接失败，本机也没有 `ipsw`、`jtool2`、`dsc_extractor` 这类能把镜像抽成独立 Mach-O 的工具，`/usr/bin/dyld_info` 对主缓存文件报 `file not found`。可行的替代是写一个最小的提取器：按 images 表的地址与 `LC_SEGMENT_64` 把 QuartzCore 的段拷出来，再把 `__LINKEDIT` 按 `fileoff` 对齐写回去，产出一个能直接喂给 `llvm-objdump` 或 IDA 的文件。
 
+2026-10-29 的后续工作见 [QuartzCore 静态补全](2026-10-29-quartzcore-static-followup.md)：提取器已落地并能被 otool、llvm-objdump 与 IDA 打开，三个已知槽已复核，`is_ready`、`EAGLServer`、`GLESContext` 的 26 位置有新结论和对应的否定证据。
+
 ## 10. 复现要点
 
 全部结论可以从缓存文件重算，关键是三步：读主头 0x88／0x90 拿 images 表；合并每个子缓存头 0x10／0x14 指向的 32 字节 mapping 表做地址换算；按第 3 节的规则解码指针。
