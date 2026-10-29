@@ -121,7 +121,7 @@ python3 tools/k90auto/gestures.py docs/progress/evidence/k90auto/kernel-12377-at
 - **打印节流后的条数不能当事件数。** `tl: p` 走 `RW_AGAIN`，只在第 1、2、4、8…… 次调用时打印，所以一次 30 秒拖动（约 3750 个样本）在日志里只有约 12 行；`served as a copy` 的打印次数同样不是调用次数。要事件数就用工具侧的计数，不要用日志行数。
 - **截图读数要写清「整轮」还是「某个窗口」。** 2026-10-28 `gestures` 轮 94 张截图的 sha256 只有 1 个（整轮逐字节相同），而当时转述的「39 张相同」是某个窗口的数。今晚已有两次把局部窗口当整轮（探针 0 条、`tl: p` 0 条）。
 - **跨快照计数必须先去重，报数时写出用的是哪一列。** 2026-10-28 我在给 display 的消息里报了 `tl: p` 各类型的条数（`1=76 2=3849 3=75 4=19 5=19`），那是把重叠的 `s0xx.log` 快照直接相加，去重后是 `1=8 2=426 3=8 4=1 5=1`，偏高约九倍。同一轮 `round-stats.py` 先按整行去重再计数。**数字出口前先问一句「这是唯一行还是快照和」。**
-- **每轮必跑 `round-stats.py` 的三段固定输出**：`fence timeouts`、`ring coverage`、`swap holes`。**零命中要附环覆盖率才可作排除依据，并写明是并集口径还是单份口径**：日志区是 263,349 字节的头加 1,048,576 字节的环（§6），写满之后只保留最近的约 1.31 MB，覆盖不到的时段里，「没出现」不能作为「没发生」的证据。
+- **每轮必跑 `round-stats.py` 的三段固定输出**：`fence timeouts`、`ring coverage`、`swap holes`。**零命中要附环覆盖率才可作排除依据，并写明是并集口径还是单份口径**：日志区是 263,349 字节的头加 1,048,576 字节的环（§8），写满之后只保留最近的约 1.31 MB，覆盖不到的时段里，「没出现」不能作为「没发生」的证据。
   - **单份快照与并集差 2.2 倍**（`freeze` 轮单份约 178 秒、并集 398 秒），两个数不能互相代替。**三个数一律以 `round-stats.py` 的 `ring coverage` 段为准**（行数、跨度、单份环可容纳的日志时长），自己另算一套会与别人对不上。判据两条，**互相独立、都满足才算可采信**：第一条是单份环可容纳的日志时长要大于快照间隔（约 20 秒），防「两份快照之间掉过行」；
   - 第二条是并集要覆盖该轮空洞时刻，防「空洞落在采集之外」，且按 `swap holes` 的 `tl:` 基线逐点对齐，墙钟不能直接相减。九轮 `did not finish the` 零命中两条例都满足，`perf1` 仍标弱证据，差在密度，逐轮数字见[差距分析第 2.23 节](../analysis/2026-10-28-ios26-perf-gap.md)。
 - **轮次目录在 device 宣布收尾之前不读；读了必须标 partial 与截至的快照号。** 2026-10-28 的实例：perf 在 roundb 还在跑的时候读目录，得出「0 触摸、0 截图、45 帧」并据此判「两轮都不能判」，与收尾后的数（36 条触摸、85 张截图、99 条提交）冲突。**未收尾的读数只能说明「到第几个快照为止如此」**，写法是 `partial, through s0NN`。
@@ -183,7 +183,49 @@ python3 tools/k90auto/gestures.py docs/progress/evidence/k90auto/kernel-12377-at
 - 插桩轮的判据按「覆盖全轮」判，不按行数的绝对值判。`perf frames` 这类汇总行每 128 帧一行，420 秒的一轮只有约 19 行、合计 2432 帧，与 `--verify` 的帧数吻合即为通过；写「行数不少于 100」是把每行当成一帧的标度错误，12800 帧在 420 秒里不存在。
 - 与判据对照的一句话结论，以及这一轮是否算通过。
 
-## 6. 日志环容量与快照频率
+## 6. 跑轮前的目录检查
+
+起轮前先确认轮次目录里有 `manifest.json` 与 `run/` 两样，和槽位五项基线同级。`manifest.json` 是 `make-payload.py` 写的打包记录，`run/` 是 `run-auto.py` 用来放快照与 `reboot.json` 的目录；缺任一样时 `run-auto.py` 会在读完载荷之后才报 `FileNotFoundError`，那一轮的设备时间已经花掉。
+
+`tools/k90auto/round-run.py` 把这条做成了前置判断：`manifest.json` 不在就以一句话退出（退出码 2），不再往下走。写完 `attempts.json` 之类的新文件前先 `mkdir(parents=True, exist_ok=True)`，否则收尾阶段会再报一次 `FileNotFoundError`，让人去找根本不存在的载荷问题。
+
+## 7. `round-gate.py` 的计数口径
+
+判读六条判据前先确认计数口径，否则同一个词在两份报告里指两样东西。
+
+- **帧 id** 用 `^tl: v (\d+)` 数，`done` 只用于「帧是否落在触摸区间」（overlap）的计算。
+- **文件集合**只有快照 `run/s[0-9]+.log`。`hung-held.log` 不在集合内，需要它的内容时单独读。
+- **快照之间按整行去重**：相邻快照故意重叠，不去重会把同一帧数两遍。
+- **触摸样点**用 `^tl: p (\d+) (\d+) (\d+) (\d+) at (\d+)`，**交换提交**用 `^tl: s (\d+) \S+ at (\d+)$`。
+
+2026-10-29 有过一次误判：一处轮次目录里没有 `run/`，`round-gate.py` 之外的一次人工读取得出「`tl: v` 0 行」，被当成「这一轮没有帧」。0 行与「没有文件」是两个不同的结论，报 0 行之前先列文件清单与份数。
+
+## 8. 截图默认关闭，日志优先
+
+`run-auto.py` 的第三个参数默认值是 `0,100,20`：不排周期截图，日志每 20 秒取一份。周期截图每张约 11.6 MB，从取到 staging 再到取回都占同一条 USB 通道，而一轮的读数来自日志，所以默认把通道让给日志。
+
+- 一轮默认产出的是完整日志加少量按需截图，不再是每 3 秒一张。`SHOT_EVERY` 取大于 0 的值仍然按固定间隔取，仅供需要时间序列的轮次显式开启，`SHOT_FROM` 是起点秒数。
+- 按需截图走请求文件：执行动作的一方在动作完成之后运行 `python3 tools/k90auto/shot-now.py <证据目录>`，`run-auto.py` 下一次轮询看到 `run/shot-request` 就取一张并删掉请求。同一时刻只接受一个未处理的请求，重复调用会被拒而不是排队。
+- 文件名仍是 `shot-{int(elapsed*10):05d}.raw`，与固定间隔轮次的换算方式一致：`shot-01002.raw` 表示第 100.2 秒。历史轮次的截图与文档里的时刻换算不受影响。
+- `SHOT_ON_ACTION=0` 关掉请求文件监听。
+
+日志优先的三项读数每轮都要报，读数偏低时写明差异：日志环的覆盖跨度与唯一行数（`summary.py --verify` 的 `coverage:` 行）、`get_staged` 取回的 `s0*.log` 与 `hung-held*.log` 字节数（`run/reboot.json` 的 `logs` 字段自动记录）、以及相邻 `tl:` 行之间的最大空档。`reboot.json` 里的 `shots` 是这一轮实际取到的截图张数。
+
+### 6.1 冻结即收尾
+
+桌面出现之后连续没有新帧，轮次不再等满固定时长，`run-auto.py` 直接走正常收尾并打一行 `FROZEN_AT <elapsed>`。判据是「连续无新帧」，帧率低不触发。
+
+- 判法三条，任一成立即判冻结：距上一份快照帧号没有推进、最新帧的 `done` 时间落后日志最新 `tl:` 行超过阈值、`framewatch` 自己报的 `still no frames` 秒数达到阈值。
+- 阈值 `K90_FREEZE_SECONDS`，默认 20 秒；`K90_FREEZE_OFF=1` 恢复固定时长轮次。只在日志里出现过帧之后才判，避免把启动期当成冻结。
+- `reboot.json` 的 `frozen` 字段记当时的 `elapsed_seconds`、`snapshot`、`last_frame_id`、`no_new_frame_seconds`、`frame_trailing_seconds`、`framewatch_quiet_seconds`、`max_frame_gap_seconds`，最后帧号与最大空档不再靠事后从日志里数。
+
+### 6.2 等一轮结束、等一个动作的窗口
+
+- 等一轮结束用 `python3 tools/k90auto/wait-round.py <证据目录> [上限秒数]`：每 5 秒查一次 `run/reboot.json`，出现就返回并打印 `samples`、`state`、`mode`，冻结时附 `FROZEN_AT` 与最后帧号；默认上限 900 秒。不要用固定 `sleep` 猜轮次时长。
+- 等某个动作的现场用 `python3 tools/k90auto/action-probe.py <证据目录> [秒数] [间隔秒数] --note "动作"`：按间隔连续取快照到 `run/probe-NNN.log`（不动 `s###.log` 编号），结束后打印帧区间、最大帧间隔、`framewatch` 静默秒数、`EXC_GUARD`／`Code=4099`／`died on signal`／`bad access` 计数，以及 `SpringBoard` 与 `backboardd` 的 `redwood: proc` 行；同一份内容写进 `run/probe-report.json`。默认 30 秒、每 5 秒一份。
+- 等设备枚举（adb／fastboot／loader）同样按状态轮询，任一状态出现或超过上限就退出。只有需要设备冷启动稳定这类确实要等的场景才用固定 `sleep`，并在报告里写明为什么必须等。
+
+## 9. 日志环容量与快照频率
 
 内核日志区是 263,349 字节的固定头加 1,048,576 字节（1 MiB）的滚动环，单份快照最大 1,311,925 字节（`263,349 + 1,048,576 = 1,311,925`，与 roundb、round C、round D 三轮实测上限逐字节相等；文档原记 1,311,895，30 字节的差来源未查），写满之后快照不再变大、只保留最近的 1.31 MB。
 
@@ -204,7 +246,7 @@ python3 tools/k90auto/gestures.py docs/progress/evidence/k90auto/kernel-12377-at
 
 `RUN_SECONDS` 因此不宜超过 420 秒。需要更长的观测就把 `RUN_TIMING` 的日志间隔改成 10 秒，不要只拉长时长。`oem logwrite` 写到 `boot_a` 开头，与日志容量无关，不能拿来扩大捕获范围；把环改大要同时改内核与 loader 的内存布局，本轮不做。
 
-## 7. 失败与重试
+## 10. 失败与重试
 
 同一轮失败先分类，再决定重跑还是停下。
 
@@ -223,14 +265,14 @@ python3 tools/k90auto/gestures.py docs/progress/evidence/k90auto/kernel-12377-at
 - 载荷、根盘、系统盘哈希与 `manifest.json` 不符。
 - 打包或编译失败。
 
-## 8. 我会回绝的申请
+## 11. 我会回绝的申请
 
 能用现有日志回答的不占用真机：已经跑过的轮次里有的行（`rwa draw:`、`command buffers:`、`copy` 计数、设备枚举、槽位状态）、只涉及源码阅读或 Mesa／freenode 上游对照的问题、能在 QEMU 复现的用户态问题。回绝时会说明用哪份证据的第几行回答，或指出该问题缺的是哪份数据，请申请人把判据改到能在一次真机上区分两三种假设。
 
-## 9. 排队与占位
+## 12. 排队与占位
 
 申请按到达顺序排队，一次一轮，一轮跑完把设备复位回 idle loader 再开始下一轮。需要 A 槽重试次数补充时插入一次 `reboot-lk.py --return-loader`（约 26 秒）。需要改 `root.apfs` 或系统盘的申请，先说明是否与其他人的打包冲突；`hackios-xnu-kernel/out/ios26-resume/bbmetal-device/root.apfs` 是共享产物，改它要串行。
-## 10. 长跑轮（静置观测）
+## 13. 长跑轮（静置观测）
 
 超过一小时的轮次单独算一类，排在整个队列最后，因为它占用设备最久。
 

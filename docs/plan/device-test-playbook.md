@@ -115,7 +115,7 @@ fastboot -s xnuloader get_staged /tmp/hackios-stop2.log
 - 当前源码从 `adreno8=14` 开始执行 HWSCHED START，要求 `adreno8_keep=1 adreno8_return=0`；旧第 14 阶段只有 CORE_FW_START，产物与阶段对应关系见[实测交接](../progress/2026-10-24-gpu-execution.md)。采样后通过 loader USB reboot 执行 PSCI_SYSTEM_RESET（本手册称冷重启），结果以重新枚举与 `result` 为准；后续 3a／3b 多轮已再次完成 MP_ASSIGN、配置与 START，但尚未直接读取复位后的完整安全内存归属；随后按本轮清单重新上传系统盘。普通退出与 panic 返回都检查 `adreno8_reset_required` 和 `adreno8_memory_retained()`；ACK 成功、失败或分配中途失败均可能要求保留资源，不能直接上传下一份内核重用内存。`loader_return_after` 无法取消该保护。
 - `result: no-such-core ...`：先保存 loader 原始日志，核对目标 MPIDR 和 PSCI 返回值。该状态下的旧画面无法用于评估本轮性能。
 - USB 有枚举记录但命令无响应：可能是内核占用 loader 的 CPU、USB 传输等待或固件异常。记录命令、耗时、USB 枚举与画面，分别排查。
-- 返回 Android：先进入 LK，再执行 `fastboot -s "${ANDROID_SERIAL}" set_active b` 和 `fastboot -s "${ANDROID_SERIAL}" reboot`。loader 的 `reboot` 在 annibale 上只执行 PSCI_SYSTEM_RESET（`usb_command_loop` 的 annibale `reboot` 分支，`loader.c` L4498-L4509，行号固定于提交 `c0716bf`；不经 UEFI reset 回调），目标仍由当前槽位决定，成功与否以重新枚举与 `result` 判断。
+- 返回 Android：先进入 LK，再执行 `fastboot -s "${ANDROID_SERIAL}" set_active b` 和 `fastboot -s "${ANDROID_SERIAL}" reboot`。loader 的 `reboot` 在 annibale 上只执行 PSCI_SYSTEM_RESET（`usb_command_loop` 的 annibale `reboot` 分支，`loader.c` L4498-L4509，行号固定于提交 `c0716bf`；不经 UEFI reset 回调），目标仍由当前槽位决定，成功与否以重新枚举与 `result` 判断。三种引导目标之间的完整切换步骤、成功判据与实测耗时见[引导目标切换 SOP](device-boot-target-sop.md)：这一条只是其中一跳，进 loader 走 `set_active a` 加 `reboot`，从 LK `fastboot boot` 载荷不会把 loader 带起来。
 - `oem logwrite` 会覆盖 `boot_a` 开头，不能用于保存启动后的日志。当前真机调试使用 USB 日志。
 - 桌面 wch 串口属于其他设备。手机 UART 为 GENI `0xa9c000`、`115200n8`，当前没有连接调试线，默认保持关闭。
 - Android 整组 `pinmux-pins`／`pinconf-pins` 调试读取后曾发生重启。优先使用已保存的设备树和驱动定义，再决定定点读取；文件读取的硬件副作用需按实现检查。
