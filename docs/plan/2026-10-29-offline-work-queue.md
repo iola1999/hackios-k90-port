@@ -70,4 +70,4 @@
 - O8：29 个洞的释放动作 29/29 同形，起点缺的是 A 帧的 `tl: w`；洞的起点落在 35-buffer 提交段的末尾（35 段 60～62 条、48 段 179～180 条，周期 240 条提交）。见[洞的起止动作](../analysis/2026-10-29-hole-boundary-trigger.md)。
 - O9：末帧前后各族的最后一条次序跨轮一致，停止落在 backboardd 用户态帧循环、下一次交换交接之前；3 秒洞的延迟位置 256/262 落在 `done→w1`，终末段分散在五个子步骤且不恢复。归档里 draw 停顿的线程转储走内核 sysctl 被拒，下一轮装车的驱动改用进程内快照。见[帧流永久停止的边界](../analysis/2026-10-29-frame-stop-boundary.md)。
 - O10：帧行只量软件节拍与生产节奏，83 轮 258,042 个相邻间隔里没有 8.333 毫秒的到达帧间隔；`fb_hz=120` 轮把节拍改成 8.333 后帧周期仍是 16.6 毫秒。面板扫描时刻在现有日志里没有读数，三种可能区分不了。见[显示节拍](../analysis/2026-10-29-display-beat.md)。
-- O11：`hackios-xnu-kernel/tools/dsc/` 落地（五个文件约 1,490 行），QuartzCore 抽成独立 Mach-O 后能被 IDA 打开；三个已知槽复核一致，`is_ready` 落 0xe0、`EAGLServer` 与 `GLESContext` 的 26 虚表定位，均属推断证据强。见[QuartzCore 静态补全](../analysis/2026-10-29-quartzcore-static-followup.md)。
+- O11：`hackios-xnu-kernel/tools/dsc/` 落地（五个文件约 1,490 行），QuartzCore 抽成独立 Mach-O 后能被 IDA 打开；三个已知槽复核一致，`is_ready` 落 0xe0、`EAGLServer` 与 `GLESContext` 的 26 虚表定位，均属推断证据强。§8 另记 `CA_HEARTBEAT_RATE` 与刷新周期的静态读数：默认 1/60 秒，28 处调用里没有一处直接设置定时器；15 秒截止时间在 `0x183f4ad50`，与 heartbeat 没有数据依赖，是否对应帧流空洞未确认。见[QuartzCore 静态补全](../analysis/2026-10-29-quartzcore-static-followup.md)。

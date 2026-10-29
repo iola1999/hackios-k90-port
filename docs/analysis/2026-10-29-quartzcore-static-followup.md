@@ -1,6 +1,6 @@
 # QuartzCore 静态补全：dsc 工具、Mach-O 提取与 26 的三个虚表（2026-10-29）
 
-设备在 2026-10-29 仍未通过 USB 枚举，这一项全部离线完成。上一份文档 [iOS 26 共享缓存中 AppleCLCDDisplay 虚表与槽 0x138 的静态定位](2026-10-29-quartzcore-vtable-26.md) 留下三件事：`is_ready` 的 26 槽位、`EAGLServer` 与 `GLESContext` 的 26 虚表基址，以及一个能交给 IDA 的提取器。本文件记录这三项的结果、新工具的位置与用法、每一项的证据类型和置信度，以及没有做成或只做到一半的部分。
+设备在 2026-10-29 仍未通过 USB 枚举，这一项全部离线完成。上一份文档 [iOS 26 共享缓存中 AppleCLCDDisplay 虚表与槽 0x138 的静态定位](2026-10-29-quartzcore-vtable-26.md) 留下三件事：`is_ready` 的 26 槽位、`EAGLServer` 与 `GLESContext` 的 26 虚表基址，以及一个能交给 IDA 的提取器。本文件记录这三项的结果、新工具的位置与用法、每一项的证据类型和置信度，以及没有做成或只做到一半的部分。第 8 节是随后追加的 `CA_HEARTBEAT_RATE` 只读检查。
 
 槽位一律写成「vtable + 0x10 + offset」里的 offset，例如 0x150。上一份文档里的「第 44 号槽」把 vtable 头两个字也算进去了，两种写法相差 2 个槽，引用旧文档时注意换算。
 
@@ -15,6 +15,7 @@
 | is_ready 槽 | 0xb0 → 0x1882f0908 | 0xe0 → 0x183f4fdfc | 推断，证据强 |
 | EAGLServer 虚表 | 0x1d5b45c58（62 槽） | 0x1ee982228（75 槽） | 推断，证据强 |
 | GLESContext 虚表 | 0x1d5b3b540（138 槽） | 0x1ee982ab0（164 槽） | 推断，证据强 |
+| 心跳默认周期 | 0x188553b60 = 1/60 秒 | 0x184242688 = 1/60 秒 | 实测 |
 
 表里的「实测」指直接读缓存文件或 IDA 读同一份数据得到的值，可以被任意重算；「推断」指函数地址与槽位正确，但类归属靠构造函数和函数体匹配，没有运行期验证。`is_ready` 的 26 函数还把电源完成逻辑合并了进来，见第 5 节。
 
@@ -59,7 +60,7 @@
 
 三个文件都用 `otool -l`、`otool -tV`、`xcrun llvm-objdump --macho --private-headers` 和 `nm` 打开过。QuartzCore 两个文件另外用 idalib 打开，`imagebase` 分别是 0x183ed3000 与 0x18827b000，与缓存里的镜像基址一致，段内地址不需要换算。IDA 对 26 的四个目标函数做了 define_func 与 Hex-Rays 反编译，结果见第 4、5 节。
 
-提取文件只面向静态工具，不用于加载。缓存里的镜像没有 `LC_DYLD_CHAINED_FIXUPS` 与 `LC_DYLD_INFO`，数据段中的指针保持缓存编码（26 是 bit 63 选择形式的 chained 值，16.5 是低 36 位绝对地址），IDA 不会把它们还原成地址。代码段不受影响。
+提取文件只面向静态工具，不用于加载。缓存里的镜像没有 `LC_DYLD_CHAINED_FIXUPS` 与 `LC_DYLD_INFO`，数据段中的指针保持缓存编码（26 是 bit 63 选择形式的 chained 值，16.5 是低 36 位绝对地址），IDA 不还原这些指针。代码段不受影响。
 
 `libobjc.A.dylib` 的输出有 93 MB，原因是它带一个 0x5528368 字节的 `__OBJC_RO` 共享段，工具按原样复制；这是该镜像的真实数据。
 
@@ -187,9 +188,75 @@ Hex-Rays 对同一函数的反编译是：`if ((flags & 8) && !wait(*(this+0x318
 
 基类同样对应：16.5 的 0x1d5b3d128（54 槽）对应 26 的 0x1ee989180（69 槽）。
 
-结论：26 的 `GLESContext` 虚表基址是 0x1ee982ab0。构造函数逐项对应，GL 字符串提供了独立旁证，属于推断，证据强。`inject.c` 用的三个槽偏移（0x378、0x388、0x060）没有逐个重定位，见第 8 节。
+结论：26 的 `GLESContext` 虚表基址是 0x1ee982ab0。构造函数逐项对应，GL 字符串提供了独立旁证，属于推断，证据强。`inject.c` 用的三个槽偏移（0x378、0x388、0x060）没有逐个重定位，见第 9 节。
 
-## 8. 未完成与否定证据
+## 8. CA_HEARTBEAT_RATE 与刷新周期
+
+上一份文档的 `vtmatch` 对 AppleCLCDDisplay 只匹配到 `CA_HEARTBEAT_RATE` 一处字符串。这一节查 26 侧对应的函数 0x183f380d8（虚表 0x1ee97f868 的 offset 0x318）、它的默认值和调用点。结论：返回值是显示刷新周期，单位秒，默认 1/60；`CA_HEARTBEAT_RATE` 按 Hz 解释并取倒数；显示驱动给出刷新属性时用属性值。没有找到 15 秒或 3 秒的默认值，也没有看到返回值被直接交给定时器 API。
+
+### 位置与默认值
+
+16.5 的同一函数在 0x1882d3930，位于虚表 0x1d5b44520 的 offset 0x2d8。两边函数结构对应，字段偏移不同。下表左侧是 26，右侧是 16.5。
+
+| 项 | 26 | 16.5 |
+|---|---|---|
+| 函数 | 0x183f380d8 | 0x1882d3930 |
+| 槽 offset | 0x318 | 0x2d8 |
+| 结果缓存 | [this+0x7528] | [this+0xb18] |
+| 显示刷新步长（秒） | [this+0x7510] | [this+0xaf8] |
+| 最小刷新间隔 | [this+0x7508] | [this+0xaf0] |
+| 标志字 | [this+0x280] | [this+0x220] |
+| 模式字 | [this+0x290] | [this+0x230] |
+| 默认常量 | 0x184242688 = 1/60 | 0x188553b60 = 1/60 |
+
+函数的计算顺序（26）：
+
+1. `[this+0x7528]` 非零直接返回；为零时算一次并写回缓存。
+2. `getenv("CA_HEARTBEAT_RATE")`（0x18425ba05，stub 解析到 libsystem_c 的 `_getenv`）非空：`atof` 后算 `1.0 / x`。环境变量名与同镜像的格式串 `heartbeatRate: %g Hz`（0x18425c56c）一致，输入按 Hz 解释属于推断；取倒数是指令实测。内容无法解析成数字时 `atof` 返回 0，取倒数得到 +inf，这条路径不回退到默认值。
+3. 否则 `[this+0x7510]` 非零时返回该值。属性初始化函数 0x184070768 从 IOMFB 属性 `displayRefreshStepMachTime` 读 32 位整数，调用 0x183f46e9c 用 mach 时间基换成秒，在 0x1840712e4 写进这个字段。
+4. 否则 `[this+0x7508]` 非零时返回 `(double)值 × 2^-32`；`[this+0x280] & 0x10` 非零时乘 `2^-33`。同一函数在 0x1840712c0 把 IOMFB 属性 `displayMinRefreshInterval` 的整数写进该字段。按 Q32 定点秒解释能对上常见刷新率，这一步是推断。
+5. 都没有时返回常量 1/60 秒。
+6. 最后若 `[this+0x290] != -1`，返回值改为 `65536.0 / ((x >> 29) & 0x1ffffff)`；`[this+0x280] & 0x10` 非零且 x 为负时再乘 0.5。25 位字段按「Hz × 65536」解释时结果才是秒，字段编码本次没有确认。字段为 0 时这个除法得到 +inf。0x184070768 与构造 0x184073a5c 都没有直接的 0x290 偏移写入，写这个字段的位置本次没有定位。第 6 步不回写 0x7528，每次调用都重算。
+
+属性名来自 0x184070768 引用的 CFString，cstring 地址分别是 `IOMFBDisplayRefresh`（0x18425b7e6）、`displayMinRefreshInterval`（0x18425b7fa）、`displayRefreshStepMachTime`（0x18425b814）。取值走 `CFDictionaryGetValue` 和 0x183f38340；后者先判 `CFBoolean`，再按 `kCFNumberIntType`（9）调 `CFNumberGetValue`。步长字段写入前经过 0x183f46e9c（tick→秒），它和 0x183f4688c（秒→tick，乘全局 0x1ecd99580 并加 0.5 取整）使用同一初始化例程填充的两个全局 0x1ecd99580 与 0x1ecd99590。
+
+构造链把字段与虚表归到同一个类：工厂 0x184075600 以 0x7530 作为分配大小参数，调用构造函数 0x184073a5c，后者在 0x184074e5c 调用 0x184070768；工厂随后把签名后的 vptr 0x1ee97f878（0x1ee97f868 + 0x10）写进对象，并把 `[obj+0x7528]` 清零。本次用到的最大字段偏移是 0x7528，与 0x7530 的分配参数吻合。
+
+### 调用点
+
+`refs --mode call` 对 0x183f380d8 是 0 处，`vcalls --offset 0x318` 在 26 找到 28 处，分布在 19 个函数；16.5 的 offset 0x2d8 是 32 处。用法分三类：
+
+- 换成 tick 后参与截止时间。0x183f33a44 的 0x183f33e00、0x183f33f94 与 0x183f4ad50 的 0x183f4e798、0x183f4e7dc 在调用 heartbeat 后紧跟 0x183f4688c。finish_update 的 0x183f56784 在条件成立时取 `heartbeat × 0.125` 调整时间戳；该函数在 0x183f568dc 另有一次 0x183f4688c 换算。
+- 换成频率。0x183f4ad50 在 0x183f4b54c 取槽 0x330 的整数（另一条路径用 0x183f4b520 槽 0x90 的返回值），0x183f4b578 算 `1/(heartbeat × 计数)`，取整后存 `[this+0x628]`。
+- 参与帧时间统计。函数 0x183f33a44 在 0x183f35654 用「经过时间 / heartbeat」取整减一，把结果限制在 0xf0 以内并累加直方图；0x18409aa38 把 heartbeat 换成 tick、乘槽 0x320 的计数、加基准 tick，再换回秒存入 `[obj+0x3e8]`，同时把基准 tick 和周期 tick 存进 `+0x3f0/+0x3f8`。把这三个量解释为基准时间、周期与下一次更新时间，属于推断。
+
+28 处里没有一处把返回值直接传给 `CFRunLoopTimerCreate`、`CFRunLoopTimerSetNextFireDate`、`dispatch_source_set_timer`、`mach_wait_until` 或 `nanosleep`。19 个调用函数的外部调用里，和调度相关的是 0x183f33a44 的 `usleep`（0x183f33ba8）与 0x1841ce104 的 `CFRunLoopPerformBlock`/`CFRunLoopWakeUp`（0x1841ce45c/0x1841ce464）。`usleep` 睡到 0x183f36974 从对象取出的 tick 时间戳 x21；`CFRunLoopPerformBlock` 投递一个 block，`CFRunLoopWakeUp` 唤醒运行循环，两处都没有定时器参数，块的执行时机由 run loop 决定。这三处都没有把 heartbeat 用作周期。调用这个函数的定时器周期是否由它决定，未确认；能确认的是它作为刷新周期参与下一次更新时间和帧时间计算。
+
+### 15 秒与 3 秒常量
+
+做法两步：在所有段里按 IEEE754 位型搜 double/float（15.0、3.0、1/15、1/60、16384.0、0.125、0.25、0x3e800000），再对 `__TEXT` 全部 1033136 条指令扫 `fmov` 立即数。代码常量节的命中：
+
+| 常量 | 地址 | 引用与用途 |
+|---|---|---|
+| 1/15 double | 0x184242f20 | 0x1840265b4，颜色解析函数 0x1840264a0 把十六进制颜色分量除以 15；函数引用 `rgb(`、`aqua`、`Incorrect number of color components (need %d)` |
+| 3.0 double | 0x184243978 | 未找到代码引用 |
+| 3.0 double | 0x1842439a0 | 0x184084be8，带 `init` 选择器的 ObjC 初始化函数 0x184084b90 把 3.0、10.0、±inf 写进对象字段 |
+| 3.0 double | 0x1ee990ba2 | 未找到代码引用 |
+| 15.0 float | 0x184244130、0x184244138 | 0x18402fed4，四分量浮点运算；同一函数 0x18402fef4 还有 `fmov s2,#15.0` |
+| 16384.0 | 无 | 代码常量节没有 double 或 float 版本 |
+| 0x3e800000（0.25f） | 多处 `__const` | 未逐个核对用途 |
+
+内联 `fmov` 扫到 68 条（含数据表里的误命中）。落在 heartbeat 调用函数里的只有两处，都是 0x183f4ad50 里的 15.0：
+
+- 0x183f4c014：算 `[display+0x2c8] + 15.0`，与当前时间 d8 比较；`now > last + 15` 时把 1 写进 `[this+0x138]`。display 由 `[x23+0x60]` 取出；`[display+0x2c8]` 在 0x183f4c008 由 d8 更新。
+- 0x183f4c3b0：条件成立时把 `[display+0x2c8] + 15.0` 写进 `[this+0x80]`，否则写 +inf；0x183f4cb64、0x183f4cc20 等地址读取 `[this+0x80]` 并与当前时间比较。
+- 两处的加法都没有 heartbeat 参与。`[this+0x80]` 的用法符合截止时间：条件成立时写入 last + 15，否则写 +inf，之后与当前时间比较；这个值没有传给定时器。内联 3.0 立即数和 3.0 常量引用都没有落在 heartbeat 调用函数里。
+
+结论：按这些分支的取值来源，heartbeat 返回的是毫秒量级的刷新周期，与 15 秒、3.011 秒都不对应。0x183f4ad50 里的 15 秒是「最近时间 + 15」的截止时间比较，与 heartbeat 返回值没有数据依赖；它是否对应真机上每 15 秒一次的帧流空洞，未确认。要在真机上区分这两条线索，需要看空洞前后 `[display+0x290]`、`[display+0x2c8]` 与更新上下文 `+0x80` 的读数，静态分析到这里没有更多证据。
+
+证据类型：槽位、函数体、默认常量、属性键、调用点计数、常量位型与引用点是实测；Hz 单位、Q32 解释、模式字段公式与「下一次更新时间」的语义是推断；定时器周期是否由 heartbeat 决定、15 秒截止时间与真机空洞的关系、写 0x290 的位置未确认。
+
+## 9. 未完成与否定证据
 
 idalib 仍然打不开主缓存文件。`idb_open` 对 `hackios-xnu-kernel/ios26/23G90__iPhone18,3/dyld_shared_cache_arm64e` 返回 `Failed to open database: <路径>`。抽取出来的独立 Mach-O 可以正常打开，这条路线不再需要动主缓存。
 
@@ -207,7 +274,7 @@ idalib 仍然打不开主缓存文件。`idb_open` 对 `hackios-xnu-kernel/ios26
 
 EAGLServer 的 `renderer`／`render_update` 槽位已经给出（0x1b0／0x1d8），其余槽位没有逐个比对。两个基类（0x1ee98e008、0x1ee989180）只做到基址与槽数，没有逐槽核对。
 
-## 9. 复现命令
+## 10. 复现命令
 
 ```text
 # 头字段与镜像
@@ -224,6 +291,8 @@ python3 -I hackios-xnu-kernel/tools/dsc/dsc.py slots 0x1ee97f868 --count 320
 # 16.5 侧
 python3 -I hackios-xnu-kernel/tools/dsc/dsc.py --cache hackios-xnu-kernel/ios165/20F66__iPhone10,3_6 \
     slots 0x1d5b44520 --count 246 --strings
+python3 -I hackios-xnu-kernel/tools/dsc/dsc.py --cache hackios-xnu-kernel/ios165/20F66__iPhone10,3_6 \
+    vcalls QuartzCore --offset 0x2d8
 
 # 抽成独立 Mach-O
 python3 -I hackios-xnu-kernel/tools/dsc/dsc.py extract QuartzCore -o /tmp/dsc26x/QuartzCore
@@ -231,11 +300,15 @@ python3 -I hackios-xnu-kernel/tools/dsc/dsc.py --cache hackios-xnu-kernel/ios165
     extract QuartzCore -o /tmp/dsc26x/QuartzCore165
 
 # 引用、虚拟调用与字符串
-python3 -I hackios-xnu-kernel/tools/dsc/dsc.py vcalls QuartzCore --offset 0xe0 --offset 0x1b0
-python3 -I hackios-xnu-kernel/tools/dsc/dsc.py refs QuartzCore 0x183f4fdfc --mode call
+python3 -I hackios-xnu-kernel/tools/dsc/dsc.py vcalls QuartzCore --offset 0xe0 --offset 0x1b0 --offset 0x318
+python3 -I hackios-xnu-kernel/tools/dsc/dsc.py refs QuartzCore 0x183f4fdfc 0x183f380d8 --mode call
 python3 -I hackios-xnu-kernel/tools/dsc/dsc.py findstr QuartzCore "complete_powering_on"
+
+# heartbeat 默认常量与颜色解析的 1/15
+python3 -I hackios-xnu-kernel/tools/dsc/dsc.py read 0x184242688 8
+python3 -I hackios-xnu-kernel/tools/dsc/dsc.py read 0x184242f20 8
 ```
 
-## 10. 相关文档
+## 11. 相关文档
 
 上一轮的缓存格式、指针解码与 AppleCLCDDisplay 虚表定位见 [iOS 26 共享缓存中 AppleCLCDDisplay 虚表与槽 0x138 的静态定位](2026-10-29-quartzcore-vtable-26.md)。注入点与槽的原始用途见 [`inject.c`](../../hackios-xnu-userland/userland/src/inject.c)。真机操作与恢复流程见[设备测试手册](../plan/device-test-playbook.md)与[引导目标切换 SOP](../plan/device-boot-target-sop.md)。
