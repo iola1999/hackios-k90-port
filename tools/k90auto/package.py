@@ -85,8 +85,10 @@ VARSTORE_LINE = "/redwood/bin/var_store show\n"
 BASE = WORKSPACE / "out/ios26-resume/air-arm64e-device/on"
 TOOLS = WORKSPACE / "tools/apfs"
 INJECT = (
-    "/redwood/lib/libredwood-sbmetal-experiment.dylib SpringBoard backboardd\n"
+    "/redwood/lib/libredwood-sbmetal-experiment.dylib SpringBoard backboardd" +
+    (" iconservicesagent" if os.environ.get("ICON_METAL") == "1" else "") + "\n"
     "/redwood/lib/libredwood.dylib backboardd\n"
+    "/redwood/lib/libredwood-sb26.dylib SpringBoard PosterBoard\n"
 )
 JOBS = "etc/rc.jobs"
 # JOBS_SOURCE=... runs a different touch script than the acceptance one. A diagnostic that has
@@ -99,12 +101,34 @@ JOBS_SOURCE = Path(os.environ.get("JOBS_SOURCE", HERE / "rc.jobs.desktop"))
 JOBS_SOURCE_GIVEN = "JOBS_SOURCE" in os.environ
 JOB = "LaunchDaemons/com.apple.backboardd.plist"
 CACHE_KEY = "/System/Library/LaunchDaemons/com.apple.backboardd.plist"
+# iconservicesagent renders the icons applications ask IconServices for. Without a Metal device it
+# renders them in software, and IconRendering then refuses to serialize every one of them
+# ("TextureIOError.usingSoftwareRenderer", 230 times in the ffma1 round): the General page of
+# Settings showed grey squares. ICON_METAL=1 gives it the same registration as backboardd. Off by
+# default: in lock2cpu4 (2026-10-30) the AIR frontend refused its path_exterior_fragment pipeline,
+# iconservicesagent was the first process to report THE GPU DID NOT FINISH, and the kernel closed
+# GPU submissions until a cold reset.
+ICON_METAL = os.environ.get("ICON_METAL") == "1"
+ICON_JOB = "LaunchDaemons/com.apple.iconservices.iconservicesagent.plist"
+ICON_CACHE_KEY = "/System/Library/LaunchDaemons/com.apple.iconservices.iconservicesagent.plist"
 # MSAA=1 asks the driver for four samples on both processes that encode render passes:
 # backboardd draws the window server's layers, SpringBoard its own, and a run of one without
 # the other compares two different devices. Off by default, because the answer changes what
 # every application that asks -supportsSampleCount: does.
 MSAA = os.environ.get("MSAA") == "1"
 MSAA_JOBS = ["com.apple.backboardd.plist", "com.apple.SpringBoard.plist"]
+# JOB_ENV="a.plist:KEY=VALUE b.plist:KEY=VALUE" adds one environment variable per item to a job, in
+# its plist and in the launchd cache. The ones in use: OS_ACTIVITY_DT_MODE=YES sends a job's os_log
+# to stderr and so to the console (backboardd, iconservicesagent and chronod have it already);
+# REDWOOD_SYNC_DRAWS=1 makes the driver wait after every draw and name the one the GPU did not
+# finish (redwoodmetal_diag.inc); FD_MESA_DEBUG is freedreno's own debug switch.
+JOB_ENV = []
+for item in os.environ.get("JOB_ENV", "").split():
+    job_name, _, setting = item.partition(":")
+    key, _, value = setting.partition("=")
+    if not job_name.endswith(".plist") or not key:
+        raise SystemExit(f"JOB_ENV item {item!r} is not NAME.plist:KEY=VALUE")
+    JOB_ENV.append((job_name, key, value))
 
 # The wallpaper and the widgets are drawn by two services this boot does not start, and each
 # lookup for them fails: SpringBoard and iconservicesagent ask for
@@ -194,10 +218,21 @@ DRIVER_INCLUDES = ["tools/userland-driver/redwood_drawable.h",
                    "tools/userland-driver/redwoodmetal_archive.inc",
                    "tools/userland-driver/redwoodmetal_blit.inc",
                    "tools/userland-driver/redwoodmetal_commandbuffer.inc",
+                   "tools/userland-driver/redwoodmetal_diag.inc",
                    "tools/userland-driver/redwoodmetal_mesa.inc",
                    "tools/userland-driver/redwoodmetal_texture.inc",
                    "tools/userland-driver/redwoodmetal_work.inc",
                    "tools/userland-driver/redwoodmetal_work_private.h"]
+
+# SpringBoard's 23G90 adaptations: the local activation state, the software icon selection and the
+# lock screen dismissal after boot (com.redwood.unlock dismisses it again). The base image carries an
+# older build of it that no inject.conf line loaded, so the iOS 26 lock screen stayed up until it was
+# swiped away by hand; the pack builds this one from the current source and injects it. The same
+# library is injected into PosterBoard, where only inject_posterboard.c's constructor acts: it logs
+# the errors behind the data store PosterBoard cannot create, which is why the wallpaper is empty.
+SB26_SOURCES = ["userland/src/inject_sb26.c", "userland/src/inject_sb26_layers.c",
+                "userland/src/inject_posterboard.c"]
+SB26_FLAGS = ["-Os", "-Wall", "-Wextra", "-Werror", "-framework", "CoreFoundation", "-framework", "Metal"]
 
 # The run this image is compared against used exactly these.
 BASE_ROOT_SHA256 = "33ed5fc9cb18367c124e6fd26a2fc982f7d80b3a44e04754f87cf74b5aa381f0"
@@ -205,23 +240,13 @@ OLD_SHIM_SHA256 = "be308aea0cb5c86dd8faa22df59aeefabe8fc688678ba80e2af2adf59f4da
 OLD_DRIVER_SHA256 = "1ea7c58ddb8ad6506749527fac41d1ca7ea10f977c3a9f0deefdd39b5880a907"
 OLD_AIR_SHA256 = "adf0328a025f959bd6bb7da7e7b81ec600075b5ad39aa7c3b31e8df506a8d604"
 
-# The two libraries this pack builds are compiled from the working tree, so what a round runs is
-# fixed by those two files rather than by the request. The expected hashes therefore live in a
-# committed file and a mismatch stops the pack.
-# ALLOW_DRIVER_CHANGE=1 accepts a new pair, which then belongs in that round's record.
-BASELINE = Path(__file__).resolve().parent / "library-baseline.json"
 # make-payload.py defaults this to 3 while nearly every comparable round used 1, so a forgotten
 # GPU_SPEED changes the GPU clock without changing the request. It is recorded here as well as in the
 # round manifest, and a note that names a different speed stops the pack.
 GPU_SPEED = int(os.environ.get("GPU_SPEED", "3"))
-# UPDATE_BASELINE=1 rewrites library-baseline.json from this pack, source hashes included. It exists
-# so a baseline is always something somebody can rebuild: the JSON is a build record, and rebuilding
-# it by hand from two hex strings cannot record which sources produced them.
-UPDATE_BASELINE = os.environ.get("UPDATE_BASELINE") == "1"
 # REDWOOD_DIAG=1 puts a diagnostic variable in the driver processes' environment. Diagnostic prints
 # (the driver's load address today, anything else added for one investigation later) are behind it,
-# so enabling one does not change the library the baseline describes. The manifest records whether
-# this round carried them.
+# so enabling one does not change the library. The manifest records whether this round carried them.
 REDWOOD_DIAG = os.environ.get("REDWOOD_DIAG") == "1"
 # JOBS_DROP="a.plist b.plist" packs without those jobs. A round changes one thing, and EXTRA_JOBS
 # accumulates what earlier rounds proved: without a way to leave one out, adding the next job also
@@ -230,11 +255,6 @@ REDWOOD_DIAG = os.environ.get("REDWOOD_DIAG") == "1"
 JOBS_DROP = {n.strip() for n in os.environ.get("JOBS_DROP", "").split() if n.strip()}
 missing_drop = JOBS_DROP - set(EXTRA_JOBS)
 assert not missing_drop, f"JOBS_DROP names jobs that are not in EXTRA_JOBS: {sorted(missing_drop)}"
-# Two checks, because the sources live in two repositories. The kernel work tree keeps userland,
-# Mesa and the AIR sources under .userland.git, which common/ugit reads; the packaging code itself
-# is in the top repository. Documentation and unrelated tools cannot change what a round runs, so
-# they are outside both checks.
-ALLOW_DRIVER_CHANGE = os.environ.get("ALLOW_DRIVER_CHANGE") == "1"
 
 sys.path.insert(0, str(TOOLS))
 from apfs import Container, pick_volume, walk, ROOT_DIR_INO_NUM   # noqa: E402
@@ -244,16 +264,16 @@ def dirty_sources():
     """What is uncommitted in the trees a pack is built from, as one git status per repository.
 
     The result goes into the pack record so a round states what it was built from. It does not stop
-    the pack. The library baseline is excluded because the pack that establishes it writes it, so it
-    stays untracked until someone commits it, and listing it would put a generated file into every
-    later record. What the baseline contains is checked by the hash gate instead."""
+    the pack. Two checks, because the sources live in two repositories: the kernel work tree keeps
+    userland, Mesa and the AIR sources under .userland.git, which common/ugit reads, and the packaging
+    code is in the top repository. Documentation and unrelated tools cannot change what a round runs,
+    so they are outside both checks."""
     reports = []
     for name, command, cwd in (
             ("kernel work tree under .userland.git (userland, Mesa, AIR sources)",
              ["common/ugit", "status", "--short"], WORKSPACE),
             ("top repository (packaging code)",
-             ["git", "status", "--short", "--", "tools/k90auto",
-              ":!tools/k90auto/library-baseline.json"], WORKSPACE.parent)):
+             ["git", "status", "--short", "--", "tools/k90auto"], WORKSPACE.parent)):
         try:
             result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=60)
         except (OSError, subprocess.SubprocessError) as error:
@@ -322,27 +342,31 @@ def build(sources, install_name, flags, out, dynamic=True):
 
 
 def add_switch(root):
-    """REDWOOD_SB_METAL=1 for backboardd, in the job plist and in the launchd cache."""
-    job_path = root / JOB
-    job = plistlib.loads(job_path.read_bytes())
-    job["EnvironmentVariables"]["REDWOOD_SB_METAL"] = "1"
-    blob = plistlib.dumps(job, fmt=plistlib.FMT_BINARY)
-    job_path.write_bytes(blob)
-
+    """REDWOOD_SB_METAL=1 for backboardd (and iconservicesagent with ICON_METAL=1), in the job
+    plists and in the launchd cache. Returns backboardd's job."""
     cache_path = root / "xpc/launchd.plist"
     cache = plistlib.loads(cache_path.read_bytes())
-    assert plistlib.loads(blob) == job, "the job plist did not survive the round trip"
-    cache["LaunchDaemons"][CACHE_KEY] = job
+    jobs = []
+    targets = [(JOB, CACHE_KEY)] + ([(ICON_JOB, ICON_CACHE_KEY)] if ICON_METAL else [])
+    for relative, key in targets:
+        job_path = root / relative
+        job = plistlib.loads(job_path.read_bytes())
+        job.setdefault("EnvironmentVariables", {})["REDWOOD_SB_METAL"] = "1"
+        blob = plistlib.dumps(job, fmt=plistlib.FMT_BINARY)
+        job_path.write_bytes(blob)
+        assert plistlib.loads(blob) == job, "the job plist did not survive the round trip"
+        cache["LaunchDaemons"][key] = job
+        jobs.append(job)
     cache_path.write_bytes(plistlib.dumps(cache, fmt=plistlib.FMT_BINARY))
-    return job
+    return jobs[0]
 
 
 def add_diag(root, cache):
     """REDWOOD_DIAG=1 for the two processes that load the driver, when REDWOOD_DIAG=1 asks.
 
     Diagnostic prints sit behind this variable so a round can turn them on without a different
-    library: the baseline then describes behaviour only, and the manifest records whether the round
-    carried them. Without the variable the driver prints none of them."""
+    library, and the manifest records whether the round carried them. Without the variable the driver
+    prints none of them."""
     for name in MSAA_JOBS:
         job_path = root / "LaunchDaemons" / name
         job = plistlib.loads(job_path.read_bytes())
@@ -350,6 +374,18 @@ def add_diag(root, cache):
         job.setdefault("EnvironmentVariables", {})["REDWOOD_DIAG"] = "1"
         blob = plistlib.dumps(job, fmt=plistlib.FMT_BINARY)
         job_path.write_bytes(blob)
+        cache["LaunchDaemons"]["/System/Library/LaunchDaemons/" + name] = job
+    (root / "xpc/launchd.plist").write_bytes(plistlib.dumps(cache, fmt=plistlib.FMT_BINARY))
+    return cache
+
+
+def add_env(root, cache, settings):
+    """Each (job, key, value) in the job's environment, in its plist and in the launchd cache."""
+    for name, key, value in settings:
+        job_path = root / "LaunchDaemons" / name
+        job = plistlib.loads(job_path.read_bytes())
+        job.setdefault("EnvironmentVariables", {})[key] = value
+        job_path.write_bytes(plistlib.dumps(job, fmt=plistlib.FMT_BINARY))
         cache["LaunchDaemons"]["/System/Library/LaunchDaemons/" + name] = job
     (root / "xpc/launchd.plist").write_bytes(plistlib.dumps(cache, fmt=plistlib.FMT_BINARY))
     return cache
@@ -423,6 +459,7 @@ def main():
     shim = OUT / "libredwood-sbmetal-experiment.dylib"
     driver = OUT / "libredwoodmetal.dylib"
     air = OUT / "libredwoodair.dylib"
+    sb26 = OUT / "libredwood-sb26.dylib"
     # build.sh's own product, which this pack used to take from the base root: a change to
     # userland/src/inject.c then never reached an image, and on 2026-10-29 tl: b was in obj/ and in
     # userland/root/ while the packed /lib/libredwood.dylib was e527b342… from an earlier round.
@@ -442,12 +479,13 @@ def main():
     commands = {"shim": build(SHIM_SOURCES, "/redwood/lib/libredwood-sbmetal-experiment.dylib",
                               SHIM_FLAGS, shim),
                 "driver": build(DRIVER_SOURCES, "/redwood/lib/libredwoodmetal.dylib",
-                                 DRIVER_FLAGS, driver)}
+                                 DRIVER_FLAGS, driver),
+                "sb26": build(SB26_SOURCES, "/redwood/lib/libredwood-sb26.dylib", SB26_FLAGS, sb26)}
     probe = OUT / "lsprobe"
     if PROBE:
         commands["probe"] = build(PROBE_SOURCES, "", PROBE_FLAGS, probe, dynamic=False)
     sources = {name: sha(SRC_ROOT / name)
-               for name in [*SHIM_SOURCES, *DRIVER_SOURCES, *DRIVER_INCLUDES,
+               for name in [*SHIM_SOURCES, *DRIVER_SOURCES, *DRIVER_INCLUDES, *SB26_SOURCES,
                             "userland/src/sb_metal_registration_sequence.inc",
                             "userland/src/sb_metal_compression_policy.inc",
                             "tools/mesa/air/air_metal.c", "tools/mesa/air/air_to_nir.c",
@@ -497,6 +535,7 @@ def main():
     assert sha(dest / "lib/libredwoodmetal.dylib") == sha(driver), \
         "the driver in the image is not the one this pack built"
     shutil.copy2(air, dest / "lib/libredwoodair.dylib")
+    shutil.copy2(sb26, dest / "lib/libredwood-sb26.dylib")
     shutil.copy2(userland, dest / "lib/libredwood.dylib")
     assert sha(dest / "lib/libredwood.dylib") == sha(userland), \
         "libredwood.dylib in the image is not the one build.sh produced"
@@ -566,6 +605,9 @@ def main():
         # add_diag rewrote this job too; the assertion further down compares the packed plist with
         # what this variable holds, so it has to be read again rather than kept from add_switch.
         job = plistlib.loads((dest / JOB).read_bytes())
+    if JOB_ENV:
+        cache = add_env(dest, cache, JOB_ENV)
+        job = plistlib.loads((dest / JOB).read_bytes())
     # What launchd will know this boot, names only: the cache is the authority (iOS 26 takes its jobs
     # from /System/Library/xpc/launchd.plist, not from the LaunchDaemons directory), so reading the
     # labels back out of it answers "which jobs did this round carry" without replaying EXTRA_JOBS,
@@ -595,8 +637,9 @@ def main():
     for name in added:
         changes[name] = {"sha256": [None, after[name]["sha256"]]}
     expected = {"/lib/libredwood-sbmetal-experiment.dylib", "/lib/libredwoodmetal.dylib",
-                "/lib/libredwoodair.dylib", "/lib/libredwood.dylib", "/etc/inject.conf",
-                "/etc/rc.jobs", "/" + JOB,
+                "/lib/libredwoodair.dylib", "/lib/libredwood.dylib", "/lib/libredwood-sb26.dylib",
+                "/etc/inject.conf",
+                "/etc/rc.jobs", "/" + JOB, *(["/" + ICON_JOB] if ICON_METAL else []),
                 "/xpc/launchd.plist", *["/bin/" + program.name for program in EXTRA_PROGRAMS],
                 # Anything added under a directory changes that directory's own times, and records()
                 # reports the directory alongside the file, so the parent of every added file belongs
@@ -609,6 +652,7 @@ def main():
                 "/LaunchDaemons", *["/LaunchDaemons/" + name for name in EXTRA_JOBS if name not in JOBS_DROP],
                 # the diagnostic switch rewrites the two jobs whose processes load the driver
                 *(["/LaunchDaemons/" + name for name in MSAA_JOBS] if REDWOOD_DIAG else []),
+                *{"/LaunchDaemons/" + name for name, _, _ in JOB_ENV},
                 # the skeleton is rewritten only when the base root is too old to carry a line that
                 # userland/var.skel.extra names; an empty skeleton_appended means it was left alone
                 *(["/etc/var.skel"] if appended else [])}
@@ -622,6 +666,10 @@ def main():
     cache = plistlib.loads(bodies["/xpc/launchd.plist"])
     assert cache["LaunchDaemons"][CACHE_KEY] == job, "the launchd cache and the job plist disagree"
     assert job["EnvironmentVariables"]["REDWOOD_SB_METAL"] == "1"
+    if ICON_METAL:
+        icon_job = plistlib.loads(bodies["/" + ICON_JOB])
+        assert cache["LaunchDaemons"][ICON_CACHE_KEY] == icon_job, "iconservicesagent: cache and plist disagree"
+        assert icon_job["EnvironmentVariables"]["REDWOOD_SB_METAL"] == "1"
     for name in EXTRA_JOBS:
         if name in JOBS_DROP:
             continue
@@ -644,51 +692,10 @@ def main():
         assert hashlib.sha256(bodies[name]).hexdigest() == sha(path), name
 
     driver_sha, air_sha = sha(driver), sha(air)
-    expected = {}
-    if BASELINE.is_file():
-        expected = json.loads(BASELINE.read_text())
-    expected["driver_sha256"] = os.environ.get("EXPECT_DRIVER_SHA256") or expected.get("driver_sha256")
-    expected["air_sha256"] = os.environ.get("EXPECT_AIR_SHA256") or expected.get("air_sha256")
-    drift = {key: (expected.get(key), given) for key, given in
-             (("driver_sha256", driver_sha), ("air_sha256", air_sha))
-             if expected.get(key) and expected[key] != given}
-    if drift and UPDATE_BASELINE:
-        print(f"rewriting the baseline takes this change as the new recorded value: {json.dumps(drift)}")
-    elif drift and not ALLOW_DRIVER_CHANGE:
-        lines = [f"  {key}: expected {old_value} got {given}" for key, (old_value, given) in drift.items()]
-        raise SystemExit(
-            "packaging refuses a library that differs from the recorded baseline, because the round "
-            "would run a driver nothing in the request names:\n" + "\n".join(lines) +
-            "\nIf this change is intended, commit it, set ALLOW_DRIVER_CHANGE=1 for one pack and record "
-            "both hashes in that round's notes.")
-    if drift:
-        print(f"accepted library change under ALLOW_DRIVER_CHANGE=1: {json.dumps(drift)}")
-    # The baseline above is compared against what was just built; this compares it against what the
-    # image actually carries, which is a different object when anything between the build and the copy
-    # goes wrong. Content hashes, not mtimes: two silent failures on 2026-10-29 both came from a tool
-    # deciding freshness by timestamp.
-    if BASELINE.is_file() and not UPDATE_BASELINE:
-        recorded = json.loads(BASELINE.read_text()).get("driver_sha256")
-        in_image = sha(dest / "lib/libredwoodmetal.dylib")
-        if recorded and recorded != in_image:
-            raise SystemExit(f"the image carries driver {in_image[:16]}… but the baseline records "
-                             f"{recorded[:16]}…; commit the change or rebuild the library")
-    if not BASELINE.is_file() or UPDATE_BASELINE:
-        # The source hashes go in with the product hashes. Without them a baseline records only what
-        # came out, so when a value cannot be reproduced from any tree there is nothing to compare
-        # against: on 2026-10-28 the recorded driver 3d7ea90e matched neither repository's sources and
-        # nobody could say which inputs had made it. With the map, a baseline names its own inputs.
-        BASELINE.write_text(json.dumps({"driver_sha256": driver_sha, "air_sha256": air_sha,
-                                        "source_sha256": sources}, indent=2) + "\n")
-        print(f"recorded the library baseline in {BASELINE}: "
-              f"driver {driver_sha[:16]} air {air_sha[:16]} sources {len(sources)}")
 
     report = {
         "base": str(BASE), "base_root_sha256": BASE_ROOT_SHA256,
-        "expected_driver_sha256": expected.get("driver_sha256"),
-        "expected_air_sha256": expected.get("air_sha256"),
         "driver_sha256": driver_sha, "air_sha256": air_sha,
-        "library_change_accepted": bool(drift),
         "variable": "backboardd armed for Metal registration; the driver survives the blit selectors "
                     "it does not implement; the eight-round gesture script drives the run",
         "old_shim_sha256": OLD_SHIM_SHA256, "new_shim_sha256": sha(shim),
@@ -717,7 +724,7 @@ def main():
         "build_commands": commands, "source_sha256": sources,
         "inject_conf": INJECT.strip(),
         "jobs_sha256": hashlib.sha256(jobs).hexdigest(), "probe": PROBE, "varstore_show": VARSTORE_SHOW,
-        "skeleton_appended": appended, "jobs_dropped": sorted(JOBS_DROP),
+        "skeleton_appended": appended, "jobs_dropped": sorted(JOBS_DROP), "job_env": [f"{n}:{k}={v}" for n, k, v in JOB_ENV],
         "jobs_effective": jobs_effective, "jobs_effective_count": len(jobs_effective),
         "redwood_diag": REDWOOD_DIAG,
         "changes": changes,

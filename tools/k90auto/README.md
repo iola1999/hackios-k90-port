@@ -90,3 +90,22 @@ python3 tools/k90auto/package.py          # 从工作区根目录运行
 - 脚本对基线根盘、三个冻结库、变更文件集合、登记断言都做硬校验，任何一项不符直接退出。
 - AIR 库只被复制、不在这里编译，所以打包前先确认目录里那份是哪一版：带逐帧计时的插桩库会在日志里多打 `perf frames` 行，要干净库就按 `out/ios26-resume/mesa-arm64e/manifest.json` 里记录的命令从无插桩源树重编，不要直接沿用上一位留下的文件。
 - `JOBS_SOURCE` 可换掉根盘里的 `etc/rc.jobs`（例如诊断轮用 `jobs/rc.jobs.ccdrag`）。
+- `JOB_ENV="任务.plist:变量=值 ..."` 给指定任务的 plist 和 launchd 缓存各加一个环境变量，一项一个变量。现在用到下面三个变量。
+  - `OS_ACTIVITY_DT_MODE=YES`：任务的 os_log 随 stderr 进控制台日志；backboardd、iconservicesagent、chronod 的任务本来就有这一项。SpringBoard 的 os_log 量大，`render4` 里两次拉取之间日志环转过整圈 12 次，开机解锁那一行丢失，不要给它打开。
+  - `REDWOOD_SYNC_DRAWS=1`：驱动在每个绘制之后提交并等待完成，没有完成的绘制打印 `sync: commit N work M did not finish`，带管线名、颜色附件数、纹理数和缓冲数，并把这个管线的两个着色器模块以 `AIRFAIL begin hung-vertex`／`hung-fragment` 打出来，用 `hackios-xnu-kernel/tools/mesa/air/airfail-extract.py` 取回。每个绘制都要等 GPU，只给怀疑的进程打开。
+  - `FD_MESA_DEBUG=...`：freedreno 自带的调试开关，例如 `sysmem` 让所有批次不走 GMEM。
+
+## 8. 渲染问题的无人值守检查
+
+`cycle.py` 从工作树跑完一轮：打包、做 payload、上传并启动，等 SpringBoard 报出开机解锁后执行一段固定的操作与截图，然后提前结束这一轮，最后写出渲染报告。
+
+```sh
+ANDROID_SERIAL=<序列号> python3 tools/k90auto/cycle.py LABEL --baseline docs/progress/evidence/k90auto/kernel-NAME-上一轮
+python3 tools/k90auto/render-health.py docs/progress/evidence/k90auto/kernel-NAME-LABEL [--baseline 另一轮]
+python3 tools/k90auto/tour.py docs/progress/evidence/k90auto/kernel-NAME-LABEL "home@3*2" "settings=/redwood/bin/rwtouch tap 0.616 0.70@4*2"
+```
+
+- `cycle.py` 起轮前要求 loader 已枚举、`result` 为 idle、RAM 盘为空，任一项不满足就停止；每两轮先经 LK 把 A 槽重试次数重置为 7（`reboot-lk.py`、`set_active a`），LK 由 `ANDROID_SERIAL` 指定。打包开关（如 `ICON_METAL=1`）按 `package.py` 的环境变量透传。
+- `render-health.py` 先按重叠部分合并 `s*.log`，再把驱动、AIR 库、QuartzCore 的 Metal 日志、MiniIOSurface 与 GPU 驱动里的失败行按类别分组计数，每类写明它在屏幕上的后果；没有归类但带失败字样的图形日志列在 unclassified 下。`--baseline` 在每行后给出另一轮的计数，并标出只在一侧出现的行。驱动的部分拒绝只在首次或 2 的幂次打印，计数 1 或 2 的幂可能代表更多次。
+- `tour.py` 的每一步是 `标签=命令@等待秒数*截图张数`，命令经 `rsh.py` 发给设备上的 rwsh；同一步拍两张以上时比较前后两张，状态栏以下有变化的比例和范围写进 `run/tour.json`，用于发现闪烁。全部截图缩成一张 `run/tour-sheet.png`，编号与 `tour.json` 的顺序一致。
+- SpringBoard 的图层树可以用 rwsh 的 `notify com.redwood.layers.<过滤词>` 打到日志里（`all`、`Icon`、`Wallpaper`、`Poster`、`StatusBar`、`Battery`、`Widget`）。过滤词在任意层级匹配图层类或所属视图类，匹配处向下再列 3 层；每行是层级、图层类、所属视图类、尺寸、在父图层里的位置、隐藏与透明度、内容类型和尺寸，用来区分「图层没有内容」和「有内容但没有画出来」。

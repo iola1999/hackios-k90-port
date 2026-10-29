@@ -30,12 +30,14 @@ LIB = BUILD / "src/gallium/drivers/freedreno/libredwoodair.dylib"
 OUT = WORKSPACE / "out/ios26-resume/bbmetal-device/libredwoodair.dylib"
 RECORD = TREE / "air-build-record.json"
 TARGET = "src/gallium/drivers/freedreno/libredwoodair.dylib"
-# The two headers a driver-side change is allowed to touch, plus the C file itself. Everything else
-# in tools/mesa/air/ is shared with the iOS 16.5 line and is not part of this library.
+# The header a driver-side change is allowed to touch, the C file itself and the two files it
+# includes that carry library entry points (copies and compute). Everything else in tools/mesa/air/
+# is shared with the iOS 16.5 line and is not part of this library.
 # Copied into the build tree and recorded by digest. air_to_nir.c is here because a change to it is
 # what fixes the refused fragment pipeline: any file the build reads from this directory that is not
 # listed would be copied by hand and silently left out of the library.
-FILES = ["air_metal.c", "air_metal.h", "air_to_nir.c"]
+FILES = ["air_metal.c", "air_metal.h", "air_to_nir.c", "air_private.h", "air_metal_copy.inc",
+         "air_metal_compute.inc"]
 
 # The toolchain: a venv with meson 1.12.1 and the ninja from homebrew, with bison ahead of the
 # system one because the frontend's parser needs it. The paths are part of the host image, not of

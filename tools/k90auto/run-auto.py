@@ -12,6 +12,11 @@ A periodic screenshot costs the USB channel a 11.6 MB transfer, and the log is w
 from, so the default spends the channel on logs. SHOT_EVERY>0 still takes a shot every that many
 seconds from SHOT_FROM on, for a round that wants a time series instead of the log.
 
+Commands for the running iOS go the same way: tools/k90auto/rsh.py drops RUN_DIR/run/cmd-request-*.txt,
+the run sends each one with `oem sh` (to /redwood/bin/rwsh, which must be in the round's rc.jobs),
+writes the loader's answer to cmd-reply-*.json and reads the log a few times over the next 18 s
+into cmd-SEQ.log, which is where rsh.py finds the output.
+
 Screenshots are otherwise on demand. A run watches RUN_DIR/shot-request; whoever performed an action
 worth recording writes that file (tools/k90auto/shot-now.py does it), and the run takes exactly one
 shot when it next looks, named by the elapsed second the shot was taken at, so the file name still
@@ -195,6 +200,32 @@ def frame_progress(path):
             "max_gap_seconds": round(max(gaps), 3) if gaps else 0.0, "quiet_seconds": quiet}
 
 
+# Seconds after `oem sh` at which the log is read into cmd-SEQ.log: a built-in answers within the
+# first, a program rwsh spawns is killed after 15 s.
+CMD_FOLLOW_SECONDS = (2, 5, 10, 18)
+command_reads = []      # (host time due, seq)
+
+
+def serve_commands():
+    """Send the commands rsh.py left, oldest first, and read the log when their output is due."""
+    for request in sorted(run.glob("cmd-request-*.txt")):
+        text = request.read_text().strip()
+        request.unlink()
+        record = call(["oem", "sh", text], 8, False)
+        # fastboot prints the loader's INFO answer, the new sequence number, as "(bootloader) N"
+        match = re.search(r"^\(bootloader\) (\d+)\s*$", record["output"], re.M)
+        seq = int(match.group(1)) if match and record["rc"] == 0 and "FAILED" not in record["output"] else None
+        reply = run / request.name.replace("cmd-request-", "cmd-reply-").replace(".txt", ".json")
+        reply.write_text(json.dumps({"text": text, "seq": seq, "rc": record["rc"],
+                                     "output": record["output"]}) + "\n")
+        if seq is not None:
+            command_reads.extend((time.monotonic() + after, seq) for after in CMD_FOLLOW_SECONDS)
+    for due in sorted(item for item in command_reads if item[0] <= time.monotonic()):
+        command_reads.remove(due)
+        if call(["oem", "log"], 8, False)["rc"] == 0:
+            call(["get_staged", run / f"cmd-{due[1]}.log"], 20, False)
+
+
 def take_shot(elapsed):
     """One screenshot at the given elapsed second. The name keeps the fixed-interval format so a
     reader converts a file name to a moment the same way it did for the earlier rounds."""
@@ -212,6 +243,11 @@ last_frame_id = -1
 frozen = None
 while time.monotonic() - start < duration:
     elapsed = time.monotonic() - start
+    # RUN_DIR/run/stop-request ends a long interactive round early, through the normal teardown.
+    if (run / "stop-request").exists():
+        (run / "stop-request").unlink()
+        print("STOP_REQUESTED", round(elapsed, 1), flush=True)
+        break
     name = state()
     if name != "running":
         failed = {"state": name, "elapsed_seconds": elapsed}
@@ -258,6 +294,7 @@ while time.monotonic() - start < duration:
         shot_request.unlink()
         take_shot(elapsed)
         shots += 1
+    serve_commands()
     time.sleep(0.5)
 print("SAMPLED_SECONDS", time.monotonic() - start, "failed_call", failed, flush=True)
 

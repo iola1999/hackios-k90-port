@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = Path(__file__).resolve().parent
@@ -85,8 +86,20 @@ elif args[:2] == ["oem", "ramdisk"] and len(args) == 5:
 elif args[:1] == ["reboot"]:
     state_path.write_text(os.environ.get("FB_AFTER_REBOOT", "idle"))
     pathlib.Path(os.environ["FB_RAMDISK"]).write_text("idle 0 0 0")
+elif args[:2] == ["oem", "sh"]:
+    # what the loader answers to a command for rwsh: the new mailbox number, as INFO and OKAY
+    seq_path = state_path.with_name("cmd-seq")
+    seq = int(seq_path.read_text()) + 1 if seq_path.exists() else 1
+    seq_path.write_text(str(seq))
+    say("(bootloader) %d\nOKAY [  0.000s]" % seq)
 elif args[:1] == ["get_staged"]:
-    pathlib.Path(args[1]).write_text("console log\n")
+    target = pathlib.Path(args[1])
+    seq_path = state_path.with_name("cmd-seq")
+    if target.name.startswith("cmd-") and seq_path.exists():
+        seq = int(seq_path.read_text())
+        target.write_text("console log\nrwsh %d start echo hi\nrwsh %d| hi\nrwsh %d exit 0 3 ms\n" % (seq, seq, seq))
+    else:
+        target.write_text("console log\n")
 else:
     say("OKAY")
 '''
@@ -309,6 +322,38 @@ class RunAutoTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual([summary["left"], summary["mode"], summary["off_seen"]], ["returned", "loader", False])
         self.assertIn("result: idle", summary["status"])
+
+    def test_a_command_from_rsh_is_sent_and_its_output_collected(self):
+        """rsh.py drops a request, run-auto.py sends it with oem sh and reads the log into
+        cmd-SEQ.log, and rsh.py prints the output lines of that number."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = self.prepare(root, 4096, None)
+            shutil.copy(HERE / "rsh.py", root / "tools/k90auto/rsh.py")
+            (root / "state").write_text("idle")
+            (root / "ramdisk").write_text("idle 0 0 0")
+            env = dict(os.environ, PATH=str(root / "bin") + os.pathsep + os.environ["PATH"],
+                       FB_LOG=str(root / "fastboot.jsonl"), FB_STATE=str(root / "state"),
+                       FB_RAMDISK=str(root / "ramdisk"), FB_DEVICES=str(root / "devices"),
+                       FB_STAGE_LOG=str(root / "stage.log"), FB_AFTER_STOP="idle", K90_STOP_WAIT="6",
+                       K90_FREEZE_OFF="1")
+            runner = subprocess.Popen([sys.executable, str(root / "tools/k90auto/run-auto.py"), str(base), "8"],
+                                      env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=root)
+            for _ in range(100):
+                if (root / "state").read_text().strip() == "running":
+                    break
+                time.sleep(0.1)
+            shell = subprocess.run([sys.executable, str(root / "tools/k90auto/rsh.py"), str(base), "echo", "hi"],
+                                   env=env, capture_output=True, text=True, timeout=60)
+            output = runner.communicate(timeout=120)[0]
+            sent = self.sent(root)
+            files = sorted(p.name for p in (base / "run").iterdir())
+        self.assertEqual(runner.returncode, 0, output)
+        self.assertEqual(shell.returncode, 0, shell.stdout + shell.stderr)
+        self.assertEqual(shell.stdout, "hi\n")
+        self.assertIn(["oem", "sh", "echo hi"], sent)
+        self.assertIn("cmd-1.log", files)
+        self.assertFalse([name for name in files if name.startswith("cmd-request-")])
 
     def test_a_big_image_without_a_window_is_refused_before_anything_is_read(self):
         with tempfile.TemporaryDirectory() as directory:

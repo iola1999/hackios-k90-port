@@ -1,0 +1,19 @@
+# home-cycle: page swipes on the home screen for a fixed-length round.
+#
+# The lock screen is dismissed by libredwood-sb26.dylib inside SpringBoard; the notification below
+# asks for that again in case the boot unlock gave up. init splits a line into at most 63 words, so
+# each rwtouch line stays well under that (the 2026-10-29 version had 200 and stopped at word 63
+# with 'bad step "swipe"').
+#
+# init waits for each line, so every background line ends with & and goes before rwtouch.
+/redwood/bin/lsprobe 60 &
+/redwood/bin/framewatch --every 20 --count 30 SpringBoard backboardd &
+/redwood/bin/rwtouch wait 40 notify com.redwood.unlock wait 5
+/redwood/bin/rwtouch swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4
+/redwood/bin/rwtouch swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4
+/redwood/bin/rwtouch swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4
+/redwood/bin/rwtouch swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4
+/redwood/bin/rwtouch swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4
+/redwood/bin/rwtouch swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4
+/redwood/bin/rwtouch swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4
+/redwood/bin/rwtouch swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4 swipe 0.85 0.55 0.15 0.55 250 wait 4 swipe 0.15 0.55 0.85 0.55 250 wait 4

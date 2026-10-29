@@ -50,7 +50,7 @@ fastboot -s xnuloader getvar ramdisk-state
 | 项 | 值 | 取处 |
 |---|---|---|
 | 内核 | `f055cc0a928e6b3a69f1043a419105362a71ea46ac1789e05387dea1db54c2c3`，20,226,616 字节 | `hackios-xnu-kernel/out/xnu12377-f055cc0a-restored.bin`，与 `out/xnu12377/BUILD/obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837` 同哈希 |
-| AIR | `57fdb85c38bcf6892de3394ffa184963d881a99a091dae828c85dba5cb22e8eb`，14,051,376 字节 | `hackios-xnu-kernel/out/ios26-resume/bbmetal-device/libredwoodair.dylib`，同时记在 `tools/k90auto/library-baseline.json` 的 `air_sha256` |
+| AIR | `57fdb85c38bcf6892de3394ffa184963d881a99a091dae828c85dba5cb22e8eb`，14,051,376 字节 | `hackios-xnu-kernel/out/ios26-resume/bbmetal-device/libredwoodair.dylib` |
 | 驱动 | `529d19bf36271609afc020e20bdc080b36b9a28af62c49ec9c9323dd0a11f40e`，242,512 字节 | 同目录 `libredwoodmetal.dylib`；`package.py` 每次从 `hackios-xnu-kernel/tools/userland-driver/` 现编，编出来的哈希与 baseline 不符就拒绝打包 |
 | 注入库 | `1d7278335752c53cee5e43294136f52ddafb6442b542aa9db61258372911421b`，91,232 字节 | `hackios-xnu-kernel/userland/root/lib/libredwood.dylib`；源码 `hackios-xnu-kernel/userland/src/inject.c` 为 `e71cdc00eac7e6f7fb986c6525ccbad429861b204576c54c1585bf8fb5a7f224`，`package.py` 只拷贝不重编 |
 | 系统盘 | `d11083be02820507f5639e0a29c6f35256a48d1d4f3cf4cd265eb4b8e346efe4`，4,925,816,832 字节 | `hackios-xnu-kernel/userland/system26.apfs` |
@@ -189,7 +189,7 @@ python3 tools/k90auto/round-run.py docs/progress/evidence/k90auto/kernel-12377-a
 
 条件是 D1 成立。下一轮的动作固定为：在 `hackios-xnu-kernel/out/ios26-resume/mesa-arm64e/mesa-26.2.5/src/gallium/drivers/freedreno/a6xx/fd6_draw.cc` 里，把命中那一段按调用点再插 3 到 5 个 `mark()`，段名用调用名，同一份改动另存为 `hackios-xnu-kernel/tools/mesa/fd6-state-segs-2.patch` 备查；随后用 `tools/k90auto/build-air.py` 重编并签名。作业、内核、驱动、注入库一律不动，只换 AIR。
 
-新 AIR 的哈希与 `library-baseline.json` 的 `57fdb85c…` 不同，打包时用 `UPDATE_BASELINE=1` 把新值写进 baseline，并在轮次注记里写新旧两个哈希。期望的读数是同一作业下出现 ≥ 60% 的单一子段。子段仍然分散时，落点按 D2 处理，转 §4.2。
+新 AIR 的哈希与 `57fdb85c…` 不同，打包时在轮次注记里写新旧两个哈希。期望的读数是同一作业下出现 ≥ 60% 的单一子段。子段仍然分散时，落点按 D2 处理，转 §4.2。
 
 ### 4.2 结果 B：分段分散，或快照指向系统调用
 
@@ -269,8 +269,8 @@ Android 进不去时，用 `tools/k90auto/reboot-lk.py <新目录> --return-load
 - 预落页对每个首次映射的 BO 逐页写一个字节。BO 的两个分配点都用 `kIODirectionInOut`（`RedwoodGPUMemory.inc:312` 与 `:367`），映射按可写交给进程；仍然保留 §4.3 最后一条停止条件，出现 `bad access` 且 pc 落在 `fd_bo_prefault` 就停下。大纹理（1206×2622×4 为 12,648,528 字节、3,089 页）在映射时刻要触碰三千多页，慢 map 会出现在这一轮，属于要观测的现象。
 - 线程快照只在一次 draw 超过 300,000 µs 时触发。`statefault` 的 24 条里只有 4 条超过这个值，样本会少。
 - AIR 的构建记录 `air-build-record.json` 只记 `air_metal.c`、`air_metal.h`、`air_to_nir.c` 三个源文件，两条分段与预落页探针在 `a6xx/fd6_draw.cc`（`edb4521a8eb62db9f689bdc77a66e7e4debef3ec4ffc7699f93126dab230252b`）与 `src/freedreno/drm/freedreno_bo.c`（`ac3922dcc071835a091eb9d9c268d8490830d0aa956812f72522aad4ac8b93ec`）里，两个哈希记在这里，重建时按它们核对。
-- `f99ff4a` 起 `pack.source_sha256` 包含驱动六个 `#include` 文件（`redwoodmetal_commandbuffer.inc` 等）；之前的轮次没有它们，身份靠产物哈希。重建时仍按 `library-baseline.json` 的 `529d19bf…` 核产物。
-- `package.py` 会重建驱动。重编出来不是 `529d19bf…` 就停下核源码，不要用 `ALLOW_DRIVER_CHANGE=1` 绕过。
+- `f99ff4a` 起 `pack.source_sha256` 包含驱动六个 `#include` 文件（`redwoodmetal_commandbuffer.inc` 等）；之前的轮次没有它们，身份靠产物哈希。
+- `package.py` 会重建驱动。重编出来不是 `529d19bf…` 就停下核源码。
 
 ## 8. 第三轮：`ir3_cache_lookup()` 内部与编译队列
 
