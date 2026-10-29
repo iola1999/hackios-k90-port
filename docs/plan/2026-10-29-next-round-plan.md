@@ -65,8 +65,11 @@ fastboot -s xnuloader getvar ramdisk-state
 cp -a hackios-xnu-kernel/out/ios26-resume/bbmetal-device hackios-xnu-kernel/out/ios26-resume/bbmetal-device-1029n1
 JOBS_SOURCE=tools/k90auto/jobs/rc.jobs.perf-sustain GPU_SPEED=3 python3 tools/k90auto/package.py
 MEMSIZE=300000000 IDENTITY=v57 JOBS_SOURCE=tools/k90auto/jobs/rc.jobs.perf-sustain GPU_SPEED=3 \
+  SYSTEM=hackios-xnu-kernel/userland/system26.apfs SYSTEM_WINDOW=0x300000000 \
   python3 tools/k90auto/make-payload.py 12377-attr26-diag3x statecursor2 out/ios26-resume/bbmetal-device/root.apfs "gpu_log=1 metal=1 cpufreq=1 fb_threads=2 touch_lat=1"
 ```
+
+`SYSTEM` 与 `SYSTEM_WINDOW` 不能省：默认的 `SYSTEM` 是 16.5 的 `system.apfs`（2,493,976,576 字节，不在 4～5 GiB 的窗口里），`make-payload.py` 会断言拒绝；26 的盘 4,925,816,832 字节超过 4 GiB，`SYSTEM_WINDOW` 不设时第二条断言要求分块协议。2026-10-29 20:53 实跑时两条断言各命中一次。
 
 第一行是备份，因为 `package.py` 会覆盖 `bbmetal-device/` 下的 root 与清单，而那份 AIR 二进制没有第二份。备份已在 2026-10-29 离线期间做好，目录是 `bbmetal-device-1029n1`，AIR 哈希复核为 `57fdb85c…`，起轮时跳过第一行：目标目录已存在时再执行 `cp -a` 会在它下面生成一层 `bbmetal-device/`。`package.py` 现编驱动，AIR 只拷不编。作业用 `perf-sustain` 而不用默认的 `rc.jobs.desktop`：产生那 24 条慢 draw 的 `statefault` 轮用的就是这一份，换掉作业就换了要解释的现象。
 
