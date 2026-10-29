@@ -87,7 +87,7 @@ python3 hackios-xnu-kernel/tools/apfs/apfs.py cat hackios-xnu-kernel/out/ios26-r
 | 同一段的总墙钟、CPU 与缺页 | 分段计时 | `fd draw seg slow: state wall … cpu … flt … us` | `wall` > 50,000 µs |
 | 首次映射的预落页花了多少 | 预落页 | `fd bo prefault slow: %p %u bytes %llu us` | ≥ 5,000 µs |
 | 慢 draw 那一刻各线程在哪 | 进程内线程快照 | `redwood: stall pc … (%s) tid %llu` | 一次 draw ≥ 300,000 µs，每 draw 一份 |
-| 3 秒洞里 backboardd 主循环是否在转 | 主循环观察器 | `tl: b WOKE COMMIT DONE` | 需要 `touch_lat=1` |
+| 3 秒洞里 backboardd 主循环的醒睡节奏 | 主循环观察器 | `tl: b WOKE COMMIT DONE` | 需要 `touch_lat=1` |
 | 驱动侧同一时刻在做什么 | 看门线程与绘制外层 | `tl: cnt …`（每 1 秒）、`rd in`／`rd out … draw=… slow=…` | 心跳常开；`rd` 行在 `draw` > 50,000 µs 或 `rd in` 已打时出现 |
 
 六组探针在同一份 AIR、同一份驱动、同一份注入库里，一轮取完。这一轮相对上一轮换了 AIR（`04f25e4c…` 换成 `57fdb85c…`）与驱动（`86867766…` 换成 `529d19bf…`），内核与注入库没变。读这一轮时不能把它当成预落页的开关对照，预落页在这一版里常开。
@@ -157,9 +157,10 @@ python3 tools/k90auto/round-run.py docs/progress/evidence/k90auto/kernel-12377-a
 
 | 判据 | 通过条件 | 结论 |
 |---|---|---|
-| H1 | 每条 ≥ 1 秒的洞内 `tl: b` ≥ 1 条，相邻 `tl: b` 的 `WOKE` 差中位 ≤ 30 ms | 主循环在转，帧没有被发起，阻塞在显示链路回调一侧 |
-| H2 | 洞内 0 条 `tl: b` | 主循环没有进入等待（没有醒来，或一直在跑而没有睡） |
-| H3 | `tl: cnt` 在洞内每 1.0 秒 ±0.1 秒一条 | 驱动的看门线程活着，进程没有死；这一条是 H1／H2 成立的前提 |
+| H1 | 洞内 `tl: b` 条数与同轮任意 3 秒窗口的条数同档：先算该轮全部 3 秒窗口里零条的比例，洞内零条的洞数不超过期望值加两倍标准差 | 主循环在洞里的行为与平时一样 |
+| H3 | `tl: cnt` 在洞内每 1.0 秒 ±0.1 秒一条 | 驱动的看门线程活着，进程没有死；这一条是 H1 成立的前提 |
+
+2026-10-29 离线复核后改过这一节，改法见 [`tl: b` 实测语义](../analysis/2026-10-29-tl-b-semantics.md)。原 H1（洞内每 3 秒至少一条、相邻 `WOKE` 差中位不超过 30 毫秒）与原 H2（洞内 0 条即判主循环没进入等待）删除：`tl: b` 按主循环的醒睡打印，不按帧打印，四轮合计 313 条对 900 到 11,600 帧；同一轮任意 3 秒窗口有 15.5% 到 30.0% 一条都没有，原 H2 会在普通窗口上三成命中。`tl: b` 在新判据里只作描述性读数。
 
 ### 3.6 判据五：帧流永久停止时的形态
 
@@ -247,6 +248,7 @@ Android 进不去时，用 `tools/k90auto/reboot-lk.py <新目录> --return-load
 
 - `AppleCLCDDisplay::ignore_update_p` 是否造成帧流永久停止。26 上的槽位是静态推断（`0x150`），钩子不在这一轮的库里；运行期取虚表基址那一版让 backboardd 连续 15 次 `signal 11`。上机前要先有一轮只读的虚表基址校验，用[26 虚表定位](../analysis/2026-10-29-quartzcore-vtable-26.md)里的差值断言。
 - 15 秒周期锚在哪一层。这一轮只给洞内 `tl: b` 与 `tl: cnt` 的活动，把「用户态等一次不再到来的通知」与「内核节拍没投递」分开需要 `ca_vbl=1`（一轮，单变量，不改任何产物）或 `tl: n`（改内核，另一轮）。
+- 谁在产帧。归档里 `tl: b` 四轮合计 313 条对 900 到 11,600 帧，主循环不是产帧线程（见 [`tl: b` 实测语义](../analysis/2026-10-29-tl-b-semantics.md)）；显示链路回调与 `CA::Render` 服务线程都没有探针，这一轮不回答。
 - 预落页是不是慢 draw 的成因。这一版 AIR 里预落页常开、没有运行期开关，只能给成本行的量级，开关对照要新编一版 AIR，属于后面的一轮。
 - 缺页是否发生在绘制线程。XNU 没有按线程的缺页计数接口，`flt` 仍是整个进程的口径（见[缺页口径核对](../analysis/2026-10-29-slow-draw-fault-accounting.md) §1.2）。
 - 单次缺页的真实成本。要有微基准或在 `vm_fault_internal()` 里给 `current_thread()` 计数，这一轮拿不到这个量。
