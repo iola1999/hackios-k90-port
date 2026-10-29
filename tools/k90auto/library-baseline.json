@@ -1,6 +1,6 @@
 {
-  "driver_sha256": "827045e48792cf0b9ef46137eb068b4e9d65fb6353e70f961215339d921daa8f",
-  "air_sha256": "f67df047e9abee96fa75569ec3c7ef4ce1427b8c65427b55d7684da1aa1df2b2",
+  "driver_sha256": "868677669a794310ce1159ac37721eca9e5f726221a714e4f9ea3bd6afd71d44",
+  "air_sha256": "57fdb85c38bcf6892de3394ffa184963d881a99a091dae828c85dba5cb22e8eb",
   "source_sha256": {
     "userland/src/sb_metal_experiment.m": "987f9154f441db2b9cc5e5f4ff649839d86bebacea1ef52f2527b95dc455cff2",
     "tools/userland-driver/redwoodmetal.m": "4513f3e823a70d6c4c88cb50405193dea4f7e53b4428b61b40ee2a06dc8b5e34",
@@ -8,8 +8,7 @@
     "tools/userland-driver/redwoodmetal_blit.inc": "add5b13f9dc48b1fab019ecafd85180cd8004887859d8dadeb47627242e59a00",
     "userland/src/sb_metal_registration_sequence.inc": "de79f8ab7741192e4e2c05d2a97ec289c8af628bb98eb4ef33e90c8fa3a6a03e",
     "userland/src/sb_metal_compression_policy.inc": "48f80b66df1e987429438c01c46baaebef40ebece26f74c9f15ca5402b7aad29",
-    "tools/mesa/air/air_metal.c": "439a8aab35c10eb93923cadb7e3861639f37ef9a645d24f62ac8ae720b212fcf",
-    "tools/mesa/air/air_to_nir.c": "35b6f62ef90982f98e34b85dbd2eae83208269a0841bb2dca106994df8f16074",
-    "userland/src/lsprobe.m": "85311cacf6b531382553e5110cf36b31e3a3cbf0017e86312da37df87131bd35"
+    "tools/mesa/air/air_metal.c": "b36b1d64018cb7b62b7f56ad4a541e0d7d3b7fec3f82e555f3f578f068192e10",
+    "tools/mesa/air/air_to_nir.c": "35b6f62ef90982f98e34b85dbd2eae83208269a0841bb2dca106994df8f16074"
   }
 }

@@ -74,6 +74,78 @@ def attempt_summary(round_dir):
             "payload_sha256": summary.get("payload_sha256"), "lottery": lottery}
 
 
+SLOT_FLOOR = 3
+SLOT_RESET = "7"
+
+
+def slot_verdict(retry_a):
+    """What to do with a slot-retry-count:a reading: None means "no reading", otherwise a decision.
+
+    The A slot never gets marked successful when iOS is started through the loader, so the counter
+    falls by two every round and LK falls back to B slot Android at zero (SOP section 4 trap 4).
+    Relaunching the round below the floor is what puts the device on Android partway through an
+    unattended sequence.
+    """
+    if retry_a is None:
+        return None
+    return "reset" if retry_a < SLOT_FLOOR else "pass"
+
+
+def read_retry_a():
+    """slot-retry-count:a, or None when the device answers as the loader rather than LK."""
+    try:
+        out = subprocess.run(["fastboot", "devices"], capture_output=True, text=True, timeout=5).stdout
+    except (subprocess.SubprocessError, OSError):
+        return None
+    serials = [line.split()[0] for line in out.splitlines() if line.strip()]
+    lk = [s for s in serials if s and s != "xnuloader"]
+    if not lk:
+        return None
+    try:
+        out = subprocess.run(["fastboot", "-s", lk[0], "getvar", "slot-retry-count:a"],
+                             capture_output=True, text=True, timeout=8)
+    except (subprocess.SubprocessError, OSError):
+        return None
+    text = (out.stdout or "") + (out.stderr or "")
+    for line in text.splitlines():
+        if "slot-retry-count:a" in line:
+            tail = line.split("slot-retry-count:a")[-1].strip(" :")
+            if tail.isdigit():
+                return int(tail)
+    return None
+
+
+def slot_preflight():
+    """Return 0 to run the round, 3 when the A slot could not be brought back above the floor."""
+    value = read_retry_a()
+    verdict = slot_verdict(value)
+    if verdict is None:
+        print("SLOT no slot-retry-count reading: the device answers as the loader, where the "
+              "counter is not exposed; the check belongs to the LK step of the reset", flush=True)
+        return 0
+    if verdict == "pass":
+        print(f"SLOT slot-retry-count:a={value} at or above the floor {SLOT_FLOOR}", flush=True)
+        return 0
+    print(f"SLOT slot-retry-count:a={value} below the floor {SLOT_FLOOR}: set_active a to reset it",
+          flush=True)
+    serials = subprocess.run(["fastboot", "devices"], capture_output=True, text=True, timeout=5).stdout
+    name = [line.split()[0] for line in serials.splitlines() if line.strip() and "xnuloader" not in line]
+    if not name:
+        print("SLOT reset failed: no LK device to send set_active to", flush=True)
+        return 3
+    done = subprocess.run(["fastboot", "-s", name[0], "set_active", "a"], capture_output=True, text=True, timeout=10)
+    if done.returncode != 0 or "FAILED" in ((done.stdout or "") + (done.stderr or "")):
+        print(f"SLOT reset failed: {done.stdout or done.stderr}".strip(), flush=True)
+        return 3
+    after = read_retry_a()
+    if slot_verdict(after) != "pass":
+        print(f"SLOT reset did not raise the counter (now {after}); the loader was not restarted, "
+              f"so the next boot can still fall back to slot b", flush=True)
+        return 3
+    print(f"SLOT reset to {after}; reboot the loader before the round if the slot changed", flush=True)
+    return 0
+
+
 def archive_attempt(round_dir, number):
     """Move run/ aside so the next attempt starts from an empty directory and keeps these logs."""
     target = round_dir / f"run-attempt-{number}"
@@ -86,6 +158,11 @@ def archive_attempt(round_dir, number):
 def main():
     if "--self-test" in sys.argv:
         return self_test()
+    if "--slot-test" in sys.argv:
+        at = sys.argv.index("--slot-test")
+        value = int(sys.argv[at + 1]) if len(sys.argv) > at + 1 else None
+        print(f"SLOT-TEST value {value} verdict {slot_verdict(value)}")
+        return 0
     if len(sys.argv) < 2:
         print(__doc__.split("    tools/k90auto/round-run.py")[0].strip())
         print("\nusage: round-run.py ROUND_DIR [SECONDS] [SHOT_EVERY]")
@@ -101,6 +178,9 @@ def main():
     shots = sys.argv[3] if len(sys.argv) > 3 else "0,100,20"
     # 0 means one attempt with no retry: the boot-stability validation reads the raw panic rate and a
     # retry loop would turn six boots into up to eighteen attempts and hide the ratio.
+    preflight = slot_preflight()
+    if preflight != 0:
+        return preflight
     limit = max(1, int(os.environ.get("K90_PANIC_RETRY", "3")))
     attempts = []
     code = 0

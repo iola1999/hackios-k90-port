@@ -1,0 +1,12 @@
+# noinput: the same probes as perf-sustain with every touch removed, for the comparison round that
+# asks whether the slow draws depend on the 125 Hz touch injection.
+#
+# perf-sustain's three 32 s drag segments are replaced by one `wait 200`, which keeps the round the same
+# length and leaves the screen untouched. The probe lines are copied unchanged: an input-free round that
+# also changed the probes would not be comparable with the rounds it is compared against.
+#
+# init waits for each line, so every background line ends with & and goes before rwtouch.
+/redwood/bin/lsprobe 60 &
+/redwood/bin/lsprobe 300 &
+/redwood/bin/framewatch --every 20 --count 30 SpringBoard backboardd &
+/redwood/bin/rwtouch wait 200
