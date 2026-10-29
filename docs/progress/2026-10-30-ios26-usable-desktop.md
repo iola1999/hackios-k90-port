@@ -18,6 +18,8 @@
 | `kernel-12377-cmd1-render6` | 同上 | `iconservicesagent` 加 `FD_MESA_DEBUG=sysmem` | 仍然挂起；软件合成下主屏、设置可用，回主屏时 backboardd 断言崩溃，之后转菊花 |
 | `kernel-12377-cmd1-render7` | 同上 | 去掉 `sysmem`；同步模式下每个绘制提交前打印一行描述；PosterBoard 加 `OS_ACTIVITY_MODE=debug` | `iconservicesagent` 还没有绘制，GPU 已停用；PosterBoard 的日志没有变多 |
 | `kernel-12377-cmd1-render8` | 同上 | `iconservicesagent` 加 `FD_MESA_DEBUG=nolrz`，日志确认进程读到了这个值 | 仍然挂起 |
+| `kernel-12377-cmd2-render9` | 同上 | 内核 `12377-cmd2`：打印 HFI 150 的全部字和已完成的 EOP 时间戳 | 第 11 次提交没有完成，是 `iconservicesagent` 的 `primitive__vertex` 绘制；HFI 150 在驱动的两秒等待之后才到，没有打印出来 |
+| `kernel-12377-cmd3-render10` | 同上 | 内核 `12377-cmd3`：报告前再读 3 秒 HFI；绘制描述加索引；PosterBoard 注入错误探针 | 第 12 次提交没有完成，是 SpringBoard 的 57 缓冲提交；取到 HFI 150 全文；PosterBoard 的数据存储初始化返回 nil 且没有错误 |
 
 两轮内核相同（`out/xnu12377-f055cc0a-restored.bin`），cmdline 相同（`cpus=2 bootcpu=7`，`adreno8_speed=3`）。`interactive1` 的驱动为 `ceefc187…`，AIR 仍为 `b5b44d51…`。
 
@@ -195,6 +197,36 @@ RGBA16Float 表面的行字节数第一批放宽到 64 字节（只采样的导�
 - 各轮完成的 `iconservicesagent` 绘制都用 `plane__vertex`，挂起的都是第一个用 `primitive` 类顶点着色器（`primitive__vertex`、`primitive_gradient_vertex`）的绘制。两个着色器翻译成 NIR 后没有循环和异常结构。
 - `render8` 关掉 LRZ 后仍然挂起，LRZ 不是 `iconservicesagent` 挂起的原因。
 - 内核只打印 GMU `context bad`（150）消息的第二个字。`render9` 换内核 `12377-cmd2`：打印这条消息的全部 26 个字，`RedwoodGPU ... no answer` 一行加上已完成的 EOP 时间戳。
+
+### 8.6 `render9` 与 `render10`：GMU 的挂起报告
+
+- `render9` 的内核行是 `last timestamp 12, retired 10`：第 11 次提交没有完成，即 `iconservicesagent` 第 2 次提交第 4 个 work，`primitive__vertex+ffia2ba3ca7dhmha4`，10 个索引的三角形带。同一 pass 里完成的绘制是 4 个索引的四边形（索引 `1 0 2 3`）和 64 个索引、多实例的路径。
+- `render10` 挂起的是第 12 次提交，即 SpringBoard 的 57 缓冲提交，其中也有一个 `primitive__vertex` 绘制（`ffea2ba11dhmha4`）。两个进程挂起的批次都含 `primitive__vertex`，片段着色器各不相同。
+- `primitive__vertex` 用 16 位的 `vertex_id` 做整数运算（`and`、比较），按 `vid > 3` 分支算外圈顶点，10 个索引是绕矩形一圈的三角形带。这些都是由翻译结果推断的，还没有 ir3 汇编可以对照：Mesa 26.x 已删除 `ir3_cmdline.c`，宿主上没有 ir3 编译器。
+
+`render10` 的 HFI 150 全文（26 个字）按 KGSL 的布局读：
+
+| 字 | 值 | 含义 |
+|---|---|---|
+| 1 | 1 | 版本 |
+| 2、3、4 | 1、2、0xc | GC context 1，policy 2，时间戳 12 |
+| 5、6、7 | 0xffffffff、1、0 | 没有 LPAC context |
+| 8 | 0x259 | 错误码，对应的名称还没有查到 |
+| 9 | 0x00100002 | 第 2 类（ringbuffer）的段，16 个字 |
+| 10～25 | 键值对 | RB 0，RPTR 0x548，WPTR 0x5f9，大小 0x2000 字，已排队时间戳 13，已完成时间戳 11，基址 0x10028000 |
+
+报告里没有错误寄存器段（第 1 类），GMU 报的是 CP 停在第 12 次提交上，没有报操作码错误或受保护寄存器写入。
+
+### 8.7 Metal 的图元重启
+
+Metal 的索引绘制总是开启图元重启：16 位索引的 0xFFFF、32 位索引的 0xFFFFFFFF 结束当前图元，所有图元类型都是这样（Apple `drawIndexedPrimitives` 文档，gpuweb issue 1220 引用了原文）。AIR 的绘制原先写的是 Metal 没有重启索引并关闭了重启，现在改为索引绘制都开启，重启值不计入索引范围。这一项已编进 AIR 库，还没有上机。`render10` 记录到的 7 个索引绘制都是四边形 `1 0 2 3`，没有 0xFFFF；10 个索引的那种绘制这一轮没有执行到，它的索引还没有读数，重启和挂起有没有关系还不能判断。
+
+### 8.8 PosterBoard 的数据存储
+
+- `render10` 的探针读数：`-[PBFPosterExtensionDataStore initWithURL:...]` 的 URL 是 `file:///var/mobile/Library/Application%20Support/`，返回 nil，错误为 nil；调用方随后生成 `Data store could not be created for an unknown reason which evades explanation`。
+- 传入的 extension provider 是 nil，这是调用方 `buildDataStoreForURL:` 写死的（`mov x4, #0`），不是失败原因。
+- 初始化里没有新建 NSError。之前的 57 个错误来自旧壁纸迁移读 `/var/mobile/Library/SpringBoard/LockBackground*.jpg`、`HomeBackground*.jpg` 等文件不存在，以及 `com.apple.managedconfiguration.profiled.public` 查找失败。
+- 初始化会在四处返回 nil：迁移失败、bundle ID 迁移失败、完整性校验失败、SQLite 数据库打开失败。这四处只发 `os_signpost`，控制台看不到。下一轮的探针已经写好（`userland/src/inject_posterboard.c`），记录这四步和 `_lock_performNecessaryMigrationsForDataStoreAtURL:shouldForce:error:` 的返回值与错误，还没有上机。
 
 ## 9. 无人值守的一轮
 
