@@ -186,6 +186,18 @@ SHIM_FLAGS = ["-Os", "-Wall", "-Wextra", "-Werror", "-framework", "Foundation", 
 DRIVER_SOURCES = ["tools/userland-driver/redwoodmetal.m",
                   "tools/userland-driver/redwooddrawable.m"]
 DRIVER_FLAGS = ["-O1", "-framework", "Foundation", "-framework", "IOKit", "-framework", "Metal"]
+# Everything the two driver sources include. The manifest used to name only redwoodmetal_blit.inc, and
+# when the shipped 827045e4… had to be traced to a commit the file that differed was
+# redwoodmetal_commandbuffer.inc, which no manifest recorded: the .m hashes matched and the product
+# hash did not, so the search could only end by rebuilding from candidate trees.
+DRIVER_INCLUDES = ["tools/userland-driver/redwood_drawable.h",
+                   "tools/userland-driver/redwoodmetal_archive.inc",
+                   "tools/userland-driver/redwoodmetal_blit.inc",
+                   "tools/userland-driver/redwoodmetal_commandbuffer.inc",
+                   "tools/userland-driver/redwoodmetal_mesa.inc",
+                   "tools/userland-driver/redwoodmetal_texture.inc",
+                   "tools/userland-driver/redwoodmetal_work.inc",
+                   "tools/userland-driver/redwoodmetal_work_private.h"]
 
 # The run this image is compared against used exactly these.
 BASE_ROOT_SHA256 = "33ed5fc9cb18367c124e6fd26a2fc982f7d80b3a44e04754f87cf74b5aa381f0"
@@ -435,7 +447,7 @@ def main():
     if PROBE:
         commands["probe"] = build(PROBE_SOURCES, "", PROBE_FLAGS, probe, dynamic=False)
     sources = {name: sha(SRC_ROOT / name)
-               for name in [*SHIM_SOURCES, *DRIVER_SOURCES, "tools/userland-driver/redwoodmetal_blit.inc",
+               for name in [*SHIM_SOURCES, *DRIVER_SOURCES, *DRIVER_INCLUDES,
                             "userland/src/sb_metal_registration_sequence.inc",
                             "userland/src/sb_metal_compression_policy.inc",
                             "tools/mesa/air/air_metal.c", "tools/mesa/air/air_to_nir.c",
@@ -726,7 +738,8 @@ def main():
     # reason: its manifest carried no `sources` section, so nothing recorded whether the driver in the
     # image came from the tree that has the dealloc prints. A pack that cannot name its inputs is not
     # written at all, rather than left for somebody to reconstruct later.
-    required = [*SHIM_SOURCES, *DRIVER_SOURCES, "tools/mesa/air/air_metal.c", "tools/mesa/air/air_to_nir.c"]
+    required = [*SHIM_SOURCES, *DRIVER_SOURCES, *DRIVER_INCLUDES,
+                "tools/mesa/air/air_metal.c", "tools/mesa/air/air_to_nir.c"]
     absent = [name for name in required if not report.get("sources", {}).get(name)]
     if not report.get("sources") or absent:
         raise SystemExit("the manifest would not record the build inputs, missing: "
