@@ -151,6 +151,18 @@ git -C out/xnu12377 show ac9718fb1af618d5ce8678d0dc6e8a58f252216f:bsd/conf/files
 
 规则：**遇到这一类枚举先搜构建树的 `doc/`。** 它是树内来源，而此前查这一类值一直在树外找（公开文档、记忆里的枚举形状），树外找会得到形状相近而取值不同的另一支。
 
+### 4.8 写在 `xnu/files/` 也提供的路径上的补丁，会被复制那一步整份覆盖
+
+`apply.sh` 的三步是有序的：先按 `series` 逐件 `git apply`，再 `cp -P -p` 把 `xnu/files/` 拷进树，最后 `cp -R -P -p xnu26/files/.`。补丁改的是 Apple 的原文件，只要同一条路径在 `xnu/files/` 里也有一份，拷进去的那份会整份替换掉打过补丁的版本，补丁的每一行都不留，而 `apply.sh` 不报错、退出 0。
+
+2026-10-29 实测过一例。`san/memory/ubsan_minimal.c` 加了诊断打印，写成 `73-san%memory%ubsan_minimal.c.patch` 挂进 `series`；同一晚 `7c3eec4` 把 8796 线那份 356 行的同名文件放进了 `xnu/files/san/memory/ubsan_minimal.c`。在干净目录重铺之后，树里那一份是 8796 的 356 行版本，带的是它自己的 `panic("UBSAN trap taken in early startup code: trap %u pc %p fp %p")`，补丁里新增的 `trap/elr/lr/fp/esr` 一个字都没有。
+
+`xnu26/files.skip` 就是给这种情况用的：它列出「这些路径不取 `xnu/files/` 里的版本」，`apply.sh` 用 `grep -vxF -f "$HERE/files.skip"` 把它们从复制清单里剔掉。`4.8` 这一例加进 `san/memory/ubsan_minimal.c` 之后，12377 树用 Apple 自己那份（178 行），补丁才落地。副作用是两条线在这一个文件上分开：8796 线仍用 `xnu/files/` 里那份。
+
+写补丁之前先查这条路径归谁：`git ls-files xnu/files/<路径>` 有输出就说明共用目录里也有一份，补丁要么改共用那份，要么把路径写进 `xnu26/files.skip`。铺完树之后再 `cmp` 一次目标文件与预期版本，`git apply` 的退出 0 对这件事没有信息量。
+
+同日的状态数字：`series` 74 件（§1 的 73 是 10-28 那天的），`files.skip` 两项（`osfmk/arm64/kpc.c`、`san/memory/ubsan_minimal.c`）。
+
 ## 5. 两个结论与它们的查法
 
 **`c2ccc7c` 那处改动在跑的内核里。** round C 跑的内核 sha256 是 `cf1502f5632284af4ab11d182f62913663f7205ec4376f4abc0f274f834b2492`。四条依据：

@@ -41,6 +41,7 @@ import os
 import plistlib
 import shutil
 import re
+import struct
 import subprocess
 import sys
 
@@ -83,7 +84,10 @@ VARSTORE_SHOW = os.environ.get("VARSTORE_SHOW") == "1"
 VARSTORE_LINE = "/redwood/bin/var_store show\n"
 BASE = WORKSPACE / "out/ios26-resume/air-arm64e-device/on"
 TOOLS = WORKSPACE / "tools/apfs"
-INJECT = "/redwood/lib/libredwood-sbmetal-experiment.dylib SpringBoard backboardd\n"
+INJECT = (
+    "/redwood/lib/libredwood-sbmetal-experiment.dylib SpringBoard backboardd\n"
+    "/redwood/lib/libredwood.dylib backboardd\n"
+)
 JOBS = "etc/rc.jobs"
 # JOBS_SOURCE=... runs a different touch script than the acceptance one. A diagnostic that has
 # to catch the screen mid-drag needs its own timing, and the acceptance script stays as it is.
@@ -259,6 +263,22 @@ def sha(path):
     return result.hexdigest()
 
 
+# Every library in this image is loaded by an arm64e process, and dyld refuses an arm64 slice in one
+# by discarding it without a line: the processes then run with none of the library's work done, which
+# reads as the library not being injected at all. 0x80000002 is ARM64E with the LIB64 bit, which is
+# what build.sh's own gate (:885-922) requires of everything it stages.
+ARM64E_WITH_LIB64 = 0x80000002
+
+
+def cpusubtype(path):
+    """The cpusubtype of a thin Mach-O, read from its header."""
+    with Path(path).open("rb") as source:
+        header = source.read(12)
+    magic, _cputype, cpusubtype = struct.unpack("<Iii", header)
+    assert magic in (0xFEEDFACF, 0xFEEDFACE), f"{path} is not a thin Mach-O (magic {magic:#x})"
+    return cpusubtype & 0xFFFFFFFF
+
+
 def records(path):
     """Every path in a root image, with the metadata mkapfs.py would have to reproduce."""
     container = Container(str(path))
@@ -396,11 +416,17 @@ def main():
     # userland/root/ while the packed /lib/libredwood.dylib was e527b342… from an earlier round.
     userland = SRC_ROOT / "userland/root/lib/libredwood.dylib"
     assert userland.is_file(), f"{userland} is userland/build.sh's product; run it before packing"
-    assert air.is_file(), f"{air} is the ninja build of the patched tools/mesa/air/air_metal.c"
+    assert air.is_file(), (f"{air} is missing; tools/k90auto/build-air.py writes it and signs it, "
+                           "and ninja alone does not")
     # The ninja build leaves the library unsigned, and dyld refuses it: the image then boots,
     # composits on the CPU and records plausible frame times with no GPU submission at all.
     signed = subprocess.run(["/usr/bin/codesign", "-dv", str(air)], capture_output=True, text=True)
-    assert "Signature=adhoc" in signed.stderr, f"{air} is not signed adhoc; dyld will refuse it"
+    assert "Signature=adhoc" in signed.stderr, (
+        f"{air} is not signed adhoc, and dyld will refuse it. The file to pack is "
+        "out/ios26-resume/bbmetal-device/libredwoodair.dylib, which build-air.py signs with "
+        "codesign --force --sign -; the copy ninja leaves under "
+        "out/ios26-resume/mesa-arm64e/build/src/gallium/drivers/freedreno/ is unsigned by "
+        "construction, so it can never pass this check. Run tools/k90auto/build-air.py")
     commands = {"shim": build(SHIM_SOURCES, "/redwood/lib/libredwood-sbmetal-experiment.dylib",
                               SHIM_FLAGS, shim),
                 "driver": build(DRIVER_SOURCES, "/redwood/lib/libredwoodmetal.dylib",
@@ -462,6 +488,14 @@ def main():
     shutil.copy2(userland, dest / "lib/libredwood.dylib")
     assert sha(dest / "lib/libredwood.dylib") == sha(userland), \
         "libredwood.dylib in the image is not the one build.sh produced"
+    # build.sh compiles this one with $DYN (-arch arm64, iOS 16.5 SDK) and every other library in
+    # this image with -arch arm64e: on 2026-10-29 the image carried an arm64 slice and backboardd
+    # ran with none of its work done, while dyld said nothing ("no load, no line"). The hash above
+    # cannot catch that -- the file really was the one build.sh made.
+    assert cpusubtype(dest / "lib/libredwood.dylib") == ARM64E_WITH_LIB64, (
+        f"libredwood.dylib is cpusubtype {cpusubtype(dest / 'lib/libredwood.dylib'):#x}, and this "
+        "image's processes are arm64e: rebuild it with -arch arm64e and an iOS 26 SDK, as build.sh "
+        "does for its other libraries, then sign it")
     for program in EXTRA_PROGRAMS:
         assert program.is_file(), f"{program} is named in PAYLOAD_PROGRAMS and is not a file"
         shutil.copy2(program, dest / "bin" / program.name)

@@ -127,6 +127,22 @@ codesign --force --sign - <目录>/libredwoodmetal.dylib
 - 两边写的目录不重叠：`build.sh` 写 `userland/obj/` 与 `userland/root/`，`package.py` 写 round 目录（`out/ios26-resume/<name>/`）里的产物、`root.apfs` 与 `manifest.json`。这解释了 `userland/obj/libredwoodmetal.dylib` 为什么是 arm64 且比 `src/redwoodmetal.m` 旧，而装车那份是 arm64e：它们出自两条路径。
 - 按这个分工，`build.sh` 不需要为 26 线加分支；加了就有两条路径写同一批产物名。要动的话，动的是让 `build.sh` 在 `V = 26` 时明确拒绝，架构闸已经在做这件事。
 
+### 4.1 四种库的架构与 SDK，以及不一致时的表现
+
+| 库 | 谁编 | 架构取值 | SDK | 签名 |
+|---|---|---|---|---|
+| `libredwood.dylib`（`src/inject.c`） | `build.sh` 的 `$DYN` | 原为 `-arch arm64`；2026-10-29 改成 `-arch arm64e -miphoneos-version-min=26.0` | 原 `iPhoneOS16.5.sdk`；改后 `../xnu-deps/26/sdk/iPhoneOS.sdk` | 原无；改后 `codesign --force --sign -` |
+| `libredwood-sb.dylib`（`src/inject_sb.c`） | `build.sh` 的 `$DYN` | `-arch arm64` | `iPhoneOS16.5.sdk` | 无 |
+| `input26-service`、`libredwood-sb26.dylib`、`libredwood-sbmetal-experiment.dylib` | `build.sh` 的 26 分支（`build.sh:196-237`） | `-arch arm64e -miphoneos-version-min=26.0` | `../xnu-deps/26/sdk/iPhoneOS.sdk` | `codesign --force --sign -`（Darwin）／`ldid -S`（容器） |
+| `libredwoodmetal.dylib` | `tools/k90auto/package.py` 的 `build()` | `xcrun -sdk iphoneos clang -arch arm64e -miphoneos-version-min=26.0` | 宿主 Xcode 的 iPhoneOS SDK | `codesign --force --sign -` |
+| `libredwoodair.dylib` | `tools/k90auto/build-air.py` 驱动的 meson cross 文件 | `-arch arm64e -miphoneos-version-min=26.0` | Xcode 的 iPhoneOS SDK（此机 27.1） | 构建后 adhoc 签名 |
+
+26 线的 dyld 共享缓存只有 arm64e 一个分片，进程是 arm64e；一个 arm64 分片的库在 arm64e 进程里不会被装载，dyld 也不留一行说明。表现是那个库的构造器从不执行，日志里既没有它的横幅也没有「不兼容架构」之类的报错，读起来与「库没被注入」完全一样。2026-10-29 就是这个情形：同一份 `inject.conf` 里 `libredwood-sbmetal-experiment.dylib` 是 arm64e 且已签名，对 SpringBoard 生效；`libredwood.dylib` 是 arm64 且未签名，在 backboardd 里连横幅都没有，而 dyld 无任何失败行。
+
+判据用头部而不是文件名：`otool -hv <库>` 的 `cpusubtype` 必须是 `0x80000002`（ARM64E 加 LIB64 位），与镜像里其它 arm64e 库一致。`userland/build.sh:885-922` 在 staging 阶段就拒绝不带 LIB64 位的 Mach-O；`package.py` 在把 `libredwood.dylib` 拷进镜像根时也加了同款断言，因为那条路径不经 `build.sh` 的闸。
+
+签名同样在判据之内：镜像里另外三份 26 库都做了 adhoc 签名，只有这一份此前没有。签名会改变文件字节与哈希，所以比哈希要在签名之后做。
+
 ## 5. 可复现性的边界
 
 - Mesa 那个库不是逐字可复现的，仓库里有实测记录。`tools/mk-mesa.sh:32-37` 的注释原文：
