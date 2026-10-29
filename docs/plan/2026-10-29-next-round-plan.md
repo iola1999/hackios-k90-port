@@ -162,6 +162,8 @@ python3 tools/k90auto/round-run.py docs/progress/evidence/k90auto/kernel-12377-a
 
 2026-10-29 离线复核后改过这一节，改法见 [`tl: b` 实测语义](../analysis/2026-10-29-tl-b-semantics.md)。原 H1（洞内每 3 秒至少一条、相邻 `WOKE` 差中位不超过 30 毫秒）与原 H2（洞内 0 条即判主循环没进入等待）删除：`tl: b` 按主循环的醒睡打印，不按帧打印，四轮合计 313 条对 900 到 11,600 帧；同一轮任意 3 秒窗口有 15.5% 到 30.0% 一条都没有，原 H2 会在普通窗口上三成命中。`tl: b` 在新判据里只作描述性读数。
 
+归档里 29 个网格长洞的起点全部落在 35-buffer 提交段的末尾，释放动作是固定的六步（[洞的起止动作](../analysis/2026-10-29-hole-boundary-trigger.md)）。这一轮如果出现新的洞，先核两件事：洞前最后一条 `tl: Q` 的 `buffers` 是不是 35，释放侧是不是 `tl: w` 两次、`tl: Q`、`tl: s`、`tl: v` 这个次序。任一项不同，说明这一轮的洞与归档里不是同一种，按新现象记录，不套本文的结论。
+
 ### 3.6 判据五：帧流永久停止时的形态
 
 - 末帧之后仍有 `tl: b`：主循环在转，停的那一侧不在主循环。`statefault` 轮末帧 `done` 之后还有 12 条 `tl: b`，最后一条在 17,276,987 µs 之后。
@@ -258,7 +260,7 @@ Android 进不去时，用 `tools/k90auto/reboot-lk.py <新目录> --return-load
 ## 7. 风险与已知缺口
 
 - `57fdb85c…` 这份 AIR 从没有上机跑过：归档里只有一轮引用它，那一轮起轮失败、没有收尾记录。崩溃修法在它的源码里（`air_metal.c` 的 `rwa_buffer_texture` 摘链与刷新两处），整份库第一次跑，`bad access` 的可能性不能排除。
-- 预落页对每个首次映射的 BO 逐页写一个字节。任何只读映射都会在这一次写上取 `bad access`，判据里按 §4.3 最后一条处理。大纹理（1206×2622×4 为 12,648,528 字节、3,089 页）在映射时刻要触碰三千多页，慢 map 会出现在这一轮，属于要观测的现象。
+- 预落页对每个首次映射的 BO 逐页写一个字节。BO 的两个分配点都用 `kIODirectionInOut`（`RedwoodGPUMemory.inc:312` 与 `:367`），映射按可写交给进程；仍然保留 §4.3 最后一条停止条件，出现 `bad access` 且 pc 落在 `fd_bo_prefault` 就停下。大纹理（1206×2622×4 为 12,648,528 字节、3,089 页）在映射时刻要触碰三千多页，慢 map 会出现在这一轮，属于要观测的现象。
 - 线程快照只在一次 draw 超过 300,000 µs 时触发。`statefault` 的 24 条里只有 4 条超过这个值，样本会少。
 - AIR 的构建记录 `air-build-record.json` 只记 `air_metal.c`、`air_metal.h`、`air_to_nir.c` 三个源文件，两条分段与预落页探针在 `a6xx/fd6_draw.cc`（`edb4521a8eb62db9f689bdc77a66e7e4debef3ec4ffc7699f93126dab230252b`）与 `src/freedreno/drm/freedreno_bo.c`（`ac3922dcc071835a091eb9d9c268d8490830d0aa956812f72522aad4ac8b93ec`）里，两个哈希记在这里，重建时按它们核对。
 - 驱动的 `pack.sources` 没有列 `redwoodmetal_commandbuffer.inc` 等六个 `#include` 文件，这一轮的身份靠产物哈希，重建时按 `library-baseline.json` 的 `529d19bf…` 核。
