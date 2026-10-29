@@ -169,8 +169,8 @@ python3 tools/k90auto/round-run.py docs/progress/evidence/k90auto/kernel-12377-a
 ### 3.6 判据五：帧流永久停止时的形态
 
 - 末帧之后仍有 `tl: b`：主循环在转，停的那一侧不在主循环。`statefault` 轮末帧 `done` 之后还有 12 条 `tl: b`，最后一条在 17,276,987 µs 之后。
-- 末帧前后出现 `commit <n> has run for <m> ms` 连续打印：有提交没有完成。归档里永久停止的入口有这个形态（`roundd` 终末 60 条、最长 51,501 毫秒；`fixguard6` 末帧前 4,098 到 4,156 毫秒），29 个 3 秒网格洞内这一族 0 条，两种现象由这一条分开。
-- 末帧之后 `tl: cnt` 的 commit 计数为 0：没有新的提交发生。
+- 末帧之前的那一段出现 `commit <n> has run for <m> ms` 连续打印：`fixguard6` 在末帧前 4,098 到 4,156 毫秒有这一族，`roundd` 终末洞里 60 条、最长 51,501 毫秒；末帧自己那条 `commit N took` 仍然打出（`fixguard6` 223 毫秒）。末帧之后这一族是 0 条，29 个 3 秒网格洞内也是 0 条（[帧流永久停止的边界](../analysis/2026-10-29-frame-stop-boundary.md) §7.1）：停止时刻没有提交在跑。
+- 末帧之后 `tl: cnt` 的 commit 计数：紧接末帧的那一条可以非零（末帧自己的 commit，1～11 条），此后为 0（[帧流永久停止的边界](../analysis/2026-10-29-frame-stop-boundary.md) §7.1）。
 - 出现 `rd in` 而同一 `commit_count` 没有对应的 `rd out`：停在那一次 draw 里没有返回，这是比超时更有信息的一条。
 - 以上三条都没有、`tl: cnt` 也停了：进程或驱动线程不在了，先查 `died`／`exited`。
 
@@ -257,7 +257,7 @@ Android 进不去时，用 `tools/k90auto/reboot-lk.py <新目录> --return-load
 - 预落页是不是慢 draw 的成因。这一版 AIR 里预落页常开、没有运行期开关，只能给成本行的量级，开关对照要新编一版 AIR，属于后面的一轮。
 - 缺页是否发生在绘制线程。XNU 没有按线程的缺页计数接口，`flt` 仍是整个进程的口径（见[缺页口径核对](../analysis/2026-10-29-slow-draw-fault-accounting.md) §1.2）。
 - 单次缺页的真实成本。要有微基准或在 `vm_fault_internal()` 里给 `current_thread()` 计数，这一轮拿不到这个量。
-- 120 Hz 面板与验收门槛。与这一轮的问题不同层，而且需要一段稳定的帧流才能量。
+- 120 Hz 面板与验收门槛。与这一轮的问题不同层。帧行量的是驱动节拍，面板扫描率在现有日志里没有读数；要判面板侧的可能，得读 DSI 时序或在玻璃外做光学测量（[显示节拍](../analysis/2026-10-29-display-beat.md) §8）。
 - `is_ready` 在 26 上的槽位、`EAGLServer` 与 `GLESContext` 的常量。静态没有确认，需要真机单步读对象虚表，或把 QuartzCore 抽成独立 Mach-O 再用 IDA。
 
 ## 7. 风险与已知缺口
@@ -266,7 +266,7 @@ Android 进不去时，用 `tools/k90auto/reboot-lk.py <新目录> --return-load
 - 预落页对每个首次映射的 BO 逐页写一个字节。BO 的两个分配点都用 `kIODirectionInOut`（`RedwoodGPUMemory.inc:312` 与 `:367`），映射按可写交给进程；仍然保留 §4.3 最后一条停止条件，出现 `bad access` 且 pc 落在 `fd_bo_prefault` 就停下。大纹理（1206×2622×4 为 12,648,528 字节、3,089 页）在映射时刻要触碰三千多页，慢 map 会出现在这一轮，属于要观测的现象。
 - 线程快照只在一次 draw 超过 300,000 µs 时触发。`statefault` 的 24 条里只有 4 条超过这个值，样本会少。
 - AIR 的构建记录 `air-build-record.json` 只记 `air_metal.c`、`air_metal.h`、`air_to_nir.c` 三个源文件，两条分段与预落页探针在 `a6xx/fd6_draw.cc`（`edb4521a8eb62db9f689bdc77a66e7e4debef3ec4ffc7699f93126dab230252b`）与 `src/freedreno/drm/freedreno_bo.c`（`ac3922dcc071835a091eb9d9c268d8490830d0aa956812f72522aad4ac8b93ec`）里，两个哈希记在这里，重建时按它们核对。
-- 驱动的 `pack.sources` 没有列 `redwoodmetal_commandbuffer.inc` 等六个 `#include` 文件，这一轮的身份靠产物哈希，重建时按 `library-baseline.json` 的 `529d19bf…` 核。
+- `f99ff4a` 起 `pack.source_sha256` 包含驱动六个 `#include` 文件（`redwoodmetal_commandbuffer.inc` 等）；之前的轮次没有它们，身份靠产物哈希。重建时仍按 `library-baseline.json` 的 `529d19bf…` 核产物。
 - `package.py` 会重建驱动。重编出来不是 `529d19bf…` 就停下核源码，不要用 `ALLOW_DRIVER_CHANGE=1` 绕过。
 
 ## 8. 相关文档
