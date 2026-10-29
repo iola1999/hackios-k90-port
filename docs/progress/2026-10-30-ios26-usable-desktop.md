@@ -20,6 +20,9 @@
 | `kernel-12377-cmd1-render8` | 同上 | `iconservicesagent` 加 `FD_MESA_DEBUG=nolrz`，日志确认进程读到了这个值 | 仍然挂起 |
 | `kernel-12377-cmd2-render9` | 同上 | 内核 `12377-cmd2`：打印 HFI 150 的全部字和已完成的 EOP 时间戳 | 第 11 次提交没有完成，是 `iconservicesagent` 的 `primitive__vertex` 绘制；HFI 150 在驱动的两秒等待之后才到，没有打印出来 |
 | `kernel-12377-cmd3-render10` | 同上 | 内核 `12377-cmd3`：报告前再读 3 秒 HFI；绘制描述加索引；PosterBoard 注入错误探针 | 第 12 次提交没有完成，是 SpringBoard 的 57 缓冲提交；取到 HFI 150 全文；PosterBoard 的数据存储初始化返回 nil 且没有错误 |
+| `kernel-12377-cmd3-render11` | 同上 | AIR 的索引绘制开启图元重启（§8.7）；SpringBoard 设 `IR3_SHADER_DEBUG=vs`；PosterBoard 探针记录数据存储初始化的四步 | 第 9 次提交没有完成，是 SpringBoard 的 57 缓冲提交；SpringBoard 的顶点着色器汇编里没有 `primitive__vertex`；PosterBoard 的迁移返回 0 |
+| `kernel-12377-cmd3-render12` | 同上 | SpringBoard 与 `iconservicesagent` 都设 `REDWOOD_SYNC_DRAWS=1` | 第 10 次提交没有完成，是 SpringBoard 第 2 次提交第 3 个 work，`primitive__vertex+ffea2ba11dhmha4`；取到 `primitive__vertex` 的 A830 汇编 |
+| `kernel-12377-cmd3-render13` | 同上 | 两个进程设 `AIR_DISCARD=off`，`discard_fragment` 翻译成空操作；SpringBoard 设 `IR3_SHADER_DEBUG=fs`；PosterBoard 探针加迁移的版本号 | 仍然挂起，第 10 次提交是 `iconservicesagent` 的 `primitive__vertex+ffia2ba3ca7dhmha4`；PosterBoard 从 59 迁移到 61 失败 1151 次 |
 
 两轮内核相同（`out/xnu12377-f055cc0a-restored.bin`），cmdline 相同（`cpus=2 bootcpu=7`，`adreno8_speed=3`）。`interactive1` 的驱动为 `ceefc187…`，AIR 仍为 `b5b44d51…`。
 
@@ -183,14 +186,15 @@ RGBA16Float 表面的行字节数第一批放宽到 64 字节（只采样的导�
 | `render6` | 第 1 次提交第 4 个 work | `ffeba5ca7jbmhia3` | 没有 |
 
 - 两个取到的片段着色器都没有循环和内存写入：先由 `fwidth` 算边缘覆盖率，覆盖率为 0 时 `discard_fragment`（NIR 里是 `demote`），再写 `color`（half4）和 `coverage`（half2）两个输出。宿主上用当前 AIR 源码编的 `air2nir` 翻译结果没有发现异常。
-- `render6` 用 `FD_MESA_DEBUG=sysmem` 让 `iconservicesagent` 的批次不走 GMEM，仍然挂起；这个开关是否生效，日志里没有读数。`render6` 挂起的片段着色器不读帧缓冲，帧缓冲读取不是挂起的必要条件。
+- `render6` 用 `FD_MESA_DEBUG=sysmem` 让 `iconservicesagent` 的批次不走 GMEM，仍然挂起；这个开关是否生效，日志里没有读数。
+- `render4`～`render6` 的内核不打印已完成的时间戳，同步模式下没有完成的绘制可能排在别的进程挂起的提交之后（§8.5），上表三行的归属都没有确认。
 - `render6` 里第 2、3、4 个 work 各自一次提交，命令流都是 353 个字，只有第 4 个没有完成；内核报 `RedwoodGPU no answer; last timestamp 9; SMMU fault 0`，没有缺页。
 - 软件合成下回到主屏时 backboardd 在 `ogl-context.cpp` 的 `push_surface` 断言失败（`render3`、`render6` 都出现），这一步只在 GPU 停用之后发生。
 - `render7` 的改动：同步模式下每个绘制在提交前打印一行，包括图元类型、顶点与实例数、每个颜色附件的格式、尺寸、采样数、是否基于 IOSurface、是否清除，以及深度附件、视口与裁剪，用来对照同一个 pass 里完成和没完成的绘制；PosterBoard 加 `OS_ACTIVITY_MODE=debug`。
 
 ### 8.5 `render7` 与 `render8`
 
-- 内核给所有进程只用一个 GMU context（`adreno8_context_submit`），提交按顺序完成；同步模式下某个绘制没有完成，而它之前的提交都完成了，挂起的就是这个绘制。`render4`～`render6` 的判断成立。
+- 内核给所有进程只用一个 GMU context（`adreno8_context_submit`），提交按顺序完成；同步模式下某个绘制没有完成，只有它之前所有进程的提交都完成了，挂起的才是这个绘制。`render11` 里 `iconservicesagent` 报没有完成的绘制排在 SpringBoard 挂起的第 9 次提交之后。归属以 retired 时间戳和 HFI 150 的时间戳为准（`render9` 起）。
 - `render7` 里 GPU 停在 SpringBoard 的第 4 次提交（57 个缓冲、3385 个字）或 `iconservicesagent` 没有绘制的第 5 次提交（150 个字），日志分不出是哪一个。
 - `render3`、`render5`～`render8` 停用前一秒内都有 SpringBoard 的 `fpba2ma11bemha4 reads texture 1 and 1 texture was bound`。这次拒绝发生在 CPU 侧、在设置任何 Gallium 状态之前，和挂起同时出现，是因为两个进程都在解锁时开始画图标。
 - `render8` 的绘制描述：`iconservicesagent` 画图标的 pass 有三个颜色附件，依次是 RGBA16Float（115）、RG16Float（65）、RGBA16Float，深度附件是 Depth32Float_Stencil8（260），深度附件清除，深度测试并写入，绘制是带裁剪的索引三角形带，尺寸在 64x64 到 128x128 之间。
@@ -202,7 +206,7 @@ RGBA16Float 表面的行字节数第一批放宽到 64 字节（只采样的导�
 
 - `render9` 的内核行是 `last timestamp 12, retired 10`：第 11 次提交没有完成，即 `iconservicesagent` 第 2 次提交第 4 个 work，`primitive__vertex+ffia2ba3ca7dhmha4`，10 个索引的三角形带。同一 pass 里完成的绘制是 4 个索引的四边形（索引 `1 0 2 3`）和 64 个索引、多实例的路径。
 - `render10` 挂起的是第 12 次提交，即 SpringBoard 的 57 缓冲提交，其中也有一个 `primitive__vertex` 绘制（`ffea2ba11dhmha4`）。两个进程挂起的批次都含 `primitive__vertex`，片段着色器各不相同。
-- `primitive__vertex` 用 16 位的 `vertex_id` 做整数运算（`and`、比较），按 `vid > 3` 分支算外圈顶点，10 个索引是绕矩形一圈的三角形带。这些都是由翻译结果推断的，还没有 ir3 汇编可以对照：Mesa 26.x 已删除 `ir3_cmdline.c`，宿主上没有 ir3 编译器。
+- `primitive__vertex` 用 16 位的 `vertex_id` 做整数运算（`and`、比较），按 `vid > 3` 分支算外圈顶点，10 个索引是绕矩形一圈的三角形带。`render12` 取到的 A830 汇编见 §8.9。
 
 `render10` 的 HFI 150 全文（26 个字）按 KGSL 的布局读：
 
@@ -219,14 +223,34 @@ RGBA16Float 表面的行字节数第一批放宽到 64 字节（只采样的导�
 
 ### 8.7 Metal 的图元重启
 
-Metal 的索引绘制总是开启图元重启：16 位索引的 0xFFFF、32 位索引的 0xFFFFFFFF 结束当前图元，所有图元类型都是这样（Apple `drawIndexedPrimitives` 文档，gpuweb issue 1220 引用了原文）。AIR 的绘制原先写的是 Metal 没有重启索引并关闭了重启，现在改为索引绘制都开启，重启值不计入索引范围。这一项已编进 AIR 库，还没有上机。`render10` 记录到的 7 个索引绘制都是四边形 `1 0 2 3`，没有 0xFFFF；10 个索引的那种绘制这一轮没有执行到，它的索引还没有读数，重启和挂起有没有关系还不能判断。
+Metal 的索引绘制总是开启图元重启：16 位索引的 0xFFFF、32 位索引的 0xFFFFFFFF 结束当前图元，所有图元类型都是这样（Apple `drawIndexedPrimitives` 文档，gpuweb issue 1220 引用了原文）。AIR 的绘制原先写的是 Metal 没有重启索引并关闭了重启，现在改为索引绘制都开启，重启值不计入索引范围。这一项从 `render11` 起在机上，`render13` 挂起的仍是 10 个索引的 `primitive__vertex` 绘制，挂起和图元重启无关。
 
 ### 8.8 PosterBoard 的数据存储
 
 - `render10` 的探针读数：`-[PBFPosterExtensionDataStore initWithURL:...]` 的 URL 是 `file:///var/mobile/Library/Application%20Support/`，返回 nil，错误为 nil；调用方随后生成 `Data store could not be created for an unknown reason which evades explanation`。
 - 传入的 extension provider 是 nil，这是调用方 `buildDataStoreForURL:` 写死的（`mov x4, #0`），不是失败原因。
 - 初始化里没有新建 NSError。之前的 57 个错误来自旧壁纸迁移读 `/var/mobile/Library/SpringBoard/LockBackground*.jpg`、`HomeBackground*.jpg` 等文件不存在，以及 `com.apple.managedconfiguration.profiled.public` 查找失败。
-- 初始化会在四处返回 nil：迁移失败、bundle ID 迁移失败、完整性校验失败、SQLite 数据库打开失败。这四处只发 `os_signpost`，控制台看不到。下一轮的探针已经写好（`userland/src/inject_posterboard.c`），记录这四步和 `_lock_performNecessaryMigrationsForDataStoreAtURL:shouldForce:error:` 的返回值与错误，还没有上机。
+- 初始化会在四处返回 nil：迁移失败、bundle ID 迁移失败、完整性校验失败、SQLite 数据库打开失败。这四处只发 `os_signpost`，控制台看不到，探针在 `userland/src/inject_posterboard.c`。
+- `render11`、`render13` 的读数：`isDataStoreUpToDateForCurrentVersion` 为 0，`_mostUpToDateValidDataStoreToMigrateFrom` 为 NSNotFound，`+migrateDataStoreAtBaseURL:fromVersion:59 toVersion:61 ...` 返回 NO 且没有错误，初始化随后返回 nil。PosterBoard 一直重试，`render13` 里重试了 1151 次。
+- 迁移的版本范围由两个类方法给出，最低 59、当前 61。一个版本有效的条件（`_PBFDetermineDataStoreViabilityForVersionWithinBaseURL`）是数据存储、扩展容器、图库缓存三个目录存在，60 起还要有 SQLite 库，并且每一项都满足 `+expectedURLResourceValuesForDirectories` 给出的资源值。
+- 这组资源值只有一项，值来自 `+expectedFileProtection`，即文件保护等级。RAM 盘所在的卷不支持数据保护（同一日志里 chronod 记 `volume does not support data protection`），这一项读回来不会相符，推断任何版本都不会有效，迁移每次都失败。
+- 改动：注入库让 `expectedURLResourceValuesForDirectories`、`...ForFiles` 与 `expectedSnapshotURLResourceValues` 返回空字典，有效性只剩存在性检查。还没有上机。
+
+### 8.9 `render11`～`render13`：挂起绘制读帧缓冲
+
+- `render12` 的 HFI 150 时间戳是 10，已完成 9，即第 10 次提交，SpringBoard 第 2 次提交第 3 个 work：`primitive__vertex+ffea2ba11dhmha4`，4 个索引的四边形，128x128 的三个颜色附件，深度测试只读，绑定 1 个纹理。同一提交的第 1、2 个 work 完成。
+- 第 2 个 work 的顶点着色器 `vhia3ea2dba6dhmha4` 与 `primitive__vertex` 的 A830 汇编只差常量偏移、一组输出和指令顺序，两者都没有循环，主体里都没有内存访问。顶点着色器不是挂起的区别所在。
+- `render13` 去掉 `discard_fragment` 后仍然挂起，HFI 150 时间戳 10，是 `iconservicesagent` 第 2 次提交第 4 个 work，`primitive__vertex+ffia2ba3ca7dhmha4`，10 个索引。日志确认两个进程都读到了 `AIR_DISCARD=off`。丢弃片元不是挂起的原因，这个开关只用于这一轮，AIR 源码里没有保留。
+
+有时间戳确认的两个挂起绘制，片段着色器都读帧缓冲：`ffea2ba11dhmha4` 读 0 号目标 `dest` 与 1 号目标 `coverage`，`ffia2ba3ca7dhmha4` 读 1 号目标。`render13` 的片段着色器汇编里，帧缓冲读取是两条 `isamm.a.s2en.uniform.base4`，按片元坐标、`VARYING_SLOT_LAYER` 与采样号读 bindless 描述符 0x37、0x38。有汇编可查的完成绘制（`fca15dhmha4`、`fhia3ea2dba6dhmha4`、`fpba2ia11bemha4`）都不读帧缓冲。
+
+freedreno 对读帧缓冲的绘制有三处特殊处理，挂起可能出在其中之一：
+
+- 批次带 `FD_GMEM_FB_READ`，总走 GMEM。描述符由 `patch_fb_read_gmem` 的 A8XX 分支从零拼出，基址是 GMEM 内偏移；turnip 的同类描述符从完整的视图描述符改出（`tu_cmd_buffer.cc`），两者至少 7 号字（数组层偏移）不同：freedreno 填资源的层大小，turnip 在单层时填 0。
+- `GRAS_SC_CNTL.single_prim_mode` 在 GMEM 下设为 `FLUSH_PER_OVERLAP`，因为 AIR 把帧缓冲读取标为 coherent。
+- `freedreno-darwin.patch` 在一个批次里第一个读帧缓冲的绘制之前加 `CCU_CLEAN_COLOR` 与 `CACHE_INVALIDATE`。这一段是为 a642l 写的，同步模式下每个绘制自成一个批次，每个读帧缓冲的绘制都会带上。
+
+`render6` 用 sysmem 仍然挂起，但那一轮的归属没有确认（§8.4），不能据此排除 GMEM 路径。为了区分这三处，内核 `12377-cmd4` 在挂起报告之后读 RBBM 与 CP 状态、各级 IB 的基址与剩余长度，并打印 CP 位置前后的命令字，用 `tools/k90auto/cp-words.py` 解成包名。还没有上机。
 
 ## 9. 无人值守的一轮
 

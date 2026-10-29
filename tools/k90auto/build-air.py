@@ -37,7 +37,7 @@ TARGET = "src/gallium/drivers/freedreno/libredwoodair.dylib"
 # what fixes the refused fragment pipeline: any file the build reads from this directory that is not
 # listed would be copied by hand and silently left out of the library.
 FILES = ["air_metal.c", "air_metal.h", "air_to_nir.c", "air_private.h", "air_metal_copy.inc",
-         "air_metal_compute.inc"]
+         "air_metal_compute.inc", "air_intrinsics.c"]
 
 # The toolchain: a venv with meson 1.12.1 and the ninja from homebrew, with bison ahead of the
 # system one because the frontend's parser needs it. The paths are part of the host image, not of
