@@ -169,6 +169,7 @@ python3 tools/k90auto/round-run.py docs/progress/evidence/k90auto/kernel-12377-a
 ### 3.6 判据五：帧流永久停止时的形态
 
 - 末帧之后仍有 `tl: b`：主循环在转，停的那一侧不在主循环。`statefault` 轮末帧 `done` 之后还有 12 条 `tl: b`，最后一条在 17,276,987 µs 之后。
+- 末帧前后出现 `commit <n> has run for <m> ms` 连续打印：有提交没有完成。归档里永久停止的入口有这个形态（`roundd` 终末 60 条、最长 51,501 毫秒；`fixguard6` 末帧前 4,098 到 4,156 毫秒），29 个 3 秒网格洞内这一族 0 条，两种现象由这一条分开。
 - 末帧之后 `tl: cnt` 的 commit 计数为 0：没有新的提交发生。
 - 出现 `rd in` 而同一 `commit_count` 没有对应的 `rd out`：停在那一次 draw 里没有返回，这是比超时更有信息的一条。
 - 以上三条都没有、`tl: cnt` 也停了：进程或驱动线程不在了，先查 `died`／`exited`。
