@@ -256,7 +256,7 @@ Android 进不去时，用 `tools/k90auto/reboot-lk.py <新目录> --return-load
 ## 7. 风险与已知缺口
 
 - `57fdb85c…` 这份 AIR 从没有上机跑过：归档里只有一轮引用它，那一轮起轮失败、没有收尾记录。崩溃修法在它的源码里（`air_metal.c` 的 `rwa_buffer_texture` 摘链与刷新两处），整份库第一次跑，`bad access` 的可能性不能排除。
-- 预落页对每个首次映射的 BO 逐页写一个字节。任何只读映射都会在这一次写上取 `bad access`，判据里按 §4.3 最后一条处理。大纹理（1206×2622×4 约 12.6 MB、3,088 页）在映射时刻要触碰三千多页，慢 map 会出现在这一轮，属于要观测的现象。
+- 预落页对每个首次映射的 BO 逐页写一个字节。任何只读映射都会在这一次写上取 `bad access`，判据里按 §4.3 最后一条处理。大纹理（1206×2622×4 为 12,648,528 字节、3,089 页）在映射时刻要触碰三千多页，慢 map 会出现在这一轮，属于要观测的现象。
 - 线程快照只在一次 draw 超过 300,000 µs 时触发。`statefault` 的 24 条里只有 4 条超过这个值，样本会少。
 - AIR 的构建记录 `air-build-record.json` 只记 `air_metal.c`、`air_metal.h`、`air_to_nir.c` 三个源文件，两条分段与预落页探针在 `a6xx/fd6_draw.cc`（`edb4521a8eb62db9f689bdc77a66e7e4debef3ec4ffc7699f93126dab230252b`）与 `src/freedreno/drm/freedreno_bo.c`（`ac3922dcc071835a091eb9d9c268d8490830d0aa956812f72522aad4ac8b93ec`）里，两个哈希记在这里，重建时按它们核对。
 - 驱动的 `pack.sources` 没有列 `redwoodmetal_commandbuffer.inc` 等六个 `#include` 文件，这一轮的身份靠产物哈希，重建时按 `library-baseline.json` 的 `529d19bf…` 核。
