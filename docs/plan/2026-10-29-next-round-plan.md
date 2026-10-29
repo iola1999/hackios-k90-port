@@ -151,6 +151,8 @@ python3 tools/k90auto/round-run.py docs/progress/evidence/k90auto/kernel-12377-a
 
 `stubsym.py` 的默认 `--load`（`0x232f09000`）与 `--file-off`（`0x6661000`）是按 `.46` 子缓存量的，解出的名字与 pc 所在库对不上时先核这两个参数，再采信名字。slide 取同一次线程 dump 里的 `tl: td <pid> slide <0x…>` 行。绘制线程按 pc 落在 `libredwoodair.dylib` 那一条认。
 
+归档里做 present 的线程（`noinput` 的 tid 360）在洞内外的 12 次转储里都停在 `mach_msg2_trap`，这是它的空闲态，不是洞的特征（[洞的起止动作](../analysis/2026-10-29-hole-boundary-trigger.md) §10）。这一轮的 dump 里看到 `mach_msg2_trap` 按基线记；有区分力的是别的系统调用名，或同一 pc 上出现不同的等待对象。
+
 ### 3.5 判据四：3 秒洞里谁还在动
 
 洞的算法沿用[15 秒周期统计](../analysis/2026-10-29-15s-period-cross-round.md)：相邻两帧 `tl: v` 的 `ready` 差 ≥ 1 秒。洞宽与 15 秒网格那一套不在这里重复。

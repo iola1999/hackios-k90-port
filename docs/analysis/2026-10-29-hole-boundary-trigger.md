@@ -272,7 +272,7 @@ A 帧还有两项结构读数：`tl: s <A>` 全部存在且帧号相同（29/29�
 ## 10. 没做成的部分
 
 - `unlockprobe` 不在本文范围内：它没有 2.9～3.1 秒的洞，它的 8.35～8.76 秒空洞没有对应的 A／B 帧对可套用本文的释放判定。
-- `tl: td` 的 pc 没有做符号化。四个洞的转储里，backboardd 的高优先级线程都停在减 slide 后同一个地址 `0x232f09cd4`，即 `libsystem_kernel.dylib+0xcd4`（`svc` 之后的 `ret`），与同一份转储里大量空闲线程同一个 pc；`noinput` 里做 present 的 tid 360 也是这个值（`pc 0x23b30dcd4`，slide `0x8404000`）。本轮没有据它判定等待对象。
+- `tl: td` 的 pc 用 `tools/k90auto/stubsym.py` 解过（`noinput`，slide `0x8404000`）。做 present 的线程是 tid 360（该轮 11,603 条 `tl: s` 全部是它），12 次转储里它都停在 `mach_msg2_trap`（`0x23b30dcd4`，去 slide 后 `0x232f09cd4`）；洞内那一次也一样，state 1、wait 0。同一批转储里其它 backboardd 线程分别停在 `workq_kernreturn`（`0x23b30da80`）、`psynch_cvwait`（`0x23b3135e8`）、`read`（`0x23b312ed8`）、`sys_ulock_wait`（`0x23b314120`）、`__semwait_signal`（`0x23b313808`），彼此不同。做 present 的线程在洞内外都停在 mach_msg2，这一条区分不了洞内外；要定对端，需要打端口名与发送方。
 - 27 个洞的 20+20 逐行原文没有写进本文件，只在 §5 的表里保留首行族、末行族与释放段读数。需要逐行原文时按 §2 的读法与 §5 的帧号重取。
 ## 11. 另外排除的三个候选
 
