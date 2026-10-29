@@ -92,7 +92,7 @@ backboardd 每约 10 秒段错误一次。根因是 `rwa_buffer_destroy` 不清 
 
 离线静态解析给出的结果在[26 上的虚表定位](2026-10-29-quartzcore-vtable-26.md)：26 的 `AppleCLCDDisplay` 虚表基址是 `0x1ee97f868`，槽 0x138 在 26 上装的是另一个函数，`ignore_update_p` 的等价函数落在槽 0x150。这条是把 16.5 的槽号直接搬到 26 会钩错函数的直接证据，属于推断，需真机断言确认。
 
-`ca_vbl=1` 这个对照从 11:12 提出后一直没有跑。它是唯一能把 CoreAnimation 自己的 display timer 与内核 vsync 通知链分开的实验。
+`ca_vbl=1` 在 11:13 起过一轮（`diag3x-cavbl`），但那一轮注入库没有加载：日志里没有 `redwood lib loaded`、`tl: b` 0 条。这个启动参数由 `inject.c` 翻译成 `CA_FORCE_TIMER`，注入库不在就没有生效，等于没跑。它是唯一能把 CoreAnimation 自己的 `CADisplayTimer` 与显示驱动的刷新通知链分开的实验。
 
 ## 7. 三处离线核对的新证据
 

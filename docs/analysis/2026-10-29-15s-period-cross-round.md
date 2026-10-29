@@ -257,7 +257,7 @@ GPU 绘制路径：长洞里慢 draw 0 条、fence 等待 0 条超过 6.7 ms、G
 
 判据：洞内仍有 16.7 ms 间隔的投递（3 秒约 181 条）时，内核 vsync 源正常，阻塞在用户态的显示链路，本节的 ① 成立、② 被证伪；洞内投递同样停止时，阻塞点下沉到内核节拍或通知源，② 成立。
 
-不新增代码的等价对照是 `ca_vbl=1`：让 CoreAnimation 用自己的 display timer，绕过内核 vsync 通知链。这个对照从 2026-10-29 11:12 提出后一直没有跑，见 `docs/analysis/2026-10-29-session-review.md` §6。两种做法二选一即可，`ca_vbl=1` 读数更容易解释，`tl: n` 分辨率更高。
+不新增代码的等价对照是 `ca_vbl=1`：它让 CoreAnimation 改用显示驱动的刷新通知。`inject.c` 把这个启动参数翻译成 `CA_FORCE_TIMER`，注释里的读法是 QuartzCore 的 `CADeviceUseVBL()` 因此为真（未在真机核对）；默认路径是 CA 自己的 `CADisplayTimer`。这个对照在 2026-10-29 11:13 起过一轮（`diag3x-cavbl`），但那一轮注入库没有加载（日志里没有 `redwood lib loaded`，`tl: b` 0 条），参数由注入库翻译，没加载就没有生效，等于没跑，见 `docs/analysis/2026-10-29-session-review.md` §6。两种做法二选一即可，`ca_vbl=1` 读数更容易解释，`tl: n` 分辨率更高。
 
 ### 8.5 还没定下来的
 
