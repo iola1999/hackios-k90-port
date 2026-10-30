@@ -10,6 +10,10 @@ WxH PTR` and 32 lines `thumb SEQ ROW: ...`, four characters a texel (R, G, B, A,
 base64 digits). This writes ROUND_DIR/thumbs-N.png, one row per draw: the attachments before
 it, its textures, and the attachments after it, with a gap between the groups, each tile over a grey checkerboard so that alpha shows, and
 ROUND_DIR/thumbs.txt naming every tile. PROCESS limits it to one process name.
+
+A two-channel float attachment (RG16Float, RenderBox's coverage) is sampled with signs: R and G
+are magnitudes and B is 128 for a negative R and 64 for a negative G (rwa_texture_thumbnail), so a
+negative winding shows tinted blue.
 """
 import importlib.util
 from pathlib import Path

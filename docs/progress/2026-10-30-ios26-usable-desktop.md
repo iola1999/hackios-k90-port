@@ -69,6 +69,17 @@
 | `kernel-12377-cmd11-render57` | 同上 | 同 `render54`，AIR 在翻译时按 function constant 求颜色附件号 | 求值没有触发（特化位码里附件号已是常数）；图标仍是横条，出现的图标与 `render54` 不同 |
 | `kernel-12377-cmd11-render58` | 同上 | 同 `render54`；每批工作前读取 no-copy buffer 的调用方内存，有变化时拷入 | 调用方内存变化 31 次，buffer 大小（16384～114688 字节）与 backboardd 的 no-copy buffer 相同；`iconservicesagent` 的 34176、161408 字节 buffer 没有变化，图标仍是横条 |
 | `kernel-12377-cmd11-render59` | 同上 | IOSurface 比描述符大时按描述符的大小导入左上角；探针：`kfmha4` 管线逐次采样、`REDWOOD_DUMP_AIR` 打印位码 | 「no drawable」拒绝从 2 次降到 0；48 个模块集中打印，日志丢了前 38 条管线的记录，位码没有取到；`kfmha4` 绘制的 0 号输入纹理本身全透明 |
+| `kernel-12377-cmd11-render60` | 同上 | 探针：按 commit 采样、只打印 `kfmha4` 函数的位码 | 取到完整的 `primitive_image_vertex` 特化模块，其中写着特化常量；commit 2 的 96×64 中间层画完就是透明的 |
+| `kernel-12377-cmd11-render61` | 同上 | 探针：commit 2 逐次采样 | 第一段之后 1 号附件的采样全黑，之后的 `primitive_color` 全部丢弃（采样把负值截成 0，见 `render65`） |
+| `kernel-12377-cmd11-render62` | 同上 | 探针：同步日志加 depth 比较函数，采样前打印 buffer 原始字 | 比较函数是 6（`GreaterEqual`）；日志环在 commit 2 前几次绘制处翻转，前 7 次绘制的读数丢失 |
+| `kernel-12377-cmd11-render63` | 同上 | 同步日志只在采样的 commit 里打印 | 合并日志从约 10 MB 降到 7.4 MB，仍有 1 处缺口，commit 2 前 5 次绘制的读数在缺口里 |
+| `kernel-12377-cmd11-render64` | 同上 | 探针：只采 `path_` 管线，绘制前后各一次，打印每个顶点缓冲的前 24 个字 | 路径绘制里只有 commit 1 与 commit 6 的一部分在 1 号附件留下正值，其余采样为 0 |
+| `kernel-12377-cmd11-render65` | 同上 | `iconservicesagent` 加 `nolrz`；探针：buffer 打印 192 个字，同步日志打印清除值 | 与 `render64` 相同，LRZ 不是原因；按特化 IR 在 CPU 上算出 commit 8 第 1 次路径的覆盖率是 −1，采样截成 0 |
+| `kernel-12377-cmd11-render66` | 同上（库：两通道浮点纹理的采样带符号） | 探针：从 commit 1 起采每次绘制 | 采样额度用在 commit 1～2，这一轮这两个 commit 没有路径 |
+| `kernel-12377-cmd11-render67` | 同上 | 探针：`REDWOOD_THUMB_WHOLE` 采含 `path_exterior` 的整个 commit | commit 7 的 w3 路径与 CPU 计算一致（采样 102 个对 106 个）；w4 路径与两次覆盖率填充什么也没写，之后的 `primitive_color` 全部丢弃 |
+| `kernel-12377-cmd11-render68` | 同上 | 探针：深度附件采样 | 深度采样没有输出；commit 1 的覆盖率填充在深度清成 0、自身深度为 0 时也没有写；没写出东西的绘制，常量 buffer 偏移都不是 16 的倍数 |
+| `kernel-12377-cmd11-render69` | 同上（库：常量 buffer 偏移不是 64 的倍数时拷贝后绑定） | 同 `render68` | 覆盖率填充写出 R，图标的形状与颜色出现；News、Health、Games、Wallet、Settings 的图形仍有横条，图标上有一条对角细线，Weather 与 Calendar 小组件是白块（§8.13） |
+| `kernel-12377-cmd11-render70` | 同上（库：拷贝的门槛改为偏移不是 16 的倍数） | 探针：采含 `plane_image_stretch` 的整个 commit | 图标与 `render69` 一致，Weather（「Location Access Needed」）与 Calendar 小组件也画出来了；FaceTime、Mail、News、Games、Health、Wallet、Safari 与 dock 第 4 个图标的图形仍是横条 |
 
 两轮内核相同（`out/xnu12377-f055cc0a-restored.bin`），cmdline 相同（`cpus=2 bootcpu=7`，`adreno8_speed=3`）。`interactive1` 的驱动为 `ceefc187…`，AIR 仍为 `b5b44d51…`。
 
@@ -415,6 +426,15 @@ freedreno 对读帧缓冲的绘制有三处特殊处理，挂起可能出在其�
 - `render56` 的回写打印说明，`iconservicesagent` 里全透明的 89×89 与 194×194 `RGB10A2Unorm` 纹理是 GPU 渲染目标，回写时 34176、161408 字节里非零的只有 0～253 个；同一批的 `R8Unorm` 目标有内容。commit 17 最后一段画进 194×194 `RGB10A2Unorm` 的管线是 `alpha_effect`（`fec2a2kdadba6kfmha4`）与 `fhe2ae2a2ca7kfmha4`、`fhe2afea2ca7kfmha4`，它们都读帧缓冲。`render59` 采这三条管线每次绘制前后的附件，并把设备上特化出的位码打进日志（`REDWOOD_DUMP_AIR`，`tools/k90auto/airdump.py` 还原）。
 - `render59` 的采样：`kfmha4` 管线的 0 号输入是 384×128、224×128 的 `RGBA16Float` 中间纹理，绘制前就全透明，输出因此为空，问题在更早画这些中间纹理的绘制。驱动的 IOSurface 检查改为只拒绝比描述符小的 surface（`redwooddrawable.m`），这一轮的两次拒绝都消失。
 - 位码打印改为只打印名字含 `REDWOOD_DUMP_AIR` 所给文字的函数，最多 16 个，每行间隔 2 毫秒。`render57`～`render59` 是一批，下一批改为按 commit 采样，先找出画坏中间纹理的那次绘制。
+- 设备上 `_MTLLibrary` 特化出的模块带 `air.linked_constants_signature`，`render60` 的 `vhe2ae2a2ca7kfmha4` 是 `primitive_image_vertex` 加常量 `(4457543, 2, 31834, 12)`。在 macOS 上用同一组常量调 `-newFunctionWithName:constantValues:error:`，`bitcodeData` 的函数体与设备的相同。特化名把前三个常量字按 16 进制半字节从低到高编码，`a`～`p` 表示 0～15，后跟的数字是重复次数；`render38` 的打印给出特化名与原函数名的对应。
+- commit 2 的图标分四段：96×64 或 64×64 层先用 `path_exterior` 把路径的有向覆盖率累加进 1 号附件的 G，覆盖率填充（标签 `accumulator_coverage`，`plane_color` 的 `fbfa6dba6dhmha4` 特化）之后 R 的范围与填充前 G 的范围相同，`primitive_color` 再读帧缓冲的 R 上色；128×128 层由 `custom_effect` 调 IconRendering 拼接的 `custom_fn`；然后是一串 `filter_distance` 与 `filter_blur`；最后 `primitive_image` 把结果贴进 89×89 的 `RGB10A2Unorm` 图标。
+- 每次绘制都打印同步日志时，`iconservicesagent` 一轮写 35838 行、约 10 MB，超过日志环（约 1.3 MB）在两次拉取之间能装下的量，`render59`、`render62` 都丢了开头的读数。同步日志改为只在 `REDWOOD_SYNC_LOG` 或 `REDWOOD_THUMBS` 采样的 commit 里打印，其余只在绘制没有完成时打印。
+- 采样把每个通道截到 [0, 1]，逆向绕行的路径在 1 号附件里是负值，采出来是 0。`render64` 把 commit 7 起的路径都读成「没画」，`render65` 打印完整的顶点缓冲后，按 `vjba6la7dhmha4` 与 `path_exterior_fragment` 的特化 IR 在 CPU 上重算（会话内的临时脚本），commit 8 第 1 次路径的覆盖率是 −1。库的采样改为：两通道浮点纹理的 R、G 取绝对值，B 记符号（负 R 为 128，负 G 为 64）。
+- 新增的探针：`REDWOOD_THUMB_WORDS=N` 打印每个 buffer 的前 N 个字，每行 24 个、各带偏移；`REDWOOD_THUMB_WHOLE=1` 把 `REDWOOD_THUMB_MATCH` 从单次绘制放宽到含匹配绘制的整个 commit；同步日志打印清除颜色与清除深度；采样与 buffer 的每行打印后等 1 毫秒，`render66` 起合并日志没有缺口。深度附件的采样（槽位 8）在 `render68` 没有输出，原因未查。
+- 没画出东西的绘制与常量 buffer 偏移的对应：`render64`～`render68` 里偏移为 736、1216、2352 的路径与填充都画出了，偏移为 584、636、776、788、1268、1720、2984、4248 的都没有写任何像素，前一组都是 16 的倍数，后一组都不是。`render68` 的 commit 1 排除了深度测试：深度清成 0，填充的深度也是 0，比较函数 `GreaterEqual`，填充仍没有写。
+- 库把 Metal 的偏移原样交给 freedreno（`air_metal.c` 的 `bind_stage`），freedreno 报的常量 buffer 对齐是 64 字节，A830 按未对齐的地址读 UBO 时取到的数据错位。`render69` 起，偏移不是 64 的倍数时库按 `air.buffer_size` 拷贝这一块，交给 freedreno 上传到对齐的位置。这正是开源版本里的做法，当时为省每次绑定 221 us 的拷贝改成了原样传偏移。之后改为只在偏移不是 16 的倍数时拷贝，上面偏移为 736、2352 的绘制说明 16 的倍数够用。拷贝读的是处理器侧映射，同一次提交里先由 GPU 写的常量块会读到写之前的内容。
+- `render69` 的覆盖率填充写出了 R，主屏图标的形状和颜色都出现了（FaceTime、Calendar、Photos、Clock、App Store、Maps 等）。剩下三处问题：News、Health、Games、Wallet、Settings 的图形是带间隙的横条；多数图标上有一条从左上到右下的细线，图标方框四角外有零散暗点；Weather 与 Calendar 小组件是白块。
+- `render70` 把拷贝门槛降到 16 之后图标不变，两个小组件也有了内容。剩下的问题是图形里的横条和对角细线。
 
 ## 9. 无人值守的一轮
 
