@@ -100,6 +100,9 @@
 | `kernel-12377-cmd14-render88` | 同上 | SpringBoard 采读 50×83、101×94 IOSurface 的绘制 | 处理器读到的 IOSurface 图形也已错切：SpringBoard 仍按自己要求的 224、416 字节一行写，内核补齐行距不起作用 |
 | `kernel-12377-cmd15-render89` | 内核 `12377-cmd15`：`cmd11` 加 `kern.redwood.env`，撤回补齐（驱动：行距不是 64 倍数的 IOSurface 经拷贝采样） | 同 `render88` | 50×83、101×94 的输入和画出的结果都干净，commit 100 的图标图集里 App Store、Maps、FaceTime、Mail、Safari 没有斜纹；SpringBoard 的 16 个、backboardd 的 4 个 surface 走拷贝；采样拖慢 SpringBoard，巡检没回到主屏 |
 | `kernel-12377-cmd15-render90` | 同上 | 无采样 | 主屏图标与 Control Center 的图标都画对，斜纹消失；Mail 信封下方、Maps 圆形右上各有一块黑色弧形 |
+| `kernel-12377-cmd15-render91` | 同上（驱动：同一 surface、格式与尺寸的请求共用一个拷贝纹理） | 无采样 | Mail 的弧形消失，Notes、Maps、Clock 上出现同样的黑色弧形，同一轮的三张主屏截图里位置不变；第一张截图里 Notes、Clock、TV 的边缘另有零散黑点 |
+| `kernel-12377-cmd15-render92` | 同上（驱动：拷贝路径的日志带格式与用途） | SpringBoard 采读 17×17、1×1、72×37、72×72、72×73 纹理的绘制 | 这些小 surface 的内容都正确，用途都是只读；commit 43 的 96×128 中间目标在第一次绘制之前，scissor（96×97）以外的行里已有一块前一个图标的阴影 |
+| `kernel-12377-cmd15-render93` | 同上（AIR 库：新建的颜色与深度目标先清零） | 无采样 | 主屏图标没有黑色弧形，也没有边缘黑点；关闭通知中心后的最后一张截图是黑屏加 home 条，没有 GPU 挂起，像是截在过渡动画中 |
 
 两轮内核相同（`out/xnu12377-f055cc0a-restored.bin`），cmdline 相同（`cpus=2 bootcpu=7`，`adreno8_speed=3`）。`interactive1` 的驱动为 `ceefc187…`，AIR 仍为 `b5b44d51…`。
 
@@ -474,7 +477,8 @@ freedreno 对读帧缓冲的绘制有三处特殊处理，挂起可能出在其�
 - 在内核里补齐行距不可行。`render88` 里 MiniIOSurface 已把这些 surface 的行距报成 256、448，处理器按这个行距读到的图形同样错切，说明 SpringBoard 写图形时用的是它创建 surface 时要求的 224、416，不读 surface 报回的行距。内核 `12377-cmd15` 撤回了补齐。
 - 修法改在驱动：`-newTextureWithDescriptor:iosurface:plane:` 遇到单平面、二维、行距不是 64 倍数的 surface，用一个覆盖 surface 内存的 no-copy buffer 和其上的 buffer 纹理代替原地导入。每次提交前按 surface 自己的行距把内容拷进纹理，GPU 写过的内容写回 surface（`redwoodmetal_texture.inc` 的 `rw_surface_through_copy`）。驱动在原地导入行距不是 64 倍数的 IOSurface 时仍打印 GPU 实际读取的行距，每个进程最多 16 行。
 - `render82` 拖慢 SpringBoard 后图标上的「Passcode」等文字碎片，可能出自同一处：50×83 的图形按 256 字节一行读，比 224 字节一行多读约 2.6 KB，读到相邻内存里 Settings 列表的文字。
-- `render89` 采样确认拷贝路径：50×83、101×94 的输入与画出的图形都干净，SpringBoard 有 16 个、backboardd 有 4 个 surface 走拷贝（行距 32～608 字节不等）。`render90` 不采样，主屏的 FaceTime、Mail、News、Games、Health、Wallet、Safari、Music 与 Control Center 的飞行模式图标都画对。剩下 Mail 与 Maps 上的黑色弧形，`render82` 的 Maps 上已有，与拷贝路径无关，待查。
+- `render89` 采样确认拷贝路径：50×83、101×94 的输入与画出的图形都干净，SpringBoard 有 16 个、backboardd 有 4 个 surface 走拷贝（行距 32～608 字节不等）。`render90` 不采样，主屏的 FaceTime、Mail、News、Games、Health、Wallet、Safari、Music 与 Control Center 的飞行模式图标都画对。剩下 Mail 与 Maps 上的黑色弧形，`render77`、`render82` 的截图里没有，随拷贝路径一起出现。
+- 黑色弧形出自中间目标里残留的内容。`render91` 让同一 surface 的请求共用一个拷贝纹理后，弧形换到别的图标上，同一轮内位置不变，说明它画进了图标图像。`render92` 采到 SpringBoard 的 96×128 中间目标在第一次绘制前已有前一个图标的阴影，位置在 scissor 以外；RenderBox 的距离与模糊滤镜会读到所画区域以外的像素。freedreno 新建资源时从已释放的 buffer 缓存里取内存，不清零。AIR 库改为新建颜色与深度目标时先清零（`air_metal_resource_private.h` 的 `texture_start_zeroed`），`render93` 的主屏图标没有弧形和边缘黑点。只有一轮读数，弧形原本就随机出现，需要再跑几轮确认。
 
 ## 9. 无人值守的一轮
 
