@@ -80,6 +80,15 @@
 | `kernel-12377-cmd11-render68` | 同上 | 探针：深度附件采样 | 深度采样没有输出；commit 1 的覆盖率填充在深度清成 0、自身深度为 0 时也没有写；没写出东西的绘制，常量 buffer 偏移都不是 16 的倍数 |
 | `kernel-12377-cmd11-render69` | 同上（库：常量 buffer 偏移不是 64 的倍数时拷贝后绑定） | 同 `render68` | 覆盖率填充写出 R，图标的形状与颜色出现；News、Health、Games、Wallet、Settings 的图形仍有横条，图标上有一条对角细线，Weather 与 Calendar 小组件是白块（§8.13） |
 | `kernel-12377-cmd11-render70` | 同上（库：拷贝的门槛改为偏移不是 16 的倍数） | 探针：采含 `plane_image_stretch` 的整个 commit | 图标与 `render69` 一致，Weather（「Location Access Needed」）与 Calendar 小组件也画出来了；FaceTime、Mail、News、Games、Health、Wallet、Safari 与 dock 第 4 个图标的图形仍是横条 |
+| `kernel-12377-cmd11-render71` | 同上（库：片段着色器按导数与隐式 LOD 采样声明需要辅助线程） | 探针：采含 `fi2a2ea3dna6dhmha4` 的整个 commit | 图标上的对角细线和方框四角外的暗点都消失了；News、Games、Health、Wallet、Settings 的图形仍是横条 |
+| `kernel-12377-cmd11-render72` | 同上（驱动：同步日志只在逐次采样时自动打印） | 探针：`iconservicesagent` 每个 commit 结束时采样一次，共 900 张 | Phone、Photos、App Store、Fitness、Health、Books、News、Maps 的图标在 `iconservicesagent` 里都画对了，主屏上 News、Health 的横条不来自这个进程 |
+| `kernel-12377-cmd11-render73` | 同上 | SpringBoard 也加 `FD_MESA_DEBUG=sysmem` | 横条不变，与 GMEM 分块无关；巡检中主屏进入了编辑模式；SpringBoard 有一条 `custom_effect` 管线（`ffgea5caca5gemhba3`）因片段着色器把指针存进内存被拒 |
+| `kernel-12377-cmd11-render74` | 同上 | SpringBoard 采含 `custom_effect` 的整个 commit | SpringBoard 自己也画图标：commit 75 用 iconservicesagent 的 194×194 `RGB10A2Unorm` buffer 纹理和一张 101×94 的圆角矩形 IOSurface 画 FaceTime，相机图形里出现斜向的点状线；采样拖慢了 SpringBoard，巡检的主屏截图没有图标 |
+| `kernel-12377-cmd11-render75` | 同上 | SpringBoard 按 `render74` 的变体名匹配 | 没有采样：同一着色器的变体名每次开机都变，匹配不到 |
+| `kernel-12377-cmd11-render76` | 同上（驱动：采样边长可设，`REDWOOD_THUMB_SIZE`） | SpringBoard 按 `primitive_custom` 匹配整个 commit，采样 128×128 | 90 张的额度在 commit 4（256×128 的内容）用完，没有采到图标；日志 13 MB，超出两次拉取之间的环形缓冲，采样行有缺失 |
+| `kernel-12377-cmd11-render77` | 同上（驱动：纹理 buffer 的对齐查询与线性纹理答同一个值；记录每个 buffer 纹理的行字节数） | 无采样 | 图标上的文字碎片与黑块消失，Settings、Wallet、Notes、Reminders、Clock、App Store、Maps 画对，两个小组件都有内容；FaceTime、Mail、News、Games、Health、Safari、Music 的图形里仍有斜向条纹 |
+| `kernel-12377-cmd11-render78` | 同上（驱动：`REDWOOD_THUMB_ONLY` 按角色和槽位挑采样） | SpringBoard 按 `custom_effect` 匹配整个 commit，128×128，只采 0、1 号附件与 0 号纹理 | commit 2 画一把钥匙的玻璃效果：先取轮廓，再经两组各 4 次的乒乓滤镜，最后得到法线样的光照纹理；第二次乒乓起中间结果出现横竖拖尾和整块色块，光照纹理下半部有一条横向断层 |
+| `kernel-12377-cmd11-render79` | 同上（驱动：`REDWOOD_DUMP_AIR` 可给多个名字） | SpringBoard 打印 `render78` 中按地址查到的管线位码 | 取回的是 stroke 等其他管线：管线对象释放后地址被新管线复用，`render78` 的名字要按日志顺序取最近一次建立的那条 |
 
 两轮内核相同（`out/xnu12377-f055cc0a-restored.bin`），cmdline 相同（`cpus=2 bootcpu=7`，`adreno8_speed=3`）。`interactive1` 的驱动为 `ceefc187…`，AIR 仍为 `b5b44d51…`。
 
@@ -435,6 +444,12 @@ freedreno 对读帧缓冲的绘制有三处特殊处理，挂起可能出在其�
 - 库把 Metal 的偏移原样交给 freedreno（`air_metal.c` 的 `bind_stage`），freedreno 报的常量 buffer 对齐是 64 字节，A830 按未对齐的地址读 UBO 时取到的数据错位。`render69` 起，偏移不是 64 的倍数时库按 `air.buffer_size` 拷贝这一块，交给 freedreno 上传到对齐的位置。这正是开源版本里的做法，当时为省每次绑定 221 us 的拷贝改成了原样传偏移。之后改为只在偏移不是 16 的倍数时拷贝，上面偏移为 736、2352 的绘制说明 16 的倍数够用。拷贝读的是处理器侧映射，同一次提交里先由 GPU 写的常量块会读到写之前的内容。
 - `render69` 的覆盖率填充写出了 R，主屏图标的形状和颜色都出现了（FaceTime、Calendar、Photos、Clock、App Store、Maps 等）。剩下三处问题：News、Health、Games、Wallet、Settings 的图形是带间隙的横条；多数图标上有一条从左上到右下的细线，图标方框四角外有零散暗点；Weather 与 Calendar 小组件是白块。
 - `render70` 把拷贝门槛降到 16 之后图标不变，两个小组件也有了内容。剩下的问题是图形里的横条和对角细线。
+- 对角细线出在用 `fwidth` 做边缘抗锯齿的绘制：`render70` 的 commit 13 里，`primitive_custom`（`fi2a2ea3dna6dhmha4`）写出的 1 号附件沿四边形对角线有一条低值线，它读的纹理没有这条线。翻译路径不跑 `nir_shader_gather_info`，`needs_coarse_quad_helper_invocations` 与 `needs_full_quad_helper_invocations` 一直是 false，ir3 因此不打开 A830 的 `PIXLODENABLE`、`LODPIXMASK`，三角形边上的导数读到没有运行的辅助线程。翻译结束时按 `nir_gather_info.c` 的规则补上这两项（`air_intrinsics.c` 的 `air_gather_quad_helpers`），`render71` 的细线消失。
+- `render72` 的采样里 Health（白底粉心）、News（白底红色 N）都正确，主屏上同一图标却是紫色横条。SpringBoard 也建了同一批 RenderBox 管线（`custom_effect`、`filter_distance`、`kfmha4` 等），它没有设 `FD_MESA_DEBUG=sysmem`，走 GMEM 分块；`render73` 只给 SpringBoard 加 sysmem。
+- `render71` 主屏的图标上除了横条，还有标签文字的碎片（「Games」「Settings」的片段等）和黑色方块。`render72` 的日志里，两个进程都查询了 RGB10A2 的两种对齐：驱动对线性纹理答 64，对纹理 buffer 答 16；`iconservicesagent` 的 194×194 buffer 纹理按 832 字节一行写回，是 64 对齐。
+- `render77` 让纹理 buffer 的对齐查询返回线性纹理的值（`redwoodmetal.m` 的 `minimumTextureBufferAlignmentForPixelFormat:`），文字碎片和黑块都消失，Settings、Wallet、Notes、Reminders、Clock、App Store、Maps 画对。这一轮 SpringBoard 建的 194×194 buffer 纹理都是 832 字节一行；此前的轮次没有记录行字节数，按 16 对齐读的推断没有直接读数。
+- `render77` 之后 FaceTime 相机图形的轮廓位置正确，填充里有一组间距约 13 像素、略向右上倾斜的细缝，镜头部分的条纹越过了轮廓；Photos 的花瓣上也有同样的斜线。轮廓本身没有错切，这些细缝出在图形的绘制过程里。
+- `render78` 采到 SpringBoard commit 2（一把钥匙）的整条滤镜链，管线名按日志顺序对应：w7 `fpba2ia11bemha4` 取轮廓，w8～w11 `fpba2ma11bemha4` 乒乓 4 次，w12 `fpba3ba10bemha4`、w13 `fpba2iba10bemha4` 各一次，w14～w17 `foba3bia9bemha4` 再乒乓 4 次，w18 `fpba2eca10dhmha4` 输出法线样的光照纹理，w19 写进 122×122 的 `RGB10A2Unorm` buffer 纹理。前缀 `fp` 的都是 `filter_custom` 加一个链接进来的 `custom_fn`。w9 起中间结果出现横竖拖尾，w12 的输出里钥匙左下有一整块红色；w15、w17 写出的内容与 w13 几乎相同，w16 与 w14 几乎相同。下一步取这些管线与各自 `custom_fn` 的位码。
 
 ## 9. 无人值守的一轮
 
