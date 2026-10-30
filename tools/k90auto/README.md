@@ -104,9 +104,15 @@ python3 tools/k90auto/package.py          # 从工作区根目录运行
 ANDROID_SERIAL=<序列号> python3 tools/k90auto/cycle.py LABEL --baseline docs/progress/evidence/k90auto/kernel-NAME-上一轮
 python3 tools/k90auto/render-health.py docs/progress/evidence/k90auto/kernel-NAME-LABEL [--baseline 另一轮]
 python3 tools/k90auto/tour.py docs/progress/evidence/k90auto/kernel-NAME-LABEL "home@3*2" "settings=/redwood/bin/rwtouch tap 0.616 0.70@4*2"
+ANDROID_SERIAL=<序列号> python3 tools/k90auto/cycle.py LABEL --kernel 12377-cmd13 --hold --seconds 2400
+python3 tools/k90auto/respin.py docs/progress/evidence/k90auto/kernel-NAME-LABEL --env SpringBoard:REDWOOD_THUMBS=8 --restart SpringBoard --until "sb26: boot unlock done" --wait 60 --tour "home@3*2"
 ```
 
 - `cycle.py` 起轮前要求 loader 已枚举、`result` 为 idle、RAM 盘为空，任一项不满足就停止；每两轮先经 LK 把 A 槽重试次数重置为 7（`reboot-lk.py`、`set_active a`），LK 由 `ANDROID_SERIAL` 指定。打包开关（如 `ICON_METAL=1`）按 `package.py` 的环境变量透传。
+- `cycle.py --hold` 在操作截图后不结束这一轮，轮次跑满 `--seconds` 或收到 `respin.py --stop` 才结束。这段时间里用 `respin.py` 改驱动设置、重启进程，不必重新打包和上传 `system26.apfs`。需要 12377-cmd13 起的内核和带 `setenv`、`addenv`、`restart` 的 rwsh，真机尚未验证。
+  - `--env` 把 `kern.redwood.env` 设为给出的词，每个词是 `进程名:变量=值` 或 `进程名:-变量`；超过一条命令 119 字符时拆成一条 `setenv` 和若干条 `addenv`。不带词的 `--env` 清空设置。
+  - `--restart` 向同名进程发 SIGKILL，由 launchd 重新拉起。驱动在进程加载它时把本进程名下的设置写进环境变量，覆盖 plist 里的同名变量，每条打印一行 `kern.redwood.env: 词`。
+  - `--until` 等日志里出现指定文字（最多 `--wait` 秒），`--tour` 接着执行 `tour.py` 的步骤，结果追加进同一个 `run/tour.json`。
 - `render-health.py` 先按重叠部分合并 `s*.log`，再把驱动、AIR 库、QuartzCore 的 Metal 日志、MiniIOSurface 与 GPU 驱动里的失败行按类别分组计数，每类写明它在屏幕上的后果；没有归类但带失败字样的图形日志列在 unclassified 下。`--baseline` 在每行后给出另一轮的计数，并标出只在一侧出现的行。驱动的部分拒绝只在首次或 2 的幂次打印，计数 1 或 2 的幂可能代表更多次。
 - `tour.py` 的每一步是 `标签=命令@等待秒数*截图张数`，命令经 `rsh.py` 发给设备上的 rwsh；同一步拍两张以上时比较前后两张，状态栏以下有变化的比例和范围写进 `run/tour.json`，用于发现闪烁。全部截图缩成一张 `run/tour-sheet.png`，编号与 `tour.json` 的顺序一致。
 - GPU 挂起后，12377-cmd4 起的内核打印 RBBM 与 CP 状态，以及每个流水线各级 IB 的基址、剩余与初始长度和 CP 位置前后的命令字。`python3 tools/k90auto/cp-words.py ROUND_DIR` 把这些命令字按 type 7／type 4 包头解成包名并标出 CP 位置；CP 会预取，停住的包可能在标记之前一两个。

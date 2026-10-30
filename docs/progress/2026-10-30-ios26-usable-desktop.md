@@ -466,6 +466,9 @@ freedreno 对读帧缓冲的绘制有三处特殊处理，挂起可能出在其�
   - 模糊管线的 writeMask 是 0x8，即 Metal 的 Red，只写 R；G 保留上一次的内容，所以相邻两次的输出交替相似。
 - 剩下的斜向条纹出在 IOSurface 的行距上。`render84` 的导入记录里，SpringBoard 的图形 IOSurface 由客户端指定 32 字节对齐的行字节数（50×83 为 224，101×94 为 416，146×117 为 608），A830 采样这些线性纹理时按 64 字节的整数倍取行距，每行多走 32 字节，图形成了一组斜向色带。行字节数是 64 倍数的图形（124×105 的 512、110×110 的 448）画对。
 - 修法放在内核：MiniIOSurface 在自己分配内存的单平面 surface 上把客户端给的 `IOSurfaceBytesPerRow` 补齐到 64，客户端从 `IOSurfaceGetBytesPerRow` 读行距；包裹客户端内存的 surface 不改。内核 `12377-cmd12`；`render85` 三次都在启动早期 panic，待重跑。
+- freedreno 的 `fd6_layout.c` 对线性布局的行距同样至少按 64 字节对齐，8 字节和 16 字节像素分别按 128、256，与 `render84` 的读数一致。驱动在导入行字节数不是 64 倍数的 IOSurface 时打印 GPU 实际读取的行距，每个进程最多 16 行（kernel `299cddf`）。
+- `render82` 拖慢 SpringBoard 后图标上的「Passcode」等文字碎片，可能出自同一处：50×83 的图形按 256 字节一行读，比 224 字节一行多读约 2.6 KB，读到相邻内存里 Settings 列表的文字。补齐行距后碎片是否消失待真机确认。
+- 下一轮用内核 `12377-cmd13`，即 `12377-cmd12` 加上 `kern.redwood.env`（`tools/k90auto/README.md` §8 的 `respin.py`），同一次启动里可以改采样设置后重启 SpringBoard，不必重新上传系统盘。
 
 ## 9. 无人值守的一轮
 

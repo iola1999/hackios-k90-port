@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One unattended desktop round from the working tree: pack, boot, tour, render report.
 
-usage: tools/k90auto/cycle.py LABEL [--baseline ROUND_DIR] [--seconds N] [--kernel NAME]
+usage: tools/k90auto/cycle.py LABEL [--baseline ROUND_DIR] [--seconds N] [--kernel NAME] [--hold]
 
   1. package.py with the interactive jobs and rwsh (the caller's environment goes through, so
      ICON_METAL=1 and the other package switches work as they do there), then make-payload.py
@@ -11,7 +11,9 @@ usage: tools/k90auto/cycle.py LABEL [--baseline ROUND_DIR] [--seconds N] [--kern
      LK is addressed by ANDROID_SERIAL).
   3. round-run.py in the background; once SpringBoard reports the boot unlock, tour.py runs TOUR
      (only its first step when the GPU has already stopped), and the round is asked to stop
-     (run/stop-request) instead of running out its N seconds.
+     (run/stop-request) instead of running out its N seconds. With --hold it is not asked: it runs
+     until respin.py --stop or the N seconds, and respin.py changes settings and restarts processes
+     in it meanwhile.
   4. render-health.py, against --baseline when given, into ROUND_DIR/render-report.txt.
 
 Exit code: 0 when the round ran and the loader came back idle, 1 otherwise. The device rules of
@@ -105,6 +107,7 @@ def main():
     ap.add_argument("--seconds", type=int, default=900)
     ap.add_argument("--kernel", default="12377-cmd1")
     ap.add_argument("--boot-args", default="", help="observation boot-args added after the fixed ones")
+    ap.add_argument("--hold", action="store_true", help="keep the round up after the tour, for respin.py")
     args = ap.parse_args()
 
     problem = loader_ready()
@@ -154,7 +157,10 @@ def main():
         if gpu_stopped:
             print("the GPU stopped before the tour; only the home screen is taken")
         run([sys.executable, HERE / "tour.py", round_dir, *(TOUR[:1] if gpu_stopped else TOUR)])
-        (round_dir / "run" / "stop-request").write_text("")
+        if args.hold:
+            print(f"held: tools/k90auto/respin.py {round_dir} ... (--stop ends it)", flush=True)
+        else:
+            (round_dir / "run" / "stop-request").write_text("")
     rounder.wait()
 
     report = run([sys.executable, HERE / "render-health.py", round_dir,
