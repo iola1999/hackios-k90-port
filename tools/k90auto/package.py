@@ -220,6 +220,8 @@ DRIVER_INCLUDES = ["tools/userland-driver/redwood_drawable.h",
                    "tools/userland-driver/redwoodmetal_commandbuffer.inc",
                    "tools/userland-driver/redwoodmetal_diag.inc",
                    "tools/userland-driver/redwoodmetal_mesa.inc",
+                   "tools/userland-driver/redwoodmetal_state.inc",
+                   "tools/userland-driver/redwoodmetal_stitch.inc",
                    "tools/userland-driver/redwoodmetal_texture.inc",
                    "tools/userland-driver/redwoodmetal_work.inc",
                    "tools/userland-driver/redwoodmetal_work_private.h"]

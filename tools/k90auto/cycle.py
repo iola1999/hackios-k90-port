@@ -104,6 +104,7 @@ def main():
     ap.add_argument("--baseline")
     ap.add_argument("--seconds", type=int, default=900)
     ap.add_argument("--kernel", default="12377-cmd1")
+    ap.add_argument("--boot-args", default="", help="observation boot-args added after the fixed ones")
     args = ap.parse_args()
 
     problem = loader_ready()
@@ -128,7 +129,8 @@ def main():
                        SYSTEM="hackios-xnu-kernel/userland/system26.apfs", SYSTEM_WINDOW="0x300000000",
                        MEMSIZE="300000000", IDENTITY="v57")
     made = run([sys.executable, HERE / "make-payload.py", args.kernel, args.label,
-                "out/ios26-resume/bbmetal-device/root.apfs", "gpu_log=1 metal=1 cpufreq=1 fb_threads=2 touch_lat=1"],
+                "out/ios26-resume/bbmetal-device/root.apfs",
+                " ".join(["gpu_log=1 metal=1 cpufreq=1 fb_threads=2 touch_lat=1", args.boot_args]).strip()],
                env=payload_env, capture_output=True, text=True)
     if made.returncode:
         print(f"STOP: make-payload.py failed: {made.stdout[-400:]}{made.stderr[-400:]}")

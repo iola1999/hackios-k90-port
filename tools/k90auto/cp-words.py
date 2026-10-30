@@ -80,7 +80,8 @@ def header(word):
 
 
 def chain(words, start, position):
-    """Packets from `start`; None if a header breaks before `position` is passed."""
+    """Packets from `start`; None if a header breaks before `position` is reached. A level
+    the CP has fetched to its end (REM_SIZE 0) has its position at the end of the words."""
     packets, at = [], start
     while at < len(words):
         h = header(words[at])
@@ -88,14 +89,14 @@ def chain(words, start, position):
             return packets if at > position else None
         packets.append((at, h))
         at += h[1]
-    return packets
+    return packets if at >= position else None
 
 
 def decode(words, position, opcodes, events, out):
     best = None
     for start in range(position + 1):
         packets = chain(words, start, position)
-        if packets and any(p[0] <= position < p[0] + p[1][1] or p[0] >= position for p in packets):
+        if packets:
             best = packets
             break
     if best is None:
@@ -103,7 +104,8 @@ def decode(words, position, opcodes, events, out):
         return
     for at, (kind, size, field) in best:
         body = words[at + 1:at + size]
-        mark = " <- CP position" if at <= position < at + size else ""
+        mark = " <- CP position" if at <= position < at + size else (
+            " <- last packet, CP at the end" if at + size == position == len(words) else "")
         if kind == "pkt7":
             name = opcodes.get(field, f"opcode {field:#x}")
             extra = ""

@@ -23,6 +23,52 @@
 | `kernel-12377-cmd3-render11` | 同上 | AIR 的索引绘制开启图元重启（§8.7）；SpringBoard 设 `IR3_SHADER_DEBUG=vs`；PosterBoard 探针记录数据存储初始化的四步 | 第 9 次提交没有完成，是 SpringBoard 的 57 缓冲提交；SpringBoard 的顶点着色器汇编里没有 `primitive__vertex`；PosterBoard 的迁移返回 0 |
 | `kernel-12377-cmd3-render12` | 同上 | SpringBoard 与 `iconservicesagent` 都设 `REDWOOD_SYNC_DRAWS=1` | 第 10 次提交没有完成，是 SpringBoard 第 2 次提交第 3 个 work，`primitive__vertex+ffea2ba11dhmha4`；取到 `primitive__vertex` 的 A830 汇编 |
 | `kernel-12377-cmd3-render13` | 同上 | 两个进程设 `AIR_DISCARD=off`，`discard_fragment` 翻译成空操作；SpringBoard 设 `IR3_SHADER_DEBUG=fs`；PosterBoard 探针加迁移的版本号 | 仍然挂起，第 10 次提交是 `iconservicesagent` 的 `primitive__vertex+ffia2ba3ca7dhmha4`；PosterBoard 从 59 迁移到 61 失败 1151 次 |
+| `kernel-12377-cmd4-render14` | 同上 | 内核 `12377-cmd4`：挂起报告后打印 CP 状态与命令字；PosterBoard 的预期资源值类方法返回空字典 | 仍然挂起，第 14 次提交是 `iconservicesagent` 的 `primitive__vertex+ffia2ba3ca7dhmha4`；HFI 150 先于驱动的等待超时到达，转储没有打印；PosterBoard 迁移仍失败，替换的类方法不在有效性检查的路径上 |
+| `kernel-12377-cmd5-render15` | 同上 | 内核 `12377-cmd5`：收到 HFI 150 时就转储；PosterBoard 在 NSURL 的资源值比较与设置里去掉文件保护一项 | 取到 CP 转储（§8.10）；PosterBoard 迁移成功，数据存储初始化成功，之后建海报存储时标记 purgeable 失败 |
+| `kernel-12377-cmd5-render16` | 同上 | SpringBoard 与 `iconservicesagent` 设 `FD_MESA_DEBUG=sysmem`，日志确认两个进程都读到了 | 仍然挂起，第 6 次提交是 SpringBoard 的第 3 个 work；CP 已越过读帧缓冲前的屏障，停在这次绘制上 |
+| `kernel-12377-cmd5-render17` | 同上 | 两个进程设 `FD_FB_READ_NO_FLUSH=1`，读帧缓冲的绘制保持 `NO_FLUSH`，日志确认读到 | 仍然挂起，同一个 SpringBoard 绘制；逐重叠刷新排除 |
+| `kernel-12377-cmd5-render18` | 同上 | 两个进程设 `AIR_FB_LAYER0=1`，帧缓冲读取的层号为常数 0，日志确认读到 | 仍然挂起，同一个 SpringBoard 绘制；层号读取排除 |
+| `kernel-12377-cmd5-render19` | 同上 | 两个进程设 `AIR_FB_READ_WRITEMASK=1`，片段着色器读而管线不写的目标改为四个通道都写，日志确认 `ffea2ba11dhmha4` 的 1 号目标改写 | 仍然挂起，同一个 SpringBoard 绘制；写掩码排除 |
+| `kernel-12377-cmd5-render20` | 同上 | 两个进程设 `FD_FB_READ_LATE_Z=1`，读帧缓冲的绘制在片段着色器之后做深度测试，日志确认读到 | 仍然挂起，同一个 SpringBoard 绘制；z 模式排除 |
+| `kernel-12377-cmd5-render21` | 同上 | 两个进程设 `AIR_FB_READ_ZERO=1`，帧缓冲读取换成常数 0，日志确认读到 | SpringBoard 的 `primitive__vertex+ffea2ba11dhmha4` 完成，继续画到第 3 次提交；之后内核在外部缓冲解除映射时等 200 毫秒超时，关闭提交，停在 `iconservicesagent` 的 `primitive__vertex+ffeba5ca7jbmhia3`，归属没有确认（§8.11） |
+| `kernel-12377-cmd7-render22` | 同上 | 内核 `12377-cmd7`：等时间戳的上限 2 秒，超时打印时间戳并转储；开关同 `render21` | `ffeba5ca7jbmhia3` 完成；第 29 次提交没有完成（HFI 150），是 `iconservicesagent` 第 5 次提交第 1 个 work，`primitive_gradient_vertex+fgea14dhmha4` |
+| `kernel-12377-cmd7-render23` | 同上 | 开关同 `render22`（改名 `AIR_FB_READ=zero`）；`iconservicesagent` 设 `IR3_SHADER_DEBUG=fs`；驱动先打印挂起的片段着色器 | 第 107 次提交没有完成，是重启后 `iconservicesagent` 第 4 次提交第 4 个 work，`primitive_gradient_vertex+fgea2ca11dhmha4`；取到 A830 汇编 |
+| `kernel-12377-cmd7-render24` | 同上 | 帧缓冲读取恢复；两个进程设 `AIR_FS_INPUTS_PACKED=1`，片段着色器的输入去掉没被读的并从 0 编号；SpringBoard 设 `IR3_SHADER_DEBUG=fs` | 仍然挂起，第 6 次提交，SpringBoard 的 `ffea2ba11dhmha4`；汇编确认空位已去掉；输入空位排除 |
+| `kernel-12377-cmd7-render25` | 同上 | 去掉压紧开关；两个进程设 `AIR_FB_READ=sample0`，帧缓冲读取的采样号为常数 0 | 仍然挂起，第 6 次提交，`ffea2ba11dhmha4`；汇编确认不再读采样号；采样号与逐采样着色排除 |
+| `kernel-12377-cmd7-render26` | 同上 | 两个进程设 `AIR_FB_READ=rt0`，帧缓冲读取统一读 0 号目标 | 仍然挂起，第 7 次提交，`ffea2ba11dhmha4`；1 号目标排除 |
+| `kernel-12377-cmd8-render27` | 同上 | 内核 `12377-cmd8`：挂起后打印整条命令树与片段阶段 bindless 描述符；`FD_FB_READ_DUMP=1`；`AIR_FB_READ=log`（backboardd 也开） | 仍然挂起，第 6 次提交，`ffea2ba11dhmha4`；GPU 读到的描述符与 freedreno 写入的一致；绘制的寄存器状态与 freedreno 的设计一致 |
+| `kernel-12377-cmd8-render28` | 同上 | 两个进程设 ir3 的 `IR3_FB_READ_ISAM=1`，帧缓冲读取用 `isam`，不带采样坐标 | 仍然挂起，第 7 次提交，`ffea2ba11dhmha4`；汇编确认是 `isam`；`isamm` 排除 |
+| `kernel-12377-cmd8-render29` | 同上 | 两个进程设 `AIR_FB_READ=coord0`，帧缓冲读取的坐标为常数 (0, 0) | 仍然挂起，第 7 次提交，`ffea2ba11dhmha4`；汇编确认不读片元坐标；片元坐标排除 |
+| `kernel-12377-cmd8-render30` | 同上 | 两个进程设 ir3 的 `IR3_FB_READ_BINDLESS_SAMP=1`，读帧缓冲的着色器同时设 `bindless_samp` | 仍然挂起，第 6 次提交，`ffea2ba11dhmha4`；`SP_PS_CONFIG` 读数 0x40503，`BINDLESS_SAMP` 已置上；排除 |
+| `kernel-12377-cmd8-render31` | 同上 | 两个进程设 `IR3_SHADER_DEBUG=noaliasrt,noaliastex,nopreamble,noearlypreamble,nodescprefetch` | 两分钟内没有挂起，同步模式下 261 个绘制完成，读帧缓冲的着色器都画过；驱动拒绝 `fpba2ma11bemha4` 的绘制（§8.12） |
+| `kernel-12377-cmd8-render32` | 同上 | 只关 `alias.rt` 与 `alias.tex`（`IR3_SHADER_DEBUG=noaliasrt,noaliastex`） | 第 9 次提交挂起，`iconservicesagent` 的 `ffia2ba3ca7dhmha4`；两项 alias 排除 |
+| `kernel-12377-cmd8-render33` | 同上 | 只关描述符预取（`nodescprefetch`） | 第 7 次提交挂起，SpringBoard 的 `ffea2ba11dhmha4`；描述符预取排除 |
+| `kernel-12377-cmd8-render34` | 同上 | 只关提前预备代码（`noearlypreamble`） | 两分钟内没有挂起，同步模式下 218 个绘制完成；提前预备代码是挂起原因 |
+| `kernel-12377-cmd8-render35` | 同上 | 设备 Mesa 的 A830 关掉 `has_early_preamble`，不设 `IR3_SHADER_DEBUG`；测量开关撤掉 | 两分钟内没有挂起，同步模式下 304 个绘制完成；图标管线仍被拒绝（§8.13） |
+| `kernel-12377-cmd8-render36` | 同上 | AIR 不再要求绑定 `air.arg_unused` 的纹理与采样器；同一缓冲内的指针 `select` 与 phi 改用偏移；freedreno 接受只差末级行对齐的线性导入 | `fpba2ma11bemha4` 的拒绝、路径顶点着色器的拒绝、RGBA16Float 图标表面的导入失败都消失；主屏仍没有图标 |
+| `kernel-12377-cmd8-render37` | 同上 | 驱动支持纹理视图；`MTLSamplerMinMagFilterCubic` 按线性采样；驱动打印拼接库与链接函数的描述 | 控制中心、设置、锁屏都画出来；`compute_average_luma` 不再失败，`iconservicesagent` 不再因采样器中止；没有打印到拼接库调用 |
+| `kernel-12377-cmd8-render38` | 同上 | 驱动接管 `_MTLLibrary` 的 `-newFunctionWithDescriptor:error:`，一律返回未特化函数的代理；没有片段函数的管线用空片段着色器 | 没有解锁，提前结束：RenderBox 与 QuartzCore 的特化变体原本在进程内就能取到，代理让管线以未特化的入口名建出，全部被拒绝 |
+| `kernel-12377-cmd8-render39` | 同上 | 钩子先走 `_MTLLibrary` 自己的实现，返回 nil 时才用代理；管线的链接函数在翻译时内联进片段着色器；没有片段函数的管线用空片段着色器 | 自定义效果与 `path_edges` 管线的拒绝都消失；主屏仍没有图标；点开设置后到结束都没有画出设置，控制中心也没有出现（§8.13） |
+| `kernel-12377-cmd8-render40` | 同上 | 库不变；没有设 `ICON_METAL=1`，`iconservicesagent` 用软件渲染；boot-arg 加 `systrace=1` 与 `ustacks=Preferences` | 图标、Dock、小组件与设置列表的图标都画出来，设置点开即显示；backboardd 的 `compute_average_luma` 因单级纹理视图失败 11 次（§8.13） |
+| `kernel-12377-cmd8-render41` | 同上 | 同 `render40`；boot-arg 改为 `systrace=1 systrace_name=nosuchproc`，只留异常打印，`ustacks_at=80` | 与 `render40` 相同；异常打印只有几个应用扩展的 SIGTRAP |
+| `kernel-12377-cmd8-render42` | 同上 | 纹理视图可取一段连续的级别；`rwa_texture_generate_mipmaps` 从视图的第一级生成；boot-arg 同 `render41` | `compute_average_luma` 的 11 次失败消失，没有纹理视图被拒绝；画面与 `render41` 一致 |
+| `kernel-12377-cmd8-render43` | 同上 | 同 `render42`，去掉 `systrace` 与 `ustacks` | 起轮后改了计划，提前结束，没有读数 |
+| `kernel-12377-cmd8-render44` | 同上 | 库同 `render42`；`ICON_METAL=1`；boot-arg `systrace=1 systrace_name=nosuchproc` | `iconservicesagent` 仍然 SIGTRAP 10 次，异常打印给出位置：IconRendering 里一个弱引用读出 nil（§8.13） |
+| `kernel-12377-cmd8-render45` | 同上 | 驱动的 buffer 纹理持有并返回 buffer，GPU 写过的纹理拷回 buffer；`ICON_METAL=1`；没有设 `JOB_ENV`，SpringBoard 与 `iconservicesagent` 不逐个等待绘制 | `iconservicesagent` 不再 trap，连续 105 个 commit；约 45 秒后出现 GPU SMMU 缺页，内核关闭提交，之后 BO 分配失败，三个进程崩溃（§8.13） |
+| `kernel-12377-cmd8-render46` | 同上 | 同 `render45`，补上 `render39` 的 `JOB_ENV` | 设置列表的图标由 GPU 画出；仍出现 SMMU 缺页（读访问，叶 PTE 为空），之后用户态重启，主屏只剩转圈 |
+| `kernel-12377-cmd10-render47` | 内核 `12377-cmd10`：cmd8 加 BO 预留记录，SMMU 缺页时打印持有该地址的 BO 与前后最近的 BO | 同 `render46` | 没有缺页；GPU 画的图标是花的：成块的矩形与横向条纹，有的图标错位，设置列表的图标为空 |
+| `kernel-12377-cmd10-render48` | 同上 | 同 `render47`，`iconservicesagent` 加 `FD_MESA_DEBUG=sysmem` | 日志开始后约 45 秒出现 SMMU 缺页，地址紧接在最后一个 BO 之后；重启后的 `iconservicesagent` 拿不到 GPU，截图里的图标是软件渲染的，sysmem 的效果没有读到（§8.13） |
+| `kernel-12377-cmd11-render49` | 内核 `12377-cmd11`：cmd10 加 BO 保护页 | 同 `render48` | 没有缺页，三个进程都没有重启；`iconservicesagent` 用 GPU 并走 sysmem，图标仍然成块错乱、带横向条纹，与 `render47` 相同（§8.13） |
+| `kernel-12377-cmd11-render50` | 同上 | 同 `render49`，`iconservicesagent` 加 `REDWOOD_THUMBS=600`，从 commit 2 起每次绘制后采样 | 600 张采样只还原出 220 张，日志上传丢了大段；0 号附件全程透明，形状只写进 1 号附件 |
+| `kernel-12377-cmd11-render51` | 同上 | 改为每个 commit 结束时采样一次 | 输入的花瓣、椭圆等图层正确；合成到 160×160 与 192×192 时只剩横条或透明 |
+| `kernel-12377-cmd11-render52` | 同上 | 只采 `path_` 着色器的绘制，绘制前后各一次 | 路径的覆盖率在 1 号附件里逐笔累积，形状正确（App Store 的「A」三笔） |
+| `kernel-12377-cmd11-render53` | 同上 | 同 `render49`；no-copy buffer 上的纹理从调用方内存取数据，结果写回调用方内存 | 开机约 80 秒 backboardd 访问已释放的内存崩溃，之后一直转圈，没有图标读数 |
+| `kernel-12377-cmd11-render54` | 同上 | 调用方内存只写不读 | 没有崩溃；图标开始出现正确的底色（Mail 的蓝色圆角方块、Photos 的渐变），图形本身缺失，FaceTime、App Store 等是成块缺失的马赛克 |
+| `kernel-12377-cmd11-render55` | 同上 | 加 commit 结束时的采样，标出 buffer 与 IOSurface 纹理；库打印前 64 次回写 | 最终的 192×192 BGRA 图标纹理回写时几乎全为 0；花瓣等 IOSurface 图层正确，`plane_image_stretch` 把它们贴进 192×192 buffer 纹理后只剩横条或透明 |
+| `kernel-12377-cmd11-render56` | 同上 | 只采 `plane_image_stretch` 的绘制，绘制前后各一次，并打印顶点缓冲的前 16 个浮点数 | 矩阵与纹理坐标正确；绘制后 0 号附件多数仍透明，一次绘制的输入「Fr」出现在 2 号附件里，灰色圆形输入在 0 号附件里变成灰色方块 |
+| `kernel-12377-cmd11-render57` | 同上 | 同 `render54`，AIR 在翻译时按 function constant 求颜色附件号 | 求值没有触发（特化位码里附件号已是常数）；图标仍是横条，出现的图标与 `render54` 不同 |
+| `kernel-12377-cmd11-render58` | 同上 | 同 `render54`；每批工作前读取 no-copy buffer 的调用方内存，有变化时拷入 | 调用方内存变化 31 次，buffer 大小（16384～114688 字节）与 backboardd 的 no-copy buffer 相同；`iconservicesagent` 的 34176、161408 字节 buffer 没有变化，图标仍是横条 |
+| `kernel-12377-cmd11-render59` | 同上 | IOSurface 比描述符大时按描述符的大小导入左上角；探针：`kfmha4` 管线逐次采样、`REDWOOD_DUMP_AIR` 打印位码 | 「no drawable」拒绝从 2 次降到 0；48 个模块集中打印，日志丢了前 38 条管线的记录，位码没有取到；`kfmha4` 绘制的 0 号输入纹理本身全透明 |
 
 两轮内核相同（`out/xnu12377-f055cc0a-restored.bin`），cmdline 相同（`cpus=2 bootcpu=7`，`adreno8_speed=3`）。`interactive1` 的驱动为 `ceefc187…`，AIR 仍为 `b5b44d51…`。
 
@@ -232,9 +278,10 @@ Metal 的索引绘制总是开启图元重启：16 位索引的 0xFFFF、32 位�
 - 初始化里没有新建 NSError。之前的 57 个错误来自旧壁纸迁移读 `/var/mobile/Library/SpringBoard/LockBackground*.jpg`、`HomeBackground*.jpg` 等文件不存在，以及 `com.apple.managedconfiguration.profiled.public` 查找失败。
 - 初始化会在四处返回 nil：迁移失败、bundle ID 迁移失败、完整性校验失败、SQLite 数据库打开失败。这四处只发 `os_signpost`，控制台看不到，探针在 `userland/src/inject_posterboard.c`。
 - `render11`、`render13` 的读数：`isDataStoreUpToDateForCurrentVersion` 为 0，`_mostUpToDateValidDataStoreToMigrateFrom` 为 NSNotFound，`+migrateDataStoreAtBaseURL:fromVersion:59 toVersion:61 ...` 返回 NO 且没有错误，初始化随后返回 nil。PosterBoard 一直重试，`render13` 里重试了 1151 次。
-- 迁移的版本范围由两个类方法给出，最低 59、当前 61。一个版本有效的条件（`_PBFDetermineDataStoreViabilityForVersionWithinBaseURL`）是数据存储、扩展容器、图库缓存三个目录存在，60 起还要有 SQLite 库，并且每一项都满足 `+expectedURLResourceValuesForDirectories` 给出的资源值。
-- 这组资源值只有一项，值来自 `+expectedFileProtection`，即文件保护等级。RAM 盘所在的卷不支持数据保护（同一日志里 chronod 记 `volume does not support data protection`），这一项读回来不会相符，推断任何版本都不会有效，迁移每次都失败。
-- 改动：注入库让 `expectedURLResourceValuesForDirectories`、`...ForFiles` 与 `expectedSnapshotURLResourceValues` 返回空字典，有效性只剩存在性检查。还没有上机。
+- 迁移的版本范围由两个类方法给出，最低 59、当前 61。一个版本有效的条件（`_PBFDetermineDataStoreViabilityForVersionWithinBaseURL`）是数据存储、扩展容器、图库缓存三个目录存在，60 起还要有 SQLite 库，并且每一项都满足 PosterFoundation 的 C 函数 `PFPosterPathURLResourceValues()` 给出的资源值，其中有文件保护等级。
+- RAM 盘所在的卷不支持数据保护（同一日志里 chronod 记 `volume does not support data protection`），文件保护等级读回来不会相符，任何版本都不会有效，迁移每次都失败。`render14` 替换的是 `PBFPosterModelStoreCoordinator` 的三个预期资源值类方法，不在这条路径上，迁移照样失败。
+- `render15` 改在 NSURL 的四个资源值方法（`pbf_URLIsReachableAndConformToResourceValues:error:`、`pbf_URLConformsToExpectedResourceValues:error:`、`pbf_updateResourceValues:error:`、`pbf_recursivelyUpdateResourceValues:error:`）里去掉 `NSURLFileProtectionKey`。从 59 到 61 的迁移成功，SQLite 库打开，完整性校验通过，数据存储初始化返回非 nil。
+- 下一处失败：`+[PBFPosterModelStoreCoordinator createNewStoreCoordinatorWithPath:error:]` 约 50 次，`errno=-1`，同时有 `Error marking ... as purgable`。PosterFoundation 用 `fsctl(path, 0xc0084a44, …)` 标记 purgeable，即 APFS 的 `'J'` 68 号调用；我们的 APFS 对所有 ioctl 回 ENOTTY。内核 `12377-cmd6` 让这一个调用返回成功，还没有上机。
 
 ### 8.9 `render11`～`render13`：挂起绘制读帧缓冲
 
@@ -251,6 +298,123 @@ freedreno 对读帧缓冲的绘制有三处特殊处理，挂起可能出在其�
 - `freedreno-darwin.patch` 在一个批次里第一个读帧缓冲的绘制之前加 `CCU_CLEAN_COLOR` 与 `CACHE_INVALIDATE`。这一段是为 a642l 写的，同步模式下每个绘制自成一个批次，每个读帧缓冲的绘制都会带上。
 
 `render6` 用 sysmem 仍然挂起，但那一轮的归属没有确认（§8.4），不能据此排除 GMEM 路径。为了区分这三处，内核 `12377-cmd4` 在挂起报告之后读 RBBM 与 CP 状态、各级 IB 的基址与剩余长度，并打印 CP 位置前后的命令字，用 `tools/k90auto/cp-words.py` 解成包名。还没有上机。
+
+### 8.10 `render15` 的 CP 转储
+
+`render15` 挂起在第 6 次提交（HFI 150 时间戳 6，已完成 5）。转储的读数：
+
+- BR 与 BV 两个流水线的 IB1 都是 `0x10986000`，`REM_SIZE` 0、`INIT_SIZE` 495；BR 的 IB2 是 `0x10996500`，`REM_SIZE` 0、`INIT_SIZE` 78。CP 把这次提交的命令全部取完了。
+- IB1 的最后几个包依次是绘制流 IB（`0x1098e000`，124 个字）、`CP_SET_DRAW_STATE`、IB2（78 个字，两次 `CCU_RESOLVE`，即 GMEM 写回）、`LRZ_CACHE_FLUSH`、`CCU_RESOLVE_CLEAN` 和带时间戳写入的 `CACHE_FLUSH_TS`。时间戳没有写出，CP 在等前面的工作排空。
+- `RBBM_STATUS` 为 0xfe1007：CP 忙、`HLSQ_BUSY`、slice 忙；`PC_BUSY`、`VPC_BUSY`、`UCHE_BUSY`、`VSC_BUSY` 都为 0。停住的是着色器一侧，图元装配之前的部分已经空闲。
+- 读帧缓冲的片段着色器用 `isamm` 按 bindless 描述符 0x37、0x38 取像素，GMEM 下这两个描述符由 `patch_fb_read_gmem` 的 A8XX 分支拼出（§8.9）。转储与「着色器等这次纹理读取」一致，`render16` 用 sysmem 让描述符改走普通视图来验证。
+- 命令字用 `tools/k90auto/cp-words.py` 解码；它对取完的级别把位置放在末尾，标出最后一个包。
+- `render16` 用 sysmem 仍然挂起，GMEM 描述符排除。绘制流 IB 的最后几个包是读帧缓冲前的屏障（`CCU_CLEAN_COLOR`、`CACHE_INVALIDATE`、`CP_WAIT_FOR_IDLE`、`CP_CCHE_INVALIDATE`）和挂起的 `CP_DRAW_INDX_OFFSET`。屏障里的 `CP_WAIT_FOR_IDLE` 已经完成，屏障也排除。`RBBM_STATUS` 仍是 0xfe1007。
+- 10-26 iOS 16.5 的 GLES 路径在 A830 上读帧缓冲正常（[GPU 桌面记录](2026-10-26-gpu-desktop-acceleration.md)），同一个 Mesa、同一套 `nir_lower_fb_read` 和屏障。这次的两个挂起管线有一个那时没有的特征：片段着色器读 1 号目标 `coverage`（RG16Float），而管线对 1 号目标的写掩码是 0。
+- 读帧缓冲的绘制设了 `single_prim_mode`（GMEM 为 `FLUSH_PER_OVERLAP`，sysmem 为 `FLUSH_PER_OVERLAP_AND_OVERWRITE`），硬件按重叠等前面图元的写入。推断读一个不写的目标时这一等待不会结束。`render17` 用 `FD_FB_READ_NO_FLUSH=1` 让这类绘制保持 `NO_FLUSH`，仍然挂起，这一推断不成立。这个开关只用于这一轮，设备 Mesa 树里没有保留。
+- 与 iOS 16.5 正常的 GL 帧缓冲读取相比，`nir_lower_fb_read`、屏障、单图元模式都相同，不同的是附件组合（三个附件、RG16Float）、读不写的目标、深度附件，以及顶点与片段着色器的 varying 组合。`nir_lower_fb_read` 的层号来自 `VARYING_SLOT_LAYER` 的 flat 读取，`primitive__vertex` 不写这一项；`ffea2ba11dhmha4` 除此之外不读任何 varying，读的是 4 号位置。
+- `render18` 用 `AIR_FB_LAYER0=1`：AIR 自己生成 `txf_ms_fb`，层号为常数 0，片段着色器不再读 `VARYING_SLOT_LAYER`；单层目标的结果不变。仍然挂起，同一个 SpringBoard 绘制，层号读取排除。这个开关只用于这一轮，AIR 源码里没有保留。
+- `render19` 用 `AIR_FB_READ_WRITEMASK=1`：片段着色器读、而管线写掩码为 0 的目标改为四个通道都写。仍然挂起，同一个 SpringBoard 绘制，「读一个管线不写的目标」排除。开关只用于这一轮，AIR 源码里没有保留。
+- `render20` 用 `FD_FB_READ_LATE_Z=1`：同一次提交的第 2 个 work 同样开着只读深度测试，能完成；freedreno 对读帧缓冲的着色器在深度测试开启时选 `EARLY_Z`，10-26 的 GL 绘制没有深度附件，走 `LATE_Z`。这一轮让读帧缓冲的绘制改用 `LATE_Z`，仍然挂起，z 模式排除。开关只用于这一轮，设备 Mesa 树里没有保留。
+- `render18`～`render20` 逐项改状态都没有结论。下一批改为从着色器里减：`render21` 用 `AIR_FB_READ_ZERO=1` 把帧缓冲读取换成常数 0，freedreno 的批次标记不变，先确认挂起是否由读帧缓冲引起。
+
+### 8.11 `render21`～`render30`：拆分读帧缓冲的挂起
+
+- `render21` 的 SpringBoard 第 2 次提交第 3 个 work（`primitive__vertex+ffea2ba11dhmha4`）在帧缓冲读取换成常数 0 后完成，SpringBoard 接着完成第 2 次提交的第 4、5 个 work 和第 3 次提交的两个 work。读帧缓冲是这一绘制挂起的原因。
+- 开关只替换着色器里的读取，`uses_fbfetch_output` 等标记照旧，freedreno 仍按读帧缓冲的批次处理（`FD_GMEM_FB_READ`、`single_prim_mode`）。剩下的区别在着色器一侧：两条 `isamm`、片元坐标、采样号（读采样号会打开逐采样着色）和 bindless 描述符 0x37、0x38。
+- 这一轮停在 `iconservicesagent` 第 1 次提交第 4 个 work，`primitive__vertex+ffeba5ca7jbmhia3`。这个片段着色器不读帧缓冲，用 `fwidth` 和 `discard_fragment`；`render6` 没有确认归属的挂起绘制也是它。
+- 这次没有 HFI 150，也没有转储。内核在外部缓冲解除映射前等全部提交完成，`CONTEXT_WAIT_NS` 只有 200 毫秒，在 backboardd 第 15 次提交之后 200 毫秒超时并关闭提交，没有打印时间戳。`iconservicesagent` 的「did not finish」是提交关闭的结果，不能据此认定它挂起。
+- 内核 `12377-cmd7`（在 cmd5 上改，不含 cmd6 的 APFS 改动）把这一等待改为 2 秒，超时时打印等待的、最后提交的和已完成的时间戳并转储 CP。`render22` 用 cmd7、开关同 `render21`，确认停在哪一个绘制。
+- `render22`：`iconservicesagent` 第 1 次提交第 4 个 work（`ffeba5ca7jbmhia3`）完成，`render21` 的停止是 200 毫秒等待造成的误报。GPU 跑到第 29 次提交，HFI 150 时间戳 29、已完成 28，是 `iconservicesagent` 第 5 次提交第 1 个 work：`primitive_gradient_vertex+fgea14dhmha4`，96x96 的三个颜色附件，深度清除且读写，绑定 4 个纹理。
+- 这次的转储与 `render15` 相同：IB1、IB2 都取完，最后一个包是 `CACHE_FLUSH_TS`，`RBBM_STATUS` 0xfe1007。驱动打印挂起模块时 `iconservicesagent` 被结束，只打出半个顶点着色器，片段着色器没有取到。驱动改为先打印片段着色器；`render23` 开关不变，`iconservicesagent` 加 `IR3_SHADER_DEBUG=fs`，取 `fgea14dhmha4` 的 A830 汇编。
+- `render23`：GPU 跑到第 107 次提交（HFI 150 时间戳 107、已完成 106），停在重启后的 `iconservicesagent`（pid 100）第 4 次提交第 4 个 work，`primitive_gradient_vertex+fgea2ca11dhmha4`。同一管线在 pid 63 画过一次并完成。两次的区别如下：
+
+| | 完成（pid 63） | 挂起（pid 100） |
+|---|---|---|
+| 附件尺寸 | 87x87 | 192x192 |
+| 颜色附件 0 | IOSurface，清除 | IOSurface，载入 |
+| 在 pass 中的位置 | 第 1 个绘制 | 第 4 个绘制 |
+
+- `fgea2ca11dhmha4` 的 A830 汇编：用片元坐标除以 512 作坐标取纹理 t#3，有条件 `kill`，输出 DATA1、DATA2。
+- 各片段着色器的输入（`IR3_SHADER_DEBUG=fs`）里，两个挂起的着色器（帧缓冲读取未替换的 `ffea2ba11dhmha4`、`fgea2ca11dhmha4`）都有两项：0 号输入是空位，同时读片元坐标。空位来自 AIR 为每个 `[[stage_in]]` 成员按声明顺序分配 driver_location，没被读的成员（这里是 `primitive_position`）也占一个位置；ir3 的 `so->inputs[0]` 保持零值，打印成 `VARYING_SLOT_POS cm=0`。读片元坐标而没有空位的 `fpba*`、`foba*` 能完成，`fpba2ia11bemha4` 在 192x192 下也完成；有空位而不读片元坐标的着色器，未见挂起。
+- GL 的 st/mesa 在编译前删去没被读的输入并从 0 重新编号，10-26 的 GL 着色器没有这种空位。`render24` 用 `AIR_FS_INPUTS_PACKED=1` 在 `finalize_for_gallium` 里做同样的处理，帧缓冲读取恢复为真实读取，以必挂的 `ffea2ba11dhmha4` 检验。
+- `render24`：`ffea2ba11dhmha4` 的输入只剩 `VARYING_SLOT_LAYER`（`il=0`）和系统值，空位已去掉，仍然在第 6 次提交挂起。输入空位排除，开关只用于这一轮，AIR 源码里没有保留。`fgea2ca11dhmha4` 与 `ffea2ba11dhmha4` 的共同点剩下「用片元坐标算坐标的纹理读取」，而 `fpba*` 也这样读却能完成，这一共同点不足以解释挂起。
+- `render25` 用 `AIR_FB_READ=sample0`：AIR 自己生成 `txf_ms_fb`，采样号为常数 0，片段着色器不再读 `SYSTEM_VALUE_SAMPLE_ID`，逐采样着色随之关闭。
+- `render25`：汇编里 `SYSTEM_VALUE_SAMPLE_ID` 已经不在输入中，`ffea2ba11dhmha4` 仍在第 6 次提交挂起，采样号与逐采样着色排除。挂起的 `ffea2ba11dhmha4` 与 `ffia2ba3ca7dhmha4` 都读 1 号目标（RG16Float，描述符 0x38），10-26 的 GL 只读 0 号目标。`render26` 用 `AIR_FB_READ=rt0`：读取照常生成 `txf_ms_fb`，只把目标统一改为 0 号。
+- `render26`：仍在 SpringBoard 第 2 次提交第 3 个 work 挂起（这一轮是第 7 次提交），1 号目标与 RG16Float 排除。
+- `render18`～`render26` 从读帧缓冲里逐项去掉层号、采样号、目标号，并改写掩码、z 模式、单图元模式、GMEM／sysmem，都仍然挂起；只有整个读取换成常数 0 时完成。剩下的是 `isamm` 本身、片元坐标与 bindless 描述符的组合，以及绘制的其余状态，逐项减已经得不出新信息。
+- `render27` 改为一次取全量状态：内核 `12377-cmd8` 在挂起后打印 BR 的整条 IB1，并沿 `CP_INDIRECT_BUFFER`、`CP_SET_DRAW_STATE` 打印它引用的 IB 与状态组（三层），再按 `SP_GFX_BINDLESS_BASE[4]` 打印片段阶段 bindless 描述符的 55～58 槽，即 GPU 读到的帧缓冲描述符；freedreno 用 `FD_FB_READ_DUMP=1` 打印修补时写入的描述符；AIR 用 `AIR_FB_READ=log` 打印每个读帧缓冲的片段着色器及其目标，backboardd 也打开，用来找能完成的读帧缓冲绘制。
+- `render27` 的读数：
+  - GPU 从 bindless 描述符 55～57 槽读到的内容，与 freedreno 修补时写入的逐字相同，描述符的写入与缓存一致性排除。三个 GMEM 描述符：RGBA16F、RG16F、RGBA16F，GMEM 基址 0、0x30000、0x48000，128x128，bin 宽 192。
+  - `tools/k90auto/cp-state.py` 从命令树还原出挂起绘制的寄存器状态（GMEM pass 生效的 draw-state 组）。片段输入相关的寄存器与 freedreno 按着色器算出的一致：`SP_REG_PROG_ID_0` 采样号在 r2.x，`SP_REG_PROG_ID_2` 片元坐标 xy 在 r0.x、zw 在 r0.z，`SP_PS_CNTL_1.SYSVAL_REGS_COUNT` 为 5，`GRAS_CL_INTERP_CNTL` 与 `RB_INTERP_CNTL` 的 `COORD_MASK` 为 3。
+  - backboardd 这一轮没有读帧缓冲的片段着色器；SpringBoard 读帧缓冲的还有 `fpba2iba10bemha4` 与 `compositeSphere`，都排在挂起绘制之后。
+- 能完成与挂起的着色器对照下来，最小的挂起组合是片元坐标加 bindless 的帧缓冲读取：`fpba*` 读片元坐标、用非 bindless 的 `sam`，能完成；`render18` 去掉 varying、`render25` 去掉采样号，`ffea2ba11dhmha4` 仍然挂起。turnip 在 A8XX 上读 input attachment 用单采样的 `isam`，ir3 的 `txf_ms_fb` 生成带采样坐标的 `isamm`。`render28` 用 ir3 的测量开关 `IR3_FB_READ_ISAM=1`，帧缓冲读取改用 `isam`，不带采样坐标。
+- `render28`：汇编里两条读取都是 `isam.a.s2en.uniform.base4`，`ffea2ba11dhmha4` 仍在第 7 次提交挂起，`isamm` 排除，开关只用于这一轮，设备 Mesa 树里没有保留。我们的 Metal 路径里普通纹理都走非 bindless 的 t#，帧缓冲读取是片段着色器里唯一的 bindless 纹理访问。`render29` 用 `AIR_FB_READ=coord0`：读取仍是 bindless 的 `txf_ms_fb`，坐标换成常数 (0, 0)，着色器不再读片元坐标，用来区分「bindless 读取本身」与「片元坐标加 bindless 读取」。
+- `render29`：`ffea2ba11dhmha4` 的输入里已经没有 `SYSTEM_VALUE_FRAG_COORD`，仍在第 7 次提交挂起。挂起不依赖片元坐标，片段着色器经 bindless 描述符 0x37、0x38 读帧缓冲本身就会挂起。
+- ir3 为读帧缓冲只设 `so->bindless_tex`，指令里的采样器序号同样走 base4 的 bindless 编码，`SP_PS_CONFIG` 的读数是 `BINDLESS_TEX=1`、`BINDLESS_SAMP=0`；turnip 的着色器纹理与采样器都走 bindless，两个位都置上。`render30` 用 ir3 的测量开关 `IR3_FB_READ_BINDLESS_SAMP=1` 让读帧缓冲的着色器同时设 `bindless_samp`。
+- `render30`：命令树还原出的 `SP_PS_CONFIG` 为 0x40503，`BINDLESS_TEX`、`BINDLESS_SAMP` 都置上，仍在第 6 次提交挂起，开关只用于这一轮，设备 Mesa 树里没有保留。同一份还原里 `SP_GFX_BINDLESS_BASE[0..4]` 都写了 64 字节描述符的基址，fb-read 槽的内容与 `render27` 相同。
+- 另外两条可能也已排除：
+  - 描述符集 BO 的 `FD_BO_GPUREADONLY | FD_BO_CACHED_COHERENT`：redwood DRM 把所有 BO 都做成写合并内存，不区分这两个标志；挂起后 SMMU 没有故障位。
+  - turnip 用 `CP_LOAD_STATE6` 预装 bindless 纹理描述符：这是优化，turnip 对 input attachment 也不预装。
+- `render31` 用 ir3 自带的调试开关关掉 A7XX 起的可选特性，作为一个变量：`IR3_SHADER_DEBUG=noaliasrt,noaliastex,nopreamble,noearlypreamble,nodescprefetch`。挂起的片段着色器都在预备代码里用 `alias.rt` 把 1 号目标的 y 分量设为常数，读帧缓冲时还用 `alias.tex` 传描述符序号。
+
+### 8.12 `render31`：关闭 ir3 的可选特性后不再挂起
+
+- `render31` 关掉 ir3 自 A7XX 起的五项可选特性（`alias.rt`、`alias.tex`、预备代码、提前预备代码、描述符预取）后，整轮没有 HFI 150。同步模式下 SpringBoard 与 `iconservicesagent` 共完成 261 个绘制，`ffea2ba11dhmha4`、`ffia2ba3ca7dhmha4`、`fhe2afea2ca7dhmha4`、`fhea2ceabmca6dhmha4` 等读帧缓冲的着色器都画过。
+- 巡检截图：主屏有图标名称、搜索框和灰色 Dock，没有图标；点 Settings、滑出控制中心与通知中心后截图没有变化；末尾三张是 GPU 合成的模糊主屏。
+- 挂起不再出现之后，日志里出现两类绘制被拒绝：
+  - SpringBoard 与 `iconservicesagent` 的 `fpba2ma11bemha4`：「reads texture 1 and 1 texture was bound」。这一绘制所在的 encoder 只绑了 0 号纹理，着色器的 9 次纹理读取都落在 gallium 的 0 号槽，即 Metal 的 1 号纹理。驱动改为在同步模式下给被拒绝的管线打印一次模块（`refused-fragment`），下一轮据此核对 AIR 读到的纹理序号。
+  - backboardd 的计算着色器 `compute_average_luma`：「reads texture 0 and 1 texture was bound」，即 0 号槽绑定的是 nil。
+- 五项特性里是哪一项引起挂起，还要二分：`render32` 只关 `alias.rt` 与 `alias.tex`。
+- `render32` 只关两项 alias，`iconservicesagent` 的 `ffia2ba3ca7dhmha4` 在第 9 次提交挂起，原因在预备代码一组。`render33` 只关描述符预取，`ffea2ba11dhmha4` 在第 7 次提交挂起。读帧缓冲的 `txf_ms_fb` 用立即数描述符序号，不经过 `bindless_resource_ir3`，`ir3_nir_opt_prefetch_descriptors` 本来就不会为它生成预取，汇编里也没有预取指令。
+- 剩下普通预备代码与提前预备代码。挂起绘制的 `SP_PS_CNTL_0.EARLYPREAMBLE` 为 1，汇编统计有一行「1 early-preamble」。`render34` 只关提前预备代码（`noearlypreamble`）。
+- `render34` 只关提前预备代码，整轮没有 HFI 150，同步模式下 218 个绘制完成。读帧缓冲绘制的挂起由提前预备代码引起：`SP_PS_CNTL_0.EARLYPREAMBLE` 为 1 的片段着色器经 bindless fb-read 描述符读帧缓冲时，GPU 停在这次绘制上。
+- 修法：设备 Mesa 树的 `freedreno_devices.py` 在 A830 条目末尾加 `GPUProps(has_early_preamble = False)`，覆盖从 `a7xx_gen3` 继承的值，A829、A840 不变；改动记在 `tools/mesa/rebase-26/0004-a830-no-early-preamble.patch`。`render35` 用这份构建、不设任何 `IR3_SHADER_DEBUG` 开关做验证。
+- `render18`～`render30` 的测量开关（`AIR_FB_READ`、`FD_FB_READ_DUMP` 等）都已从源码撤掉。内核 cmd7 的 2 秒等待、cmd8 的命令树转储和 `tools/k90auto/cp-state.py` 保留，作为之后挂起排查的工具。
+
+### 8.13 `render35`～`render57`：图标管线与图标内容
+
+- `render35` 验证 §8.12 的修法：同步模式下 SpringBoard 与 `iconservicesagent` 完成 304 个绘制，整轮没有 HFI 150。主屏仍没有图标，`iconservicesagent` 的日志列出四类拒绝，下面逐项处理。
+- 未使用的纹理：`fpba2ma11bemha4` 的 `[[texture(1)]]`（`shape_tex`）带 `air.arg_unused`，RenderBox 不绑定它，AIR 仍把它列为必须绑定的资源，驱动拒绝绘制。`air_to_nir.c` 改为不登记带 `air.arg_unused` 的纹理与 API 采样器，对应 Metal 反射里的非活动参数。
+- 指针选择：RenderBox 路径顶点着色器（`vjba6la7dhmha4` 等三个）在分段缓冲里二分查找，循环里的 `select` 在同一缓冲的两个位置之间选，循环出口的 phi 合并两个不同偏移。`select` 两侧同属一块内存时改为对偏移做 `bcsel`，phi 的各个输入同属一块内存时偏移进寄存器，与沿循环传回的指针相同；不同资源之间仍然拒绝。RenderBox 把管线失败记为 precondition failure。
+- 图标表面导入：`iconservicesagent` 的 45x42、42x42 RGBA16Float IOSurface 每行 384 字节，分配 16384 字节；`fd6_layout.c` 为 GMEM 的 16x4 读写把末级补到 4 行的倍数，布局为 16896 字节，导入因大小检查失败。`fd6_resource.cc` 在线性、单级、单层且各行都落在内存内时接受导入，资源标记 `sysmem_only`，`fd_gmem_render_tiles` 对它直接画在内存里，不经过补齐的行。改动记在 `tools/mesa/rebase-26/0005-linear-import-last-level-padding.patch`。
+- `render36`：上述三类拒绝都消失，没有挂起。剩下的拒绝是自定义效果的 `custom_fn.MTL_VISIBLE_FN_REF`、没有片段函数的 `path_edges` 管线，以及 `iconservicesagent` 因 `unable to allocate sampler state: 4` 中止。
+- 采样器：RenderBox 的采样器 `minFilter`/`magFilter` 为 2。SDK 头文件只有 0 和 1，Metal.framework 的字符串表里 2 是 `MTLSamplerMinMagFilterCubic`。Gallium 没有三次滤波，`air_metal.c` 按线性采样；着色器自带的 bicubic 采样器仍然拒绝。
+- 纹理视图：`backboardd` 的 `compute_average_luma` 绑定的是纹理视图，驱动原来返回 nil，派发因 0 号纹理为空失败。`rwa_texture_view` 用同一个资源建第二个纹理，按视图的像素格式建采样视图、图像视图和渲染目标，要求每个纹素大小相同；驱动只接受覆盖全部层级与切片、类型不变的视图。
+- `render37`：`compute_average_luma` 不再失败，`iconservicesagent` 不再中止。控制中心、设置、锁屏与通知中心都画出来，设置的列表与搜索栏可见；主屏与设置列表仍没有图标。点开设置后十多秒才显示。
+- 自定义效果：`custom_fn` 来自 IconRendering 的 `[[stitchable]]` 函数（`sdfFill`、`glow`、`glassHighlight` 等）。RenderBox 的 StitchShader 先用 `-newFunctionWithDescriptor:error:` 取带 `specializedName` 的函数，再用 `-newLibraryWithStitchedDescriptor:error:` 生成拼接库，最后放进管线的 `fragmentLinkedFunctions.privateFunctions`。`_MTLLibrary` 把第一步交给 `MTLCompilerService`，后者在本系统上被 SIGKILL，后面两步没有发生；`render37` 的拼接库打印因此为空。`render38` 由驱动直接返回未特化的函数加名字与常量值，并打印三步的描述。
+- `render38` 的打印显示，RenderBox 与 QuartzCore 的着色器几乎都经 `-newFunctionWithDescriptor:error:` 取带 `specializedName` 与常量值的变体（`filter_distance_fragment` 特化为 `fpba2ma11bemha4` 等），`_MTLLibrary` 在进程内就能给出这些变体。驱动的代理绕过了这一步，管线按未特化模块的入口名建出后全部被拒绝，开机没有解锁，这一轮提前结束。之后的钩子先走 `_MTLLibrary` 自己的实现，只有它返回 nil 时才用代理。
+- IconRendering 的每个 `[[stitchable]]` 函数都有一个 `_v1` 版本，签名与 `custom_fn` 相同：`(float2, half4, constant*, device*, device*, device*, device*)`。不带 `_v1` 的版本参数是展开的标量、纹理结构和 `[5 x float2]` 变换，需要拼接图把参数从缓冲里取出来；RenderBox 自带 `__RB::Lfloat`、`__RB::Llayer`、`__RB::C0`～`C7` 等可拼接的取值函数。StitchShader 用公开的 `MTLFunctionStitchingInputNode`、`MTLFunctionStitchingFunctionNode`、`MTLFunctionStitchingGraph` 建图。
+- 链接函数的翻译：`air_link.inc` 把管线给出的链接函数按拼接图的节点顺序内联进调用处。每个节点的模块只读一次、全局变量只规划一次，节点之间直接传纹理、指针和含指针的结构体，NIR 的函数参数传不了这些值。主机上用 `air2nir --link` 可以复现同一翻译。
+- `render39`：`custom_fn` 以 `_MTLFunctionInternal` 出现在 `fragmentLinkedFunctions.privateFunctions` 里，特化在进程内完成；整轮没有调用 `-newLibraryWithStitchedDescriptor:error:`，代理也没有用到。自定义效果与 `path_edges` 管线都建成，管线与着色器的拒绝清零。
+- `render39` 的主屏仍没有图标。`iconservicesagent` 在 `render37` 与 `render39` 里都以 SIGTRAP 退出 10 次，每次都紧跟在它的一个 commit 跑完之后；每次退出后 `MTLCompilerService` 被 SIGKILL。日志里没有 trap 的位置。
+- `render39` 点开设置后，backboardd 连续 24 秒没有 commit，`render37` 的同一段也一样。`render37` 在点击后 16～32 秒之间画出设置；`render39` 只在控制中心手势时做了 19 个 commit，之后到结束没有 commit，截图从控制中心一步起停在黑色的圆角应用窗口。
+- `render40`～`render42` 起轮时没有设 `ICON_METAL=1`，`package.py` 因此不把 Metal 注册注入 `iconservicesagent`，它退回软件渲染：主屏图标、Dock 与设置列表的图标都画出来，进程也不再 SIGTRAP。`render31`～`render39` 都设了 `ICON_METAL=1`，`iconservicesagent` 走 GPU，每次 commit 结束后 SIGTRAP。软件渲染下 IconRendering 拒绝序列化图标（`TextureIOError.usingSoftwareRenderer`），设置「通用」页的图标是灰块（见 `package.py` 的说明）。
+- 这三轮的 boot-arg 加了 `systrace=1`（`render41` 起配 `systrace_name=nosuchproc`）与 `ustacks=Preferences`。`systrace` 同时打开 `osfmk/arm64/user_exception_trace.c` 的异常打印与 `bsd/dev/arm/systemcalls.c` 的失败系统调用打印，后者要用 `systrace_name` 限制进程，否则合并日志从 3 MB 涨到 20 MB。`ustacks_at` 从内核启动算起。
+- `render40` 新出现的拒绝：backboardd 的 `compute_average_luma` 绑定一个只含第 2 级的纹理视图（3 级纹理的 `levels 2+1`），驱动只做整张纹理的视图，派发因 0 号纹理为空失败 11 次。
+- 纹理视图改为可以只含一段连续的级别：视图的第 L 级是资源的第 `first_level + L` 级，采样视图、图像视图、渲染目标、读写与拷贝都按这个换算；切片仍然只接受全部。`rwa_texture_generate_mipmaps` 原来把 `util_gen_mipmap` 的源级别传成 1，第 1 级从来没有由第 0 级生成，两级的纹理什么都不生成；现在从视图的第一级开始。
+- `render44` 的异常打印：10 次 trap 的 PC 都是 `0x1cdd62208`（slide `0x1a4b4000`，IconRendering `+0x55208`），调用链 CoreUI → TextureIO → IconRendering。trap 前的代码对纹理取 `bufferBytesPerRow` 与 `height`，再对旁边的一个字段调 `swift_unknownObjectWeakLoadStrong`，结果为 nil 时执行 `brk #1`。日志里这段代码之前打印 `synchronously awaiting texture completion`。
+- 那个弱引用是纹理底下的 MTLBuffer。驱动的 `-buffer` 恒返回 nil、`-bufferBytesPerRow` 返回 0，纹理也不持有 buffer；Metal 里从 buffer 建的纹理会强引用这个 buffer。另外 `rwa_texture_from_buffer` 的纹理是 buffer 的一份拷贝，GPU 写进纹理的结果从来没有拷回 buffer，而 IconRendering 在等待完成后读的正是 buffer。
+- 修法：驱动的纹理持有它的 buffer，并如实返回 `-buffer`、`-bufferOffset`、`-bufferBytesPerRow`；库给 buffer 纹理记一个「已写」标记，绘制的颜色与深度目标、可写图像、纹理拷贝的目标、MSAA 解析目标与处理器写入都会置上；`-waitUntilCompleted` 等到栅栏后调 `rwa_buffer_textures_writeback` 把已写的纹理拷回 buffer，每次 commit 前的刷新对已写的纹理也改为拷回，不再用 buffer 的旧内容覆盖。
+- `render45`：`iconservicesagent` 不再 SIGTRAP，pid 64 跑了 105 个 commit、建了 119 条管线。之后 `adreno8: gpu SMMU fault 0x2 at 0:0x2545a000`，叶 PTE 为 0，内核关闭提交并保留页面到冷启动；随后 `fd_bo_new` 返回 NULL，`iconservicesagent`、SpringBoard、backboardd 都在 `fd_bo_mark_for_dump(NULL)` 处 SIGSEGV。
+- `render44`、`render45` 起轮时都没有带 `render31`～`render39` 用的 `JOB_ENV`（SpringBoard 与 `iconservicesagent` 的 `REDWOOD_SYNC_DRAWS=1`、PosterBoard 的 `OS_ACTIVITY_DT_MODE=YES`），绘制不逐个等待 GPU。缺页是否与这一差异有关，由 `render46` 补上 `JOB_ENV`、其余与 `render45` 相同来区分。
+- `render46` 带上 `JOB_ENV` 后仍然缺页：缺页时在跑的是 `iconservicesagent` 的 `vkba6pa7dhmha4` + `path_distance_fragment`（实例化的路径绘制）和 SpringBoard 的 `vhea3ecaca8fmha4`。FSYNR0 为 `0xe0003`，是一次读访问，叶 PTE 为空。内核把 BO 首尾相接地排在 GPU 地址空间里，越界读一般落进下一个 BO，缺页说明地址落在空洞里：已释放的 BO，或者最后一个 BO 之后。内核 `12377-cmd10` 记录最近 4096 次 BO 预留（地址、大小、pid、预留与释放时间），缺页时打印。
+- `render47` 没有出现缺页。GPU 画的图标成块错乱、带横向条纹，像是 GMEM 分块渲染的 tile 没有正确加载或写回。`render48` 只给 `iconservicesagent` 加 `FD_MESA_DEBUG=sysmem`，强制直接在内存里渲染。
+- `render48` 的缺页报告：地址 `0x24892000` 不在最近 4096 次预留的任何 BO 里，下方最近的存活 BO 是 SpringBoard（pid 30）8 毫秒前预留的 `0x2486a000+0x28000`，缺页地址正好是它末尾之后的第一个字节，上方没有存活的 BO，GPU 读过了地址空间里最后一个 BO 的末尾。
+- `render48` 缺页后提交关闭，三个进程重启。重启后的 `iconservicesagent`（pid 133）打开 GPU 被拒绝（`RedwoodGPU client refused (0xe00002c7)`），之后的图标都是软件渲染。缺页发生在第一张 GPU 画的图标截图之前，这一轮没有 sysmem 下 GPU 图标的读数。
+- 内核 `12377-cmd11` 按 KGSL 的做法给每个 BO 后面多预留一页保护页，映射到同一个清零的只读物理页，释放 BO 时一起清掉。GPU 读过末尾时读到零，不再缺页。
+- `render49` 整轮没有 SMMU 缺页，SpringBoard、backboardd、`iconservicesagent` 各只有一个 pid。`render45`、`render46`、`render48` 都缺页，`render47` 没有，保护页的效果还要看后面几轮。
+- `render49` 的 `iconservicesagent` 打开了 GPU，也设了 `FD_MESA_DEBUG=sysmem`，图标仍然错乱：圆角底板的形状和深色底色是对的，图形所在的下半部分是成段的绿、品红和白色横条。sysmem 与 GMEM 的结果相同，错乱与 GMEM 分块无关。
+- 下一步直接看中间结果。驱动加了 `REDWOOD_THUMBS=N`（配合 `REDWOOD_SYNC_DRAWS`）：从 `REDWOOD_THUMB_FROM` 号 commit 起，每次绘制完成后把每个颜色附件和每个片段纹理采成 32×32，打印进日志，共 N 张；`tools/k90auto/thumbs.py` 把它们还原成图，一行一次绘制，左边输入、右边输出。
+- `render50`～`render52` 的采样说明 GPU 这一侧大体正确：路径覆盖率逐笔累积成正确的形状，输入图层也对；图标在 GPU 之外出错。
+- 根因在驱动的 `-newBufferWithBytesNoCopy:`：它在创建时把调用方的内存复制一次，之后 GPU 写进 buffer 上纹理的结果只回到驱动的副本，调用方读的是自己那块内存。日志里 `iconservicesagent` 建了 147456 字节（192×192×4）、161408、34176 字节等 no-copy buffer，图标里成块的绿、品红、白色是这些内存原来的内容。
+- 修法：库给 no-copy buffer 记下调用方内存（`rwa_buffer_set_mirror`）。buffer 上的纹理从这块内存取数据，结果同时写回驱动的副本和调用方内存。写进 `-contents` 的数据仍然到不了调用方，这一点没有变。`render53` 只换这一处，其余同 `render49`。
+- `render53` 里 backboardd 在库的刷新路径上读到已释放的调用方内存（EXC_BAD_ACCESS，地址 `0x107d00040`）：buffer 还活着，调用方已经释放了自己那块内存。改为只写不读，只在 GPU 刚写完的纹理拷回时写进调用方内存，`render54` 验证。
+- `render54` 之后图标有了正确的底色，图形本身仍缺失。`render55` 的采样显示 IOSurface 上的花瓣等图层正确，`plane_image_stretch` 把它们贴进 192×192 的 buffer 纹理后只剩横条或透明。`render56` 只采这类绘制，变换矩阵与纹理坐标都对（commit 18 的第 2 次绘制把整张纹理贴到 12～134 像素）。没画出东西的绘制分两种：输入是 89×89 的 buffer 纹理时，输入本身就全透明；commit 18 的输入正确，绘制后 0 号与 2 号附件仍全透明。
+- `plane_image_stretch_fragment` 等 22 个 RenderBox 片段着色器在未特化的位码里，颜色输出的附件号是 function constant 的表达式（`air.render_target` 后面跟一个全局变量）。设备用的是 `_MTLLibrary` 特化后的位码；在 macOS 上用 `-newFunctionWithName:constantValues:error:` 特化同一函数，`bitcodeData` 里附件号已是常数（`i32 2`），构造函数也被删掉。`render57` 加的翻译期求值没有触发，已撤回；`render56` 里「Fr」写进 2 号附件是正确结果。
+- 库在每批工作前用 `vm_read_overwrite` 读取 no-copy buffer 的调用方内存，哈希变化时拷进驱动的副本。读到未映射的页时放弃这一次，不会再出现 `render53` 的崩溃；调用方经 `-contents` 写的数据在调用方内存不变时保留。`render58` 里 backboardd 大小的 buffer 有 31 次变化，`iconservicesagent` 的没有，图标没有变化。
+- `render56` 的回写打印说明，`iconservicesagent` 里全透明的 89×89 与 194×194 `RGB10A2Unorm` 纹理是 GPU 渲染目标，回写时 34176、161408 字节里非零的只有 0～253 个；同一批的 `R8Unorm` 目标有内容。commit 17 最后一段画进 194×194 `RGB10A2Unorm` 的管线是 `alpha_effect`（`fec2a2kdadba6kfmha4`）与 `fhe2ae2a2ca7kfmha4`、`fhe2afea2ca7kfmha4`，它们都读帧缓冲。`render59` 采这三条管线每次绘制前后的附件，并把设备上特化出的位码打进日志（`REDWOOD_DUMP_AIR`，`tools/k90auto/airdump.py` 还原）。
+- `render59` 的采样：`kfmha4` 管线的 0 号输入是 384×128、224×128 的 `RGBA16Float` 中间纹理，绘制前就全透明，输出因此为空，问题在更早画这些中间纹理的绘制。驱动的 IOSurface 检查改为只拒绝比描述符小的 surface（`redwooddrawable.m`），这一轮的两次拒绝都消失。
+- 位码打印改为只打印名字含 `REDWOOD_DUMP_AIR` 所给文字的函数，最多 16 个，每行间隔 2 毫秒。`render57`～`render59` 是一批，下一批改为按 commit 采样，先找出画坏中间纹理的那次绘制。
 
 ## 9. 无人值守的一轮
 
