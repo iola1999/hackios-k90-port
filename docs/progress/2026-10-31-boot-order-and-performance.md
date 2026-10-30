@@ -28,12 +28,22 @@
 | `kernel-12377-cmd30-warm3` | 同上 | 补齐整块、限定读取范围 | 种子装上；系统容器目录的访问控制表没有恢复，SpringBoard 建不了缓存目录，abort 后反复重启 |
 | `kernel-12377-cmd30-warm4` | 同上 | 访问控制表经 `chmod_extended` 恢复 | 首个 SpringBoard 显示全部图标与 Dock；lsd 处理器时间 24.5 秒降到 0.6 秒，containermanagerd 8.9 秒降到 0.15 秒；两个共享容器的恢复遇到 ENOMEM |
 | `kernel-12377-cmd31-warm5` | `12377-cmd31` | 收件箱 16 MB；ramfs 放锁后分配扩展属性的内存；种子含图标缓存 | 恢复没有报错，首个 SpringBoard 显示全部图标；iconservicesagent 仍画了 22540 次；8 次翻页里 3 次 52～55 帧／秒，4 次 15～34 帧／秒、最长间隔 125～217 毫秒 |
+| `kernel-12377-cmd31-warm6` | 同上 | 种子加回 PluginKitPlugin 容器（`seed-plugins.bin`） | 天气与日历小组件显示内容；壁纸仍黑，没有电池图标 |
+| `kernel-12377-cmd32-bo2` | `12377-cmd32` | GPU buffer 地址在 512 MB 内循环，单个 buffer 拿不到地址时只拒绝这一个；80 次翻页 | 80 次翻页 GPU 没有停用。打包时漏了 `REST=1`，launchd 任务集只有 37 条，见 §2 |
+| `kernel-12377-cmd32-bo3` | 同上 | `REST=1` 改为默认；`var_store` 对存档里没有访问控制表的项去掉继承来的表；`seed-icons.bin` | 图标缓存保留，iconservicesagent 开机后绘制 2557 次；全轮处理器时间 309 秒；翻页帧率在约 54 与约 23 帧／秒两档之间切换，见 §3；第 70 次翻页前后进入了图标编辑模式 |
+| `kernel-12377-cmd33-bo4` | `12377-cmd33` | 处理器温度限制改为逐档升降；巡检末尾去掉电池百分比文字层的 `destOut` | 集群 1 最高 70～71 °C，不再长时间停在最低档；第 40 次翻页前已进入图标编辑模式，图标持续抖动，backboardd 绘制 282 万次，帧率不能与 `bo3` 比较。去掉 `destOut` 后百分比文字显示，电池外框与填充仍不显示 |
 
-内核身份：`12377-cmd25`～`12377-cmd31` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。
+内核身份：`12377-cmd25`～`12377-cmd33` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。
 
 ## 2. 处理器占用
 
-结论与读数见 [launchd 任务集分析](../analysis/2026-10-31-launchd-jobs-and-boot-cpu.md) §1～§3。`REST=1` 是 `package.py` 的开关，之后的轮次都带它。
+结论与读数见 [launchd 任务集分析](../analysis/2026-10-31-launchd-jobs-and-boot-cpu.md) §1～§3。`REST=1` 是 `package.py` 的开关，`bo3` 起默认打开，`REST=0` 关闭。
+
+`bo2` 打包时环境里没有 `REST=1`，复现了 37 条任务的状态：
+
+- 全轮 `ps` 的处理器时间 1386 秒，`bo3` 为 309 秒。占用最多的是 SpringBoard 423 秒、launchd 340 秒、appprotectiond 176 秒、MapKit 的快照服务 126 秒、logd 84 秒。
+- 空闲时 20 秒中断采样里空闲只占 43%。appprotectiond 的回溯在 DeviceManagement 与 Catalyst 的连接代码里，MapKit 快照服务在 GeoServices 新建连接，launchd 的样本多在内核态。
+- 集群 0 有约 70% 的时间在 3072 MHz，最高 77 °C。翻页帧率中位数 20 帧／秒，第 21～80 次多在 9～11 帧／秒。
 
 ## 3. GPU 路径的等待与上传
 
@@ -50,6 +60,10 @@
 - `wait1` 之前，`adreno8_context_done` 每次查询都读三套 SMMU 故障寄存器、GMU 中断与 HFI 队列，`hash1` 的采样里这部分占 SpringBoard 滑动时处理器时间的大半；改为每毫秒最多一次后，控制中心打开从 197 毫秒降到 25 毫秒。
 - `bo1` 的 next-fit 分配没有带来可见变化，buffer 分配本身不是瓶颈。
 - 内核每 5 秒的 GPU 统计（`bo1`）：GPU 频率 342 MHz；每 5 秒 460～490 次提交，平均每次 GPU 执行约 1 毫秒，其中 15～22 次超过 4 毫秒；约三分之一的提交要等队列空位。
+
+`bo3` 的 80 次翻页按十次一组取中位数：53.5、22.9、22.8、22.8、44.7、54.6、53.5、26.4 帧／秒。帧率与 GPU 频率无关，160 MHz 时也有 56 帧／秒的翻页。慢的时段对应集群 1 的温度限制：30 秒窗口里有 2 个滴答读到 70 °C，按当时的规则集群降到最低档 1017 MHz，直到所有传感器低于 60 °C，窗口里 63%～75% 的时间停在最低档。`12377-cmd33` 把这条规则改为逐档升降：读数达到 70 °C 时每 50 毫秒降一档，低于 65 °C 时每 200 毫秒升一档，两者之间保持，75 °C 或没有读数时直接到最低档。`bo4` 里集群 1 的最高读数在 68～71 °C，没有再出现长时间停在最低档的窗口。
+
+`bo3`、`bo4` 都在翻页途中进入了图标编辑模式。主屏图标按住约 700 毫秒才进入编辑模式，翻页的手指在 300 毫秒内移开，所以进入编辑模式说明触摸期间有超过 700 毫秒的停顿；`bo3` 第 45 次翻页的窗口里只有 1.8 帧／秒。编辑模式下图标持续抖动，backboardd 一直在画，之后的帧率读数不能用。下一轮的翻页从屏幕边缘起手，每 10 次按一次主屏键。
 
 ## 4. 开机图标
 
@@ -73,8 +87,9 @@
 ## 6. 未解决
 
 - 壁纸：MercuryPosterExtension 渲染出 1125x2436 的 surface，屏幕上仍是黑色；PosterBoard 仍报 `-2222`、`FBProcessManager 2`、`Gallery configuration is nil`。不带 GPU 的 `seed2`、`seed3` 也是黑色。
-- 小组件：带种子开机后天气与日历小组件显示为白色方块；chronod 的 `icons` 目录里只有零字节的 HEIC 临时文件。
-- iconservicesagent 开机后约 45 秒的绘制：种子带上图标缓存后没有减少（`warm5`）。
+  - `bo2` 的图层树：`_SBWallpaperSecureWindow` 里有 `PBUIPosterSceneLayerHostView`，其下的 `_UISceneLayerHostContainerView` 只有 `_UITouchPassthroughView`，没有承载海报场景的图层。
+  - 两个 MercuryPosterExtension 进程的主线程停在 `UIApplicationMain` 的 run loop 里，处理器时间 0.2 秒左右。
+  - PosterBoard 在 `bo3` 里 28 次报 PosterKit 的 `not available`，28 次报 `XPC service invalidated`，另有一次 `FBProcessManager` 的 `already-exists`（MercuryPoster 的进程已存在，忽略执行上下文）和两次 `Scene was invalidated`。
 - 翻页卡顿：`warm5` 翻页时 GPU 统计窗口从 5 秒拉长到 7～8 秒，提交中约一半要等队列空位；GPU 最高 342 MHz。
-- 电池图标：GPU 合成下不显示；SpringBoard 有一条管线被 AIR 拒绝（`custom_effect-fgea5cmba5dhmhba3`，片段着色器把指针存进内存），与电池图标的关系未确认。
+- 电池图标：GPU 合成下不显示。`bo2` 上 backboardd 改用 sysmem（`FD_MESA_DEBUG=sysmem`）、或加上 AdrenoMetal 用的四个 `CA_*` 环境变量后，电池图标仍不显示。SpringBoard 被 AIR 拒绝的那条管线是 SwiftUI 的 `custom_effect:distanceGradient_v1`，与电池图标的关系未确认。`bo4` 用 `notify com.redwood.battery.nofx` 去掉百分比文字层的 `destOut` 后，文字「73」显示出来，两个 `CAShapeLayer` 外框和填充层仍不显示，下一步查 backboardd 画路径形状的那条路。
 - backboardd 在 `bo1` 滑动时 SIGSEGV，没有崩溃记录；`usertrap=1` 之后的轮次会打印回溯。

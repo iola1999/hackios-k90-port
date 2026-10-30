@@ -28,24 +28,27 @@
 - 根镜像的容量：loader 把根镜像放在内核之后，两者都要在常驻系统盘的 128 MB 处之前结束（`RESIDENT_RD_OFFSET`）。`12377-cmd30` 的静态部分到 104 MB，根镜像最多约 24 MB，超出时 loader 报「kernel and ramdisk overlap the resident image」（`warm1`）。`make-payload.py` 在上传前检查这一项。
 - 种子的裁剪：`seed3` 取回的完整种子 329 MB、27865 项，压缩后约 92 MB。图标缓存（`systemgroup.com.apple.lsd.iconscache`）57 MB，PosterBoard 的数据（`PRBPosterExtensionDataStore`）52 MB，其余是定位、符号化、Biome、智能平台等缓存。`seed-trim.bin` 去掉这些缓存、PosterBoard 的数据与 PluginKitPlugin 容器（小组件扩展的数据），约 117 MB；`seed-noicons.bin` 再去掉图标缓存，留下 LaunchServices 数据库、其余容器、偏好设置与 SpringBoard 的布局，约 59 MB，压缩后约 7 MB。删除清单与种子放在本地证据目录。
 - 访问控制表：containermanagerd 把系统容器的目录建成权限 0、属主 uid -2，靠 `com.apple.system.Security` 里的访问控制表放行进程。`setxattr` 拒绝写 `com.apple.system.` 开头的属性，只按属主和权限恢复时 SpringBoard 建不了缓存目录，在启动时 abort 并反复重启（`warm3`）。`var_store` 改为把这个属性转回 `kauth_filesec`，交给 `chmod_extended` 写回（`userland/src/var_store_acl.inc`）。
+- 继承来的访问控制表：容器目录的表带继承标记，`var_store` 在其下新建的文件和目录会自动得到一份。存档里没有表的项，恢复后要把继承来的表去掉，否则与取种子时的状态不一致。`var_store` 对这类项调用 `chmod_extended` 删除表。
+- 图标缓存的保留条件：iconservicesagent 启动时由 `-[ISMutableIconCache initWithURL:]` 检查缓存目录（`com.apple.IconsCache/<UUID>`）。目录里的 `__cache_info__` 记录的 `ProductBuildVersion` 与系统一致、属主是 `_iconservices`、目录上没有访问控制表，三条都满足才保留缓存，否则清空 `com.apple.IconsCache` 后重建。`warm5` 恢复的缓存目录带着继承来的表，所以每次开机都被清空。
 
 ## 4. 验证
 
 - `warm4`（`12377-cmd30`，带 GPU，`seed-noicons.bin`）：开机后第一张截图里首个 SpringBoard 显示全部图标、两个小组件的位置与 Dock，没有重启 SpringBoard，也没有打开应用。
 - 早期线程转储里 SpringBoard 主线程在 run loop 里，没有停在 CoreServices 的锁上。
 - 巡检结束时的 `ps`（`style2` → `warm4`）：lsd 用户态加系统态 24.5 秒降到 0.6 秒，containermanagerd 8.9 秒降到 0.15 秒。iconservicesagent 没有变化（约 32 秒），种子里没有图标缓存。
-- `warm5`（`12377-cmd31`，`seed-trim.bin`，含图标缓存）：恢复 2713 个目录、1513 个文件，没有报错。首个 SpringBoard 同样显示全部图标。iconservicesagent 仍在开机后约 45 秒内画了 22540 次，处理器时间约 34 秒，种子里的图标缓存没有被直接用上，原因未查。
+- `warm5`（`12377-cmd31`，`seed-trim.bin`，含图标缓存）：恢复 2713 个目录、1513 个文件，没有报错。首个 SpringBoard 同样显示全部图标。iconservicesagent 仍在开机后约 45 秒内画了 22540 次，处理器时间约 34 秒：启动时打印 `Cache reset complete: removed 1 items`，恢复的缓存被清空，原因见 §3「图标缓存的保留条件」。
+- `warm6`（`12377-cmd31`，`seed-plugins.bin`：`seed-noicons.bin` 加回 PluginKitPlugin 容器）：天气与日历小组件显示内容。
+- `bo3`（`12377-cmd32`，`seed-icons.bin`：图标缓存加 PluginKitPlugin 容器，`var_store` 去掉继承来的表）：iconservicesagent 启动时不再打印 `Resetting icon cache`，开机后绘制 2557 次（`warm5` 为 22540 次），处理器时间 17.5 秒。
 - `warm4` 有两个共享容器恢复时遇到 ENOMEM：ramfs 读扩展属性时在锁内用 `Z_NOWAIT` 分配内存，突发读取时会失败。`12377-cmd31` 改为放锁后可等待地分配（`bsd/miscfs/ramfs/ramfs_xattr.inc`），`warm5` 没有再出现。
 
 仍未解决的问题：
 
 - 壁纸仍是黑色，不带 GPU 的 `seed2`、`seed3` 也是黑色。
 - 带 GPU 时右上角没有电池图标。
-- 带种子开机后两个小组件显示为白色方块。种子去掉了 PluginKitPlugin 容器；chronod 的 `icons` 目录里只有零字节的临时文件，取种子的那次开机就是这样。
 
 ## 5. 使用与限制
 
-- `cycle.py --seed FILE`（或环境变量 `K90_SEED`）带种子开机，自动加 `var_store=1`。种子和删除清单放在本地证据目录，不入库。
+- `cycle.py --seed FILE`（或环境变量 `K90_SEED`）带种子开机，自动加 `var_store=1`。种子和删除清单放在本地证据目录，不入库。当前用 `seed-icons.bin`（约 135 MB，根镜像放得下）。
 - 取新种子：`GPU_STAGE=0`、`outbox_mb=400` 起一轮，开机稳定后重启 SpringBoard 并解锁，再 `var_store save /private/var/tmp/var.seed` 与 `outbox /private/var/tmp/var.seed`，停轮后在 `run/outbox.bin` 取到，用 `varseed.py drop` 按删除清单裁剪。
 - 种子绑定这一版系统盘里的应用集合与容器编号。系统盘的应用变化后要重新取种子。
 - 根镜像余量：`12377-cmd31` 把 loader 收件箱从 32 MB 减到 16 MB（仍放得下约 15 MB 的 AIR 库），根镜像余量从 24 MB 增到 40 MB。PosterBoard 的数据压缩后约 34 MB，加上其余部分仍放不下；要带上它，种子需要改放进系统盘镜像，或者调整 loader 的 `RESIDENT_RD_OFFSET`，后者要刷写 loader。

@@ -213,7 +213,10 @@ JOBS_DIR = HERE / "jobs"
 # thread rebuilt its Sleep.framework connection to com.apple.sleepd.sleepserver, and MapKit's
 # snapshot service its GeoServices connection, for as long as the round lasted. The iOS 16.5 desktop
 # ran on the same kind of set (388 jobs, docs/analysis/2026-10-28-ios26-icon-model-and-launchd-cache.md §2).
-REST = os.environ.get("REST") == "1"
+# On by default, REST=0 turns it off: kernel-12377-cmd32-bo2 was packed without it by mistake and
+# spent 57% of four processors on those reconnects (launchd, MapKit's snapshot service,
+# appprotectiond), ran its cores at 3 GHz, reached 77 C and dropped the GPU to 160 MHz.
+REST = os.environ.get("REST", "1") == "1"
 REST_DIR = OUT / "rest-jobs"
 # mkjobs.py's DENY was written on iOS 16.5; for this boot it changes in two places.
 # - com.apple.dmd is let through. DeviceManagement's clients reconnect to it without a pause when
