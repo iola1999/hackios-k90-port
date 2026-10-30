@@ -34,6 +34,8 @@
 
 重建后使用已认证的 GitHub API 检查改写前的 87 个提交标识，其中顶层仓库 60 个、kernel 27 个，全部返回 HTTP 404。未登录访问检查中，两个仓库的当前提交 API 均返回 HTTP 200；各抽查一个改写前提交，其 commit API、网页及原始文件 URL 均返回 HTTP 404。提交邮箱按用户要求保留。
 
+2026-10-30 第二次改写：顶层提交 `609b473` 往 `docs/progress/2026-10-30-status-consolidated.md` 写入了三个会话标识前缀，`7ee1d8e` 已从文件中删除，历史里仍在。按用户授权用 `git filter-repo --replace-text` 替换这三处后强推 `main`，`609b473` 及之后共 12 个提交的 ID 改变（改写后为 `95dc056` 至 `ea20a2c`），更早的提交不变；改写后的可达历史检索不到这三个标识。改写后未登录访问旧 SHA `609b473`、`7ee1d8e`、`e0a0bdb` 的提交网页仍返回 HTTP 200，从服务器上移除需要 GitHub 支持清理，或按上一轮做法删除后重建仓库。
+
 已有其他 checkout 在继续推送前需要重新同步清理后的分支。旧 checkout 合并旧提交可能再次引入个人标识，推送前应检查所包含的历史。GitHub 的服务器备份及其他克隆副本无法通过仓库访问测试确认是否已清除，参见 [GitHub 历史清理说明](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)。
 
 ## 4. fork 关系与仓库信息
