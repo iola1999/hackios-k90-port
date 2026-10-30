@@ -87,8 +87,14 @@
 | `kernel-12377-cmd11-render75` | 同上 | SpringBoard 按 `render74` 的变体名匹配 | 没有采样：同一着色器的变体名每次开机都变，匹配不到 |
 | `kernel-12377-cmd11-render76` | 同上（驱动：采样边长可设，`REDWOOD_THUMB_SIZE`） | SpringBoard 按 `primitive_custom` 匹配整个 commit，采样 128×128 | 90 张的额度在 commit 4（256×128 的内容）用完，没有采到图标；日志 13 MB，超出两次拉取之间的环形缓冲，采样行有缺失 |
 | `kernel-12377-cmd11-render77` | 同上（驱动：纹理 buffer 的对齐查询与线性纹理答同一个值；记录每个 buffer 纹理的行字节数） | 无采样 | 图标上的文字碎片与黑块消失，Settings、Wallet、Notes、Reminders、Clock、App Store、Maps 画对，两个小组件都有内容；FaceTime、Mail、News、Games、Health、Safari、Music 的图形里仍有斜向条纹 |
-| `kernel-12377-cmd11-render78` | 同上（驱动：`REDWOOD_THUMB_ONLY` 按角色和槽位挑采样） | SpringBoard 按 `custom_effect` 匹配整个 commit，128×128，只采 0、1 号附件与 0 号纹理 | commit 2 画一把钥匙的玻璃效果：先取轮廓，再经两组各 4 次的乒乓滤镜，最后得到法线样的光照纹理；第二次乒乓起中间结果出现横竖拖尾和整块色块，光照纹理下半部有一条横向断层 |
+| `kernel-12377-cmd11-render78` | 同上（驱动：`REDWOOD_THUMB_ONLY` 按角色和槽位挑采样） | SpringBoard 按 `custom_effect` 匹配整个 commit，128×128，只采 0、1 号附件与 0 号纹理 | commit 2 画一把钥匙的玻璃效果：取轮廓、两组各 4 次的乒乓滤镜、输出法线样的光照纹理；按 Metal 的语义逐次核对后没有找到错误（§8.13） |
 | `kernel-12377-cmd11-render79` | 同上（驱动：`REDWOOD_DUMP_AIR` 可给多个名字） | SpringBoard 打印 `render78` 中按地址查到的管线位码 | 取回的是 stroke 等其他管线：管线对象释放后地址被新管线复用，`render78` 的名字要按日志顺序取最近一次建立的那条 |
+| `kernel-12377-cmd11-render80` | 同上（驱动：位码打印带上片段阶段链接的函数） | SpringBoard 打印 `fpba`、`foba` 开头的管线位码 | 取到 9 个完整模块；这些管线没有链接 `custom_fn`。`fp` 类是 `filter_distance`，`fo` 类是 `filter_blur` |
+| `kernel-12377-cmd11-render81` | 同上 | SpringBoard 按 `path_exterior` 逐次采样 1 号附件，192×192，带顶点数据 | 5 次采到的是别的管线：驱动按地址记管线名，地址被新管线复用后仍返回旧名字。真正的那次 `path_exterior`（120×120 圆角矩形）覆盖率干净 |
+| `kernel-12377-cmd11-render82` | 同上（驱动：同一地址的新管线替换旧记录） | 同 `render81` | SpringBoard 整轮只有这一次 `path_exterior`，图标的图形不走路径绘制；采样拖慢 SpringBoard 后，几个图标上又出现「Passcode」等文字碎片 |
+| `kernel-12377-cmd11-render83` | 同上（驱动：`REDWOOD_THUMB_TEXTURE` 按绑定纹理的尺寸挑绘制） | SpringBoard 采读 194×194 图层的绘制，192×192 | 194×194 的图层是平滑的法线样光照图；FaceTime 在 commit 58，镜头的白色条纹出现在 w4 与 w7 之间，中间的 w5、w6 读 50×83 的 IOSurface 图形 |
+| `kernel-12377-cmd11-render84` | 同上（驱动：IOSurface 导入打印尺寸与行字节数） | SpringBoard 采读 50×83、101×94 IOSurface 的绘制 | 处理器读到的 IOSurface 图形干净，GPU 采样画出的已经错切：镜头 50×83 按 224 字节一行建，按 256 读；机身 101×94 按 416 建，按 448 读 |
+| `kernel-12377-cmd12-render85` | 内核 `12377-cmd12`：IOSurface 的行字节数补齐到 64 | 无采样 | 三次尝试都在启动早期 panic（`cpu_id <= ml_get_max_cpu_number()` 断言），没有进桌面，补齐的效果未验证 |
 
 两轮内核相同（`out/xnu12377-f055cc0a-restored.bin`），cmdline 相同（`cpus=2 bootcpu=7`，`adreno8_speed=3`）。`interactive1` 的驱动为 `ceefc187…`，AIR 仍为 `b5b44d51…`。
 
@@ -449,7 +455,17 @@ freedreno 对读帧缓冲的绘制有三处特殊处理，挂起可能出在其�
 - `render71` 主屏的图标上除了横条，还有标签文字的碎片（「Games」「Settings」的片段等）和黑色方块。`render72` 的日志里，两个进程都查询了 RGB10A2 的两种对齐：驱动对线性纹理答 64，对纹理 buffer 答 16；`iconservicesagent` 的 194×194 buffer 纹理按 832 字节一行写回，是 64 对齐。
 - `render77` 让纹理 buffer 的对齐查询返回线性纹理的值（`redwoodmetal.m` 的 `minimumTextureBufferAlignmentForPixelFormat:`），文字碎片和黑块都消失，Settings、Wallet、Notes、Reminders、Clock、App Store、Maps 画对。这一轮 SpringBoard 建的 194×194 buffer 纹理都是 832 字节一行；此前的轮次没有记录行字节数，按 16 对齐读的推断没有直接读数。
 - `render77` 之后 FaceTime 相机图形的轮廓位置正确，填充里有一组间距约 13 像素、略向右上倾斜的细缝，镜头部分的条纹越过了轮廓；Photos 的花瓣上也有同样的斜线。轮廓本身没有错切，这些细缝出在图形的绘制过程里。
-- `render78` 采到 SpringBoard commit 2（一把钥匙）的整条滤镜链，管线名按日志顺序对应：w7 `fpba2ia11bemha4` 取轮廓，w8～w11 `fpba2ma11bemha4` 乒乓 4 次，w12 `fpba3ba10bemha4`、w13 `fpba2iba10bemha4` 各一次，w14～w17 `foba3bia9bemha4` 再乒乓 4 次，w18 `fpba2eca10dhmha4` 输出法线样的光照纹理，w19 写进 122×122 的 `RGB10A2Unorm` buffer 纹理。前缀 `fp` 的都是 `filter_custom` 加一个链接进来的 `custom_fn`。w9 起中间结果出现横竖拖尾，w12 的输出里钥匙左下有一整块红色；w15、w17 写出的内容与 w13 几乎相同，w16 与 w14 几乎相同。下一步取这些管线与各自 `custom_fn` 的位码。
+- `render78` 采到 SpringBoard commit 2（一把钥匙）的整条滤镜链，管线名按日志顺序对应如下。
+  - w7 `fpba2ia11bemha4`：由轮廓求初始距离。
+  - w8～w11 `fpba2ma11bemha4`：4 次 9 点的距离传播。
+  - w12 `fpba3ba10bemha4`、w13 `fpba2iba10bemha4`：各一次。
+  - w14～w17 `foba3bia9bemha4`：4 次 8 点模糊。
+  - w18 `fpba2eca10dhmha4` 输出法线样的光照纹理，w19 把它写进 122×122 的 `RGB10A2Unorm` buffer 纹理。
+- 按 Metal 的语义逐次核对，这条滤镜链没有找到错误。
+  - 距离传播结果里的横竖色带来自采样的显示方式：分量超过 1 时截到 1。竖直边左侧的最近点都在水平方向，G 为 0，显示为整块红色。
+  - 模糊管线的 writeMask 是 0x8，即 Metal 的 Red，只写 R；G 保留上一次的内容，所以相邻两次的输出交替相似。
+- 剩下的斜向条纹出在 IOSurface 的行距上。`render84` 的导入记录里，SpringBoard 的图形 IOSurface 由客户端指定 32 字节对齐的行字节数（50×83 为 224，101×94 为 416，146×117 为 608），A830 采样这些线性纹理时按 64 字节的整数倍取行距，每行多走 32 字节，图形成了一组斜向色带。行字节数是 64 倍数的图形（124×105 的 512、110×110 的 448）画对。
+- 修法放在内核：MiniIOSurface 在自己分配内存的单平面 surface 上把客户端给的 `IOSurfaceBytesPerRow` 补齐到 64，客户端从 `IOSurfaceGetBytesPerRow` 读行距；包裹客户端内存的 surface 不改。内核 `12377-cmd12`；`render85` 三次都在启动早期 panic，待重跑。
 
 ## 9. 无人值守的一轮
 
