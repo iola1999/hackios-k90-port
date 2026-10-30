@@ -11,7 +11,7 @@ the workspace.
 
 env: K90_EVIDENCE (default docs/progress/evidence/k90auto), CPU_ARGS (default
 "cpus=2 bootcpu=7 small_cores_after=0"), GPU_SPEED (adreno8_speed, default 3: up to 342 MHz with load;
-kernels before 34209c1 need 1), SYSTEM (workspace-relative system image the loader keeps resident,
+kernels before 34209c1 need 1), GPU_STAGE (adreno8, default 23; 0 boots without the GPU), SYSTEM (workspace-relative system image the loader keeps resident,
 default hackios-xnu-kernel/userland/system.apfs), SYSTEM_WINDOW (hex window bytes; required for an
 image over 0xffffffff bytes, which run-auto.py then transfers by the chunked protocol),
 MEMSIZE and IDENTITY (passed to mkpayload.py as --memsize and --identity; iOS 26 needs
@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 import time
@@ -52,6 +53,31 @@ def digest(path):
 
 
 assert digest(kernel) == record["kernel"]["sha256"]
+
+
+def kernel_top(path):
+    """The end of the kernel's highest segment, as an offset from boot_args.virtBase."""
+    data = Path(path).read_bytes()
+    magic, _, _, _, ncmds, _, _, _ = struct.unpack_from("<IiiIIIII", data)
+    assert magic == 0xfeedfacf, f"{path} is not a 64-bit Mach-O"
+    at, top = 32, 0
+    for _ in range(ncmds):
+        cmd, size = struct.unpack_from("<II", data, at)
+        if cmd == 0x19:                                  # LC_SEGMENT_64
+            vmaddr, vmsize = struct.unpack_from("<QQ", data, at + 24)
+            if vmsize and vmaddr >= 0xFFFFFFF004000000:
+                top = max(top, vmaddr + vmsize - 0xFFFFFFF004000000)
+        at += size
+    return top
+
+
+# The loader puts the root image right after the kernel, and both have to end below the resident
+# system image at 128 MB (xnuloader: RESIDENT_RD_OFFSET); past that it refuses the run with "kernel
+# and ramdisk overlap the resident image" after the system image is already uploaded.
+page = 0x4000
+room = 0x08000000 - (kernel_top(kernel) + page - 1) // page * page
+assert (ramdisk.stat().st_size + page - 1) // page * page <= room, (
+    f"{ramdisk} is {ramdisk.stat().st_size} bytes and only {room} fit between the kernel and the resident image")
 system_image = Path(os.environ.get("SYSTEM", system_guard.DEFAULT_SYSTEM))
 window = os.environ.get("SYSTEM_WINDOW", "")
 assert system_image.is_file(), system_image
@@ -63,6 +89,9 @@ system_error = system_guard.identity_error(system_image, system_bytes,
 assert system_error is None, system_error
 cpu_args = os.environ.get("CPU_ARGS", "cpus=2 bootcpu=7 small_cores_after=0")
 gpu_speed = int(os.environ.get("GPU_SPEED", "3"))
+# GPU_STAGE=0 boots without the GPU: the kernel can then return to the loader (with the GPU it waits
+# for a cold reset, see adreno8_quiesce), which is what a file left in kern.redwood.outbox needs.
+gpu_stage = int(os.environ.get("GPU_STAGE", "23"))
 memsize = os.environ.get("MEMSIZE", "")       # iOS 26 needs the RAM it is staged into: 300000000
 identity = os.environ.get("IDENTITY", "")     # and the loader identity of that iOS: v57
 # rootdev=md0 and launchd_unsecure_cache=1 belong to the fixed set: iOS 26's launchd takes its jobs
@@ -71,7 +100,7 @@ identity = os.environ.get("IDENTITY", "")     # and the loader identity of that 
 # them launchd prints "Skipping boot-task" instead of "Using unsecure cache" and no extension record
 # ever reaches it. Every run before this harness carried them; the desktop of 2026-10-27 12:40 on the
 # same root image (15 icons, two named widgets, four Dock icons) is one of those runs.
-cmdline = (f"debug=0x10e rootdev=md0 launchd_unsecure_cache=1 {cpu_args} epoch={int(time.time())} adreno8=23 adreno8_pause=0 adreno8_fine=0 adreno8_watch=0 "
+cmdline = (f"debug=0x10e rootdev=md0 launchd_unsecure_cache=1 {cpu_args} epoch={int(time.time())} adreno8={gpu_stage} adreno8_pause=0 adreno8_fine=0 adreno8_watch=0 "
            f"adreno8_keep=1 adreno8_return=0 adreno8_speed={gpu_speed} adreno8_secure_preflight=4 touchscreen=2 buttons=1 battery=1 "
            f"{extra}").strip()
 # Fail here rather than discover it 400 seconds into a run: a payload that boots into a desktop with

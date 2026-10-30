@@ -44,6 +44,7 @@ import re
 import struct
 import subprocess
 import sys
+import zlib
 
 HERE = Path(__file__).resolve().parent        # tools/k90auto/
 WORKSPACE = HERE.parents[1] / "hackios-xnu-kernel"      # the kernel checkout, from <workspace>/tools/k90auto
@@ -55,6 +56,11 @@ SRC_ROOT = Path(os.environ.get("PAYLOAD_SRC_ROOT", str(WORKSPACE)))
 # root image. The base image's copies are frozen by BASE_ROOT_SHA256, so a program that changed
 # (metal_drv_test, for one) has to be named here or the image keeps the old binary.
 EXTRA_PROGRAMS = [Path(p) for p in os.environ.get("PAYLOAD_PROGRAMS", "").split(":") if p]
+# SEED=path packs a /private/var archive as etc/var.seed: `var_store save FILE` wrote it at the end of
+# an earlier boot and rwsh "outbox" carried it to the host (run/outbox.bin). With var_store=1 among
+# the boot arguments init unpacks it over the skeleton, so the LaunchServices database, the icon
+# cache and PosterBoard's data are there from the first second instead of being rebuilt.
+SEED = Path(os.environ["SEED"]) if os.environ.get("SEED") else None
 # The AIR library is not compiled here; tools/k90auto/build-air.py is the only entry point that
 # builds it, because the arm64e build reads its own copy of the sources and an unsynced edit builds
 # a valid library that is missing what the round is meant to measure. Its record says which library
@@ -84,11 +90,17 @@ VARSTORE_SHOW = os.environ.get("VARSTORE_SHOW") == "1"
 VARSTORE_LINE = "/redwood/bin/var_store show\n"
 BASE = WORKSPACE / "out/ios26-resume/air-arm64e-device/on"
 TOOLS = WORKSPACE / "tools/apfs"
+# XPCWATCH="NAME ..." inserts libredwood-xpcwatch.dylib (userland/src/xpcwatch.c) into the programs
+# with those file names: it puts the named services they connect to, with counts, into the kernel
+# log ("say PID NAME: xpcwatch ..."). For finding the clients that reconnect in a loop.
+XPCWATCH_PROCESSES = os.environ.get("XPCWATCH", "").split()
 INJECT = (
     "/redwood/lib/libredwood-sbmetal-experiment.dylib SpringBoard backboardd" +
-    (" iconservicesagent" if os.environ.get("ICON_METAL") == "1" else "") + "\n"
+    (" iconservicesagent" if os.environ.get("ICON_METAL", "1") == "1" else "") + "\n"
     "/redwood/lib/libredwood.dylib backboardd\n"
-    "/redwood/lib/libredwood-sb26.dylib SpringBoard PosterBoard\n"
+    "/redwood/lib/libredwood-sb26.dylib SpringBoard PosterBoard\n" +
+    ("/redwood/lib/libredwood-xpcwatch.dylib " + " ".join(XPCWATCH_PROCESSES) + "\n"
+     if XPCWATCH_PROCESSES else "")
 )
 JOBS = "etc/rc.jobs"
 # JOBS_SOURCE=... runs a different touch script than the acceptance one. A diagnostic that has
@@ -104,11 +116,10 @@ CACHE_KEY = "/System/Library/LaunchDaemons/com.apple.backboardd.plist"
 # iconservicesagent renders the icons applications ask IconServices for. Without a Metal device it
 # renders them in software, and IconRendering then refuses to serialize every one of them
 # ("TextureIOError.usingSoftwareRenderer", 230 times in the ffma1 round): the General page of
-# Settings showed grey squares. ICON_METAL=1 gives it the same registration as backboardd. Off by
-# default: in lock2cpu4 (2026-10-30) the AIR frontend refused its path_exterior_fragment pipeline,
-# iconservicesagent was the first process to report THE GPU DID NOT FINISH, and the kernel closed
-# GPU submissions until a cold reset.
-ICON_METAL = os.environ.get("ICON_METAL") == "1"
+# Settings showed grey squares. ICON_METAL=1, the default, gives it the same registration as
+# backboardd; the GPU stop that kept it off in lock2cpu4 (2026-10-30) has not recurred since render47.
+# ICON_METAL=0 leaves iconservicesagent in software.
+ICON_METAL = os.environ.get("ICON_METAL", "1") == "1"
 ICON_JOB = "LaunchDaemons/com.apple.iconservices.iconservicesagent.plist"
 ICON_CACHE_KEY = "/System/Library/LaunchDaemons/com.apple.iconservices.iconservicesagent.plist"
 # MSAA=1 asks the driver for four samples on both processes that encode render passes:
@@ -193,6 +204,26 @@ JOB_USERS = {"com.apple.mobile.installd.plist": "root"}
 # RunAtLoad off puts its first start at about 120 s, after that registration.
 LATE_JOBS = {"com.apple.chronod.plist": {"StartInterval": 120}}
 JOBS_DIR = HERE / "jobs"
+# REST=1 registers the rest of iOS 26's jobs, each started only when something looks up one of its
+# Mach services: userland/mkjobs.py --rest, with its DENY list, gives every LaunchDaemon and
+# LaunchAngel that has a Mach service and a program on the system image, with RunAtLoad, KeepAlive
+# and the other start triggers taken out. A job whose label or one of whose services is registered
+# already is left out. Without them a client of a missing service gets an invalid connection at once,
+# and some clients reconnect at once, without a pause: on kernel-12377-cmd24-xpc1 SpringBoard's main
+# thread rebuilt its Sleep.framework connection to com.apple.sleepd.sleepserver, and MapKit's
+# snapshot service its GeoServices connection, for as long as the round lasted. The iOS 16.5 desktop
+# ran on the same kind of set (388 jobs, docs/analysis/2026-10-28-ios26-icon-model-and-launchd-cache.md §2).
+REST = os.environ.get("REST") == "1"
+REST_DIR = OUT / "rest-jobs"
+# mkjobs.py's DENY was written on iOS 16.5; for this boot it changes in two places.
+# - com.apple.dmd is let through. DeviceManagement's clients reconnect to it without a pause when
+#   it is not registered: on kernel-12377-cmd24-rest1 appprotectiond and ScreenTimeAgent each spent
+#   about a fifth of a processor in Catalyst's connection code, both with dmd denied.
+# - PerfPowerServices is left out. On the same round it spent half a processor inside a
+#   dispatch_once that walks the SMC keys (libSMC SMCGetKeyFromIndex, PowerlogLiteOperators), which
+#   this kernel's SMC does not end.
+REST_ALLOW = ["com.apple.dmd"]
+REST_DENY = ["com.apple.PerfPowerServices"]
 SDK = ["/usr/bin/xcrun", "-sdk", "iphoneos", "clang", "-arch", "arm64e", "-miphoneos-version-min=26.0"]
 
 # Both commands are the ones the frozen libraries were built with (build.sh for the shim,
@@ -218,7 +249,10 @@ DRIVER_INCLUDES = ["tools/userland-driver/redwood_drawable.h",
                    "tools/userland-driver/redwoodmetal_archive.inc",
                    "tools/userland-driver/redwoodmetal_blit.inc",
                    "tools/userland-driver/redwoodmetal_commandbuffer.inc",
+                   "tools/userland-driver/redwoodmetal_completion.inc",
+                   "tools/userland-driver/redwoodmetal_console.inc",
                    "tools/userland-driver/redwoodmetal_diag.inc",
+                   "tools/userland-driver/redwoodmetal_heap.inc",
                    "tools/userland-driver/redwoodmetal_mesa.inc",
                    "tools/userland-driver/redwoodmetal_state.inc",
                    "tools/userland-driver/redwoodmetal_stitch.inc",
@@ -235,6 +269,8 @@ DRIVER_INCLUDES = ["tools/userland-driver/redwood_drawable.h",
 SB26_SOURCES = ["userland/src/inject_sb26.c", "userland/src/inject_sb26_layers.c",
                 "userland/src/inject_posterboard.c"]
 SB26_FLAGS = ["-Os", "-Wall", "-Wextra", "-Werror", "-framework", "CoreFoundation", "-framework", "Metal"]
+XPCWATCH_SOURCES = ["userland/src/xpcwatch.c"]
+XPCWATCH_FLAGS = ["-Os", "-Wall", "-Wextra", "-Werror"]
 
 # The run this image is compared against used exactly these.
 BASE_ROOT_SHA256 = "33ed5fc9cb18367c124e6fd26a2fc982f7d80b3a44e04754f87cf74b5aa381f0"
@@ -302,6 +338,23 @@ def sha(path):
 # reads as the library not being injected at all. 0x80000002 is ARM64E with the LIB64 bit, which is
 # what build.sh's own gate (:885-922) requires of everything it stages.
 ARM64E_WITH_LIB64 = 0x80000002
+
+
+def check_seed(path):
+    """The seed's header and contents check out as var_store's own load would check them (struct
+    head in userland/src/var_store.c: one slot at offset 0, the archive from 4096 on, CRC-32 of
+    both). A torn transfer is caught here rather than by init on the phone. Returns its size."""
+    data = path.read_bytes()
+    magic, version, slot, generation, size, entries, seconds, crc, head_crc = struct.unpack_from(
+        "<8sIIQQQQII", data)
+    head = bytearray(data[:56])
+    head[52:56] = b"\0\0\0\0"
+    assert magic == b"RDWVAR\0\0" and version == 1 and slot == 0, f"{path} is not a var_store archive"
+    assert zlib.crc32(bytes(head)) == head_crc, f"{path}: the header does not check out"
+    assert len(data) >= 4096 + size and zlib.crc32(data[4096:4096 + size]) == crc, \
+        f"{path}: the archive is not the {size} bytes its header describes"
+    print(f"seed {path}: {entries} entries, {size} bytes, generation {generation}, saved at {seconds}")
+    return len(data)
 
 
 def cpusubtype(path):
@@ -409,6 +462,31 @@ def add_msaa(root):
     cache_path.write_bytes(plistlib.dumps(cache, fmt=plistlib.FMT_BINARY))
 
 
+def add_rest_jobs(root, cache):
+    """REST=1: the jobs userland/mkjobs.py --rest makes that are not registered already."""
+    if REST_DIR.exists():
+        shutil.rmtree(REST_DIR)
+    subprocess.run([sys.executable, str(WORKSPACE / "userland/mkjobs.py"), "--rest",
+                    str(WORKSPACE / "ios26/rootfs"), str(REST_DIR)], check=True, stdout=subprocess.DEVNULL,
+                   env=dict(os.environ, ALLOW=" ".join(REST_ALLOW)))
+    jobs = cache["LaunchDaemons"]
+    labels = {job["Label"] for job in jobs.values()}
+    services = {name for job in jobs.values() for name in job.get("MachServices", {})}
+    added = []
+    for path in sorted(REST_DIR.glob("*.plist")):
+        job = plistlib.loads(path.read_bytes())
+        if (job["Label"] in labels or job["Label"] in REST_DENY or services & set(job["MachServices"])
+                or (root / "LaunchDaemons" / path.name).exists()):
+            continue
+        (root / "LaunchDaemons" / path.name).write_bytes(path.read_bytes())
+        jobs["/System/Library/LaunchDaemons/" + path.name] = job
+        labels.add(job["Label"])
+        services |= set(job["MachServices"])
+        added.append(path.name)
+    (root / "xpc/launchd.plist").write_bytes(plistlib.dumps(cache, fmt=plistlib.FMT_BINARY))
+    return cache, added
+
+
 def add_extra_jobs(root):
     """The wallpaper and the widget services, in the LaunchDaemons directory and the cache."""
     cache_path = root / "xpc/launchd.plist"
@@ -483,11 +561,16 @@ def main():
                 "driver": build(DRIVER_SOURCES, "/redwood/lib/libredwoodmetal.dylib",
                                  DRIVER_FLAGS, driver),
                 "sb26": build(SB26_SOURCES, "/redwood/lib/libredwood-sb26.dylib", SB26_FLAGS, sb26)}
+    xpcwatch = OUT / "libredwood-xpcwatch.dylib"
+    if XPCWATCH_PROCESSES:
+        commands["xpcwatch"] = build(XPCWATCH_SOURCES, "/redwood/lib/libredwood-xpcwatch.dylib",
+                                     XPCWATCH_FLAGS, xpcwatch)
     probe = OUT / "lsprobe"
     if PROBE:
         commands["probe"] = build(PROBE_SOURCES, "", PROBE_FLAGS, probe, dynamic=False)
     sources = {name: sha(SRC_ROOT / name)
                for name in [*SHIM_SOURCES, *DRIVER_SOURCES, *DRIVER_INCLUDES, *SB26_SOURCES,
+                            *(XPCWATCH_SOURCES if XPCWATCH_PROCESSES else []),
                             "userland/src/sb_metal_registration_sequence.inc",
                             "userland/src/sb_metal_compression_policy.inc",
                             "tools/mesa/air/air_metal.c", "tools/mesa/air/air_to_nir.c",
@@ -538,6 +621,8 @@ def main():
         "the driver in the image is not the one this pack built"
     shutil.copy2(air, dest / "lib/libredwoodair.dylib")
     shutil.copy2(sb26, dest / "lib/libredwood-sb26.dylib")
+    if XPCWATCH_PROCESSES:
+        shutil.copy2(xpcwatch, dest / "lib/libredwood-xpcwatch.dylib")
     shutil.copy2(userland, dest / "lib/libredwood.dylib")
     assert sha(dest / "lib/libredwood.dylib") == sha(userland), \
         "libredwood.dylib in the image is not the one build.sh produced"
@@ -552,6 +637,9 @@ def main():
     for program in EXTRA_PROGRAMS:
         assert program.is_file(), f"{program} is named in PAYLOAD_PROGRAMS and is not a file"
         shutil.copy2(program, dest / "bin" / program.name)
+    if SEED:
+        seed_bytes = check_seed(SEED)
+        shutil.copy2(SEED, dest / "etc/var.seed")
     # A job whose program is not on the image spawns nothing, and the failure looks exactly like a
     # service that does not answer: the image is assembled by path prefix and file size
     # (ios26/select-system.py), so a program over the size limit for its directory is simply absent.
@@ -602,6 +690,9 @@ def main():
     if MSAA:
         add_msaa(dest)
     cache = add_extra_jobs(dest)
+    rest_added = []
+    if REST:
+        cache, rest_added = add_rest_jobs(dest, cache)
     if REDWOOD_DIAG:
         cache = add_diag(dest, cache)
         # add_diag rewrote this job too; the assertion further down compares the packed plist with
@@ -630,7 +721,10 @@ def main():
             f"{name} in root.apfs is not what this pack built"
     added = ({"/LaunchDaemons/" + name for name in EXTRA_JOBS if name not in JOBS_DROP}
              | ({"/bin/lsprobe"} if PROBE else set())
-             | {"/bin/" + program.name for program in EXTRA_PROGRAMS})
+             | {"/bin/" + program.name for program in EXTRA_PROGRAMS if "/bin/" + program.name not in before}
+             | ({"/etc/var.seed"} if SEED else set())
+             | ({"/lib/libredwood-xpcwatch.dylib"} if XPCWATCH_PROCESSES else set())
+             | {"/LaunchDaemons/" + name for name in rest_added})
     assert set(after) - set(before) == added, \
         f"unexpected files: {sorted(set(after) - set(before) - added)}"
     assert set(before) - set(after) == set(), sorted(set(before) - set(after))
@@ -640,6 +734,7 @@ def main():
         changes[name] = {"sha256": [None, after[name]["sha256"]]}
     expected = {"/lib/libredwood-sbmetal-experiment.dylib", "/lib/libredwoodmetal.dylib",
                 "/lib/libredwoodair.dylib", "/lib/libredwood.dylib", "/lib/libredwood-sb26.dylib",
+                *(["/lib", "/lib/libredwood-xpcwatch.dylib"] if XPCWATCH_PROCESSES else []),
                 "/etc/inject.conf",
                 "/etc/rc.jobs", "/" + JOB, *(["/" + ICON_JOB] if ICON_METAL else []),
                 "/xpc/launchd.plist", *["/bin/" + program.name for program in EXTRA_PROGRAMS],
@@ -649,9 +744,11 @@ def main():
                 # next line with the same reason. A new file somewhere else needs its parent added
                 # here or the comparison above fails on a directory nobody meant to change.
                 *(["/bin"] if PROBE or EXTRA_PROGRAMS else []),
+                *(["/etc", "/etc/var.seed"] if SEED else []),
                 *(["/bin/lsprobe"] if PROBE else []),
                 # the two jobs below change this directory's own times as well
                 "/LaunchDaemons", *["/LaunchDaemons/" + name for name in EXTRA_JOBS if name not in JOBS_DROP],
+                *["/LaunchDaemons/" + name for name in rest_added],
                 # the diagnostic switch rewrites the two jobs whose processes load the driver
                 *(["/LaunchDaemons/" + name for name in MSAA_JOBS] if REDWOOD_DIAG else []),
                 *{"/LaunchDaemons/" + name for name, _, _ in JOB_ENV},
@@ -728,6 +825,8 @@ def main():
         "jobs_sha256": hashlib.sha256(jobs).hexdigest(), "probe": PROBE, "varstore_show": VARSTORE_SHOW,
         "skeleton_appended": appended, "jobs_dropped": sorted(JOBS_DROP), "job_env": [f"{n}:{k}={v}" for n, k, v in JOB_ENV],
         "jobs_effective": jobs_effective, "jobs_effective_count": len(jobs_effective),
+        "rest": REST, "rest_added_count": len(rest_added), "rest_allow": REST_ALLOW, "rest_deny": REST_DENY,
+        "seed": {"path": str(SEED), "sha256": sha(SEED), "bytes": seed_bytes} if SEED else None,
         "redwood_diag": REDWOOD_DIAG,
         "changes": changes,
         "dirty_worktree": bool(dirty), "worktree_status": dirty,

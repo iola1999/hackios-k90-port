@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """One unattended desktop round from the working tree: pack, boot, tour, render report.
 
-usage: tools/k90auto/cycle.py LABEL [--baseline ROUND_DIR] [--seconds N] [--kernel NAME] [--hold]
+usage: tools/k90auto/cycle.py LABEL [--baseline ROUND_DIR] [--seconds N] [--kernel NAME] [--seed FILE] [--hold] [--tour STEP ...]
+
+--seed FILE (default: the K90_SEED environment variable, if set) boots with a /private/var archive
+unpacked over the skeleton: package.py packs it as etc/var.seed and the round gets var_store=1. The
+archive comes from `var_store save FILE` and tools/k90auto/varseed.py; it stays in a local, ignored
+directory (docs/analysis/2026-10-31-every-boot-is-first-boot.md).
 
   1. package.py with the interactive jobs and rwsh (the caller's environment goes through, so
      ICON_METAL=1 and the other package switches work as they do there), then make-payload.py
@@ -9,7 +14,7 @@ usage: tools/k90auto/cycle.py LABEL [--baseline ROUND_DIR] [--seconds N] [--kern
   2. The loader has to be enumerated and idle with an empty RAM disk; otherwise this stops. Every
      CHECKPOINT_EVERY rounds the A slot's retry count is reset at LK (reboot-lk.py, set_active a;
      LK is addressed by ANDROID_SERIAL).
-  3. round-run.py in the background; once SpringBoard reports the boot unlock, tour.py runs TOUR
+  3. round-run.py in the background; once SpringBoard reports the boot unlock, tour.py runs TOUR or --tour
      (only its first step when the GPU has already stopped), and the round is asked to stop
      (run/stop-request) instead of running out its N seconds. With --hold it is not asked: it runs
      until respin.py --stop or the N seconds, and respin.py changes settings and restarts processes
@@ -108,7 +113,12 @@ def main():
     ap.add_argument("--kernel", default="12377-cmd1")
     ap.add_argument("--boot-args", default="", help="observation boot-args added after the fixed ones")
     ap.add_argument("--hold", action="store_true", help="keep the round up after the tour, for respin.py")
+    ap.add_argument("--tour", nargs="+", help="tour.py steps instead of TOUR")
+    ap.add_argument("--seed", default=os.environ.get("K90_SEED"), help="a /private/var archive to boot with")
     args = ap.parse_args()
+    if args.seed:
+        os.environ["SEED"] = args.seed
+        args.boot_args = " ".join([args.boot_args, "var_store=1"]).strip()
 
     problem = loader_ready()
     if problem:
@@ -123,7 +133,7 @@ def main():
         state["rounds_since_checkpoint"] = 0
 
     env = dict(os.environ, JOBS_SOURCE="tools/k90auto/jobs/rc.jobs.interactive",
-               PAYLOAD_PROGRAMS="hackios-xnu-kernel/out/ios26-resume/rwsh")
+               PAYLOAD_PROGRAMS="hackios-xnu-kernel/out/ios26-resume/rwsh:hackios-xnu-kernel/out/ios26-resume/var_store")
     with open(EVIDENCE / f"pack-{args.label}.log", "w") as log:
         if run([sys.executable, HERE / "package.py"], env=env, stdout=log, stderr=subprocess.STDOUT).returncode:
             print(f"STOP: package.py failed, see {log.name}")
@@ -133,7 +143,7 @@ def main():
                        MEMSIZE="300000000", IDENTITY="v57")
     made = run([sys.executable, HERE / "make-payload.py", args.kernel, args.label,
                 "out/ios26-resume/bbmetal-device/root.apfs",
-                " ".join(["gpu_log=1 metal=1 cpufreq=1 fb_threads=2 touch_lat=1", args.boot_args]).strip()],
+                " ".join(["gpu_log=1 metal=1 cpufreq=1 fb_threads=2 touch_lat=1 gpu_coherent=1", args.boot_args]).strip()],
                env=payload_env, capture_output=True, text=True)
     if made.returncode:
         print(f"STOP: make-payload.py failed: {made.stdout[-400:]}{made.stderr[-400:]}")
@@ -156,7 +166,8 @@ def main():
         gpu_stopped = GPU_STOP in newest_log(round_dir / "run")
         if gpu_stopped:
             print("the GPU stopped before the tour; only the home screen is taken")
-        run([sys.executable, HERE / "tour.py", round_dir, *(TOUR[:1] if gpu_stopped else TOUR)])
+        tour = args.tour or TOUR
+        run([sys.executable, HERE / "tour.py", round_dir, *(tour[:1] if gpu_stopped else tour)])
         if args.hold:
             print(f"held: tools/k90auto/respin.py {round_dir} ... (--stop ends it)", flush=True)
         else:

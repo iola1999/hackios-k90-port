@@ -329,6 +329,11 @@ def teardown():
         call(["get_staged", run / f"{name}.log"], 40, False)
         call(["oem", "log"], 8, False)
         call(["get_staged", run / f"{name}-serial.log"], 40, False)
+        # A kernel that came back ("returned"; one that held the GPU never does) leaves its file for
+        # the host (rwsh "outbox", kern.redwood.outbox) as the run's recording; without one: FAIL.
+        staged = call(["oem", "recording"], 8, False) if name == "returned" else None
+        if staged and staged["rc"] == 0 and "FAILED" not in staged["output"]:
+            call(["get_staged", run / "outbox.bin"], 300, False)
         call(["reboot"], 10, False)
         return name, True
     return state(), False
