@@ -25,6 +25,7 @@ python3 tools/k90auto/gestures.py docs/progress/evidence/k90auto/kernel-NAME-LAB
 ```
 
 - `build-kernel.py` 只构建已提交的内容，未提交的修改不会进入内核。
+- `build-kernel.py` 在容器里构建 xnu-8796（iOS 16.5 内核线），拒绝 `12377` 开头的名字。iOS 26 用的 12377 内核在 Mac 上增量构建：把改动的文件从 `xnu/files` 复制进 `hackios-xnu-kernel/out/xnu12377-cmd`，按上一版 `kernel-12377-cmdN/kernel.json` 里 `build.command` 的命令执行 `xnu26/build-macos.sh`（`KERNEL_UUID` 末位递增），产物复制为 `out/xnu12377-cmdN.bin`，并照样写一份 `kernel.json`。
 - `make-payload.py` 的固定参数包括触摸屏（`touchscreen=2`）、音量键与电源键（`buttons=1`）和电量计（`battery=1`）。
   - CPU 部分可用环境变量 `CPU_ARGS` 替换（默认 `cpus=2 bootcpu=7 small_cores_after=0`）。
   - GPU 档位上限用 `GPU_SPEED` 设置（即 `adreno8_speed`，默认 3）：1 固定 160 MHz；2、3 时内核按 GPU 负载和触摸在 160 MHz 与 222 MHz 或 342 MHz 之间切换（内核 `ffca661` 起，`34209c1`～`2957405` 固定请求该档）。
@@ -104,12 +105,12 @@ python3 tools/k90auto/package.py          # 从工作区根目录运行
 ANDROID_SERIAL=<序列号> python3 tools/k90auto/cycle.py LABEL --baseline docs/progress/evidence/k90auto/kernel-NAME-上一轮
 python3 tools/k90auto/render-health.py docs/progress/evidence/k90auto/kernel-NAME-LABEL [--baseline 另一轮]
 python3 tools/k90auto/tour.py docs/progress/evidence/k90auto/kernel-NAME-LABEL "home@3*2" "settings=/redwood/bin/rwtouch tap 0.616 0.70@4*2"
-ANDROID_SERIAL=<序列号> python3 tools/k90auto/cycle.py LABEL --kernel 12377-cmd13 --hold --seconds 2400
-python3 tools/k90auto/respin.py docs/progress/evidence/k90auto/kernel-NAME-LABEL --env SpringBoard:REDWOOD_THUMBS=8 --restart SpringBoard --until "sb26: boot unlock done" --wait 60 --tour "home@3*2"
+ANDROID_SERIAL=<序列号> python3 tools/k90auto/cycle.py LABEL --kernel 12377-cmd15 --hold --seconds 2400
+python3 tools/k90auto/respin.py docs/progress/evidence/k90auto/kernel-NAME-LABEL --env iconservicesagent:-FD_MESA_DEBUG --restart iconservicesagent --wait 30 --tour "home@3*2"
 ```
 
 - `cycle.py` 起轮前要求 loader 已枚举、`result` 为 idle、RAM 盘为空，任一项不满足就停止；每两轮先经 LK 把 A 槽重试次数重置为 7（`reboot-lk.py`、`set_active a`），LK 由 `ANDROID_SERIAL` 指定。打包开关（如 `ICON_METAL=1`）按 `package.py` 的环境变量透传。
-- `cycle.py --hold` 在操作截图后不结束这一轮，轮次跑满 `--seconds` 或收到 `respin.py --stop` 才结束。这段时间里用 `respin.py` 改驱动设置、重启进程，不必重新打包和上传 `system26.apfs`。需要 12377-cmd13 起的内核和带 `setenv`、`addenv`、`restart` 的 rwsh，真机尚未验证。
+- `cycle.py --hold` 在操作截图后不结束这一轮，轮次跑满 `--seconds` 或收到 `respin.py --stop` 才结束。这段时间里用 `respin.py` 改驱动设置、重启进程，不必重新打包和上传 `system26.apfs`。需要 12377-cmd14 起的内核和带 `setenv`、`addenv`、`restart` 的 rwsh。`render87` 实测：设置写入和进程重启都生效，但 SpringBoard 被结束后停在 backboardd 的转圈界面，没有回到主屏，所以改 SpringBoard 的设置暂时仍要重新起一轮；其他进程的重启还没有实测。
   - `--env` 把 `kern.redwood.env` 设为给出的词，每个词是 `进程名:变量=值` 或 `进程名:-变量`；超过一条命令 119 字符时拆成一条 `setenv` 和若干条 `addenv`。不带词的 `--env` 清空设置。
   - `--restart` 向同名进程发 SIGKILL，由 launchd 重新拉起。驱动在进程加载它时把本进程名下的设置写进环境变量，覆盖 plist 里的同名变量，每条打印一行 `kern.redwood.env: 词`。
   - `--until` 等日志里出现指定文字（最多 `--wait` 秒），`--tour` 接着执行 `tour.py` 的步骤，结果追加进同一个 `run/tour.json`。

@@ -94,7 +94,12 @@
 | `kernel-12377-cmd11-render82` | 同上（驱动：同一地址的新管线替换旧记录） | 同 `render81` | SpringBoard 整轮只有这一次 `path_exterior`，图标的图形不走路径绘制；采样拖慢 SpringBoard 后，几个图标上又出现「Passcode」等文字碎片 |
 | `kernel-12377-cmd11-render83` | 同上（驱动：`REDWOOD_THUMB_TEXTURE` 按绑定纹理的尺寸挑绘制） | SpringBoard 采读 194×194 图层的绘制，192×192 | 194×194 的图层是平滑的法线样光照图；FaceTime 在 commit 58，镜头的白色条纹出现在 w4 与 w7 之间，中间的 w5、w6 读 50×83 的 IOSurface 图形 |
 | `kernel-12377-cmd11-render84` | 同上（驱动：IOSurface 导入打印尺寸与行字节数） | SpringBoard 采读 50×83、101×94 IOSurface 的绘制 | 处理器读到的 IOSurface 图形干净，GPU 采样画出的已经错切：镜头 50×83 按 224 字节一行建，按 256 读；机身 101×94 按 416 建，按 448 读 |
-| `kernel-12377-cmd12-render85` | 内核 `12377-cmd12`：IOSurface 的行字节数补齐到 64 | 无采样 | 三次尝试都在启动早期 panic（`cpu_id <= ml_get_max_cpu_number()` 断言），没有进桌面，补齐的效果未验证 |
+| `kernel-12377-cmd12-render85` | 内核 `12377-cmd12`：IOSurface 的行字节数补齐到 64 | 无采样 | 三次尝试都在启动早期 panic（`cpu_id <= ml_get_max_cpu_number()` 断言）。`12377-cmd12` 由 `build-kernel.py` 构建，那是 xnu-8796 的内核，不是 12377 线，panic 出自用错内核 |
+| `kernel-12377-cmd13-render86` | 内核 `12377-cmd13`（同样由 `build-kernel.py` 构建，xnu-8796） | 无采样 | 启动早期 panic（`(cpuid & MACHDEP_TPIDR_CPUNUM_MASK) == cpuid` 断言），查出 `cmd12`、`cmd13` 用错了构建工具 |
+| `kernel-12377-cmd14-render87` | 内核 `12377-cmd14`：`cmd11` 的源码树加行字节数补齐与 `kern.redwood.env`，用 `xnu26/build-macos.sh` 构建 | 无采样；`--hold` 后用 `respin.py` 打开采样并重启 SpringBoard | SpringBoard 的图形 IOSurface 按 256、448 字节一行导入，图标的条纹仍在，斜度变小；`respin.py` 的设置生效，重启后的 SpringBoard 停在转圈界面 |
+| `kernel-12377-cmd14-render88` | 同上 | SpringBoard 采读 50×83、101×94 IOSurface 的绘制 | 处理器读到的 IOSurface 图形也已错切：SpringBoard 仍按自己要求的 224、416 字节一行写，内核补齐行距不起作用 |
+| `kernel-12377-cmd15-render89` | 内核 `12377-cmd15`：`cmd11` 加 `kern.redwood.env`，撤回补齐（驱动：行距不是 64 倍数的 IOSurface 经拷贝采样） | 同 `render88` | 50×83、101×94 的输入和画出的结果都干净，commit 100 的图标图集里 App Store、Maps、FaceTime、Mail、Safari 没有斜纹；SpringBoard 的 16 个、backboardd 的 4 个 surface 走拷贝；采样拖慢 SpringBoard，巡检没回到主屏 |
+| `kernel-12377-cmd15-render90` | 同上 | 无采样 | 主屏图标与 Control Center 的图标都画对，斜纹消失；Mail 信封下方、Maps 圆形右上各有一块黑色弧形 |
 
 两轮内核相同（`out/xnu12377-f055cc0a-restored.bin`），cmdline 相同（`cpus=2 bootcpu=7`，`adreno8_speed=3`）。`interactive1` 的驱动为 `ceefc187…`，AIR 仍为 `b5b44d51…`。
 
@@ -465,10 +470,11 @@ freedreno 对读帧缓冲的绘制有三处特殊处理，挂起可能出在其�
   - 距离传播结果里的横竖色带来自采样的显示方式：分量超过 1 时截到 1。竖直边左侧的最近点都在水平方向，G 为 0，显示为整块红色。
   - 模糊管线的 writeMask 是 0x8，即 Metal 的 Red，只写 R；G 保留上一次的内容，所以相邻两次的输出交替相似。
 - 剩下的斜向条纹出在 IOSurface 的行距上。`render84` 的导入记录里，SpringBoard 的图形 IOSurface 由客户端指定 32 字节对齐的行字节数（50×83 为 224，101×94 为 416，146×117 为 608），A830 采样这些线性纹理时按 64 字节的整数倍取行距，每行多走 32 字节，图形成了一组斜向色带。行字节数是 64 倍数的图形（124×105 的 512、110×110 的 448）画对。
-- 修法放在内核：MiniIOSurface 在自己分配内存的单平面 surface 上把客户端给的 `IOSurfaceBytesPerRow` 补齐到 64，客户端从 `IOSurfaceGetBytesPerRow` 读行距；包裹客户端内存的 surface 不改。内核 `12377-cmd12`；`render85` 三次都在启动早期 panic，待重跑。
-- freedreno 的 `fd6_layout.c` 对线性布局的行距同样至少按 64 字节对齐，8 字节和 16 字节像素分别按 128、256，与 `render84` 的读数一致。驱动在导入行字节数不是 64 倍数的 IOSurface 时打印 GPU 实际读取的行距，每个进程最多 16 行（kernel `299cddf`）。
-- `render82` 拖慢 SpringBoard 后图标上的「Passcode」等文字碎片，可能出自同一处：50×83 的图形按 256 字节一行读，比 224 字节一行多读约 2.6 KB，读到相邻内存里 Settings 列表的文字。补齐行距后碎片是否消失待真机确认。
-- 下一轮用内核 `12377-cmd13`，即 `12377-cmd12` 加上 `kern.redwood.env`（`tools/k90auto/README.md` §8 的 `respin.py`），同一次启动里可以改采样设置后重启 SpringBoard，不必重新上传系统盘。
+- freedreno 的 `fd6_layout.c` 对线性布局的行距同样至少按 64 字节对齐，8 字节和 16 字节像素分别按 128、256，与 `render84` 的读数一致。
+- 在内核里补齐行距不可行。`render88` 里 MiniIOSurface 已把这些 surface 的行距报成 256、448，处理器按这个行距读到的图形同样错切，说明 SpringBoard 写图形时用的是它创建 surface 时要求的 224、416，不读 surface 报回的行距。内核 `12377-cmd15` 撤回了补齐。
+- 修法改在驱动：`-newTextureWithDescriptor:iosurface:plane:` 遇到单平面、二维、行距不是 64 倍数的 surface，用一个覆盖 surface 内存的 no-copy buffer 和其上的 buffer 纹理代替原地导入。每次提交前按 surface 自己的行距把内容拷进纹理，GPU 写过的内容写回 surface（`redwoodmetal_texture.inc` 的 `rw_surface_through_copy`）。驱动在原地导入行距不是 64 倍数的 IOSurface 时仍打印 GPU 实际读取的行距，每个进程最多 16 行。
+- `render82` 拖慢 SpringBoard 后图标上的「Passcode」等文字碎片，可能出自同一处：50×83 的图形按 256 字节一行读，比 224 字节一行多读约 2.6 KB，读到相邻内存里 Settings 列表的文字。
+- `render89` 采样确认拷贝路径：50×83、101×94 的输入与画出的图形都干净，SpringBoard 有 16 个、backboardd 有 4 个 surface 走拷贝（行距 32～608 字节不等）。`render90` 不采样，主屏的 FaceTime、Mail、News、Games、Health、Wallet、Safari、Music 与 Control Center 的飞行模式图标都画对。剩下 Mail 与 Maps 上的黑色弧形，`render82` 的 Maps 上已有，与拷贝路径无关，待查。
 
 ## 9. 无人值守的一轮
 

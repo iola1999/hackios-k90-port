@@ -9,6 +9,11 @@ kernel is built there. Results: hackios-xnu-kernel/out/handoff-mach-NAME and, in
 directory ($K90_EVIDENCE, default docs/progress/evidence/k90auto, ignored by Git), kernel-NAME/ with
 the input archive, the manifest of every source file, the build log and kernel.json.
 Run from the top of the workspace.
+
+The container builds xnu-8796 (the iOS 16.5 line). An iOS 26 kernel (the 12377 line) is built on the
+Mac by hackios-xnu-kernel/xnu26/build-macos.sh in hackios-xnu-kernel/out/xnu12377-cmd, so names of
+that line are refused here: 12377-cmd12 and cmd13 were built with this script by mistake on
+2026-10-30 and panicked in early boot four times (render85, render86).
 """
 from pathlib import Path
 import hashlib
@@ -21,6 +26,7 @@ import tarfile
 
 name = sys.argv[1]
 assert re.fullmatch(r"[a-z0-9-]+", name)
+assert not name.startswith("12377"), "a 12377 kernel is built by xnu26/build-macos.sh, not here"
 root = Path("hackios-xnu-kernel")
 evidence = Path(os.environ.get("K90_EVIDENCE", "docs/progress/evidence/k90auto"))
 base = evidence / ("kernel-" + name)
