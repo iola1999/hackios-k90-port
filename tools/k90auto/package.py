@@ -289,6 +289,7 @@ DRIVER_INCLUDES = ["tools/userland-driver/redwood_drawable.h",
                    "tools/userland-driver/redwoodmetal_diag.inc",
                    "tools/userland-driver/redwoodmetal_heap.inc",
                    "tools/userland-driver/redwoodmetal_mesa.inc",
+                   "tools/userland-driver/redwoodmetal_pipecache.inc",
                    "tools/userland-driver/redwoodmetal_state.inc",
                    "tools/userland-driver/redwoodmetal_stitch.inc",
                    "tools/userland-driver/redwoodmetal_texture.inc",
@@ -648,6 +649,11 @@ def main():
               if line and not line.startswith("#")]
     present = skeleton.read_text()
     appended = [line for line in wanted if line + "\n" not in present]
+    # init stops at the first directory it cannot create, so a path the template already has (with
+    # another owner or mode) leaves every later line undone and skips the logd markers (bo60).
+    template_dirs = {line.split("\t")[-1] for line in present.splitlines() if line.startswith("d\t")}
+    repeated = [line for line in appended if line.startswith("d\t") and line.split("\t")[-1] in template_dirs]
+    assert not repeated, f"userland/var.skel.extra repeats directories of the template: {repeated}"
     if appended:
         with skeleton.open("a") as out:
             out.write("".join(line + "\n" for line in appended))

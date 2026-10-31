@@ -13,7 +13,9 @@ directory (docs/analysis/2026-10-31-every-boot-is-first-boot.md).
      for kernel NAME (default 12377-cmd1) with four cores.
   2. The loader has to be enumerated and idle with an empty RAM disk; otherwise this stops. Every
      CHECKPOINT_EVERY rounds the A slot's retry count is reset at LK (reboot-lk.py, set_active a;
-     LK is addressed by ANDROID_SERIAL).
+     LK is addressed by ANDROID_SERIAL). With LOADER_IMAGE=FILE the checkpoint then starts that
+     loader image with `fastboot boot` instead of rebooting into boot_a, which keeps a loader newer
+     than the flashed one resident without flashing it.
   3. round-run.py in the background; once SpringBoard reports the boot unlock, tour.py runs TOUR or --tour
      (only its first step when the GPU has already stopped), and the round is asked to stop
      (run/stop-request) instead of running out its N seconds. With --hold it is not asked: it runs
@@ -100,7 +102,11 @@ def checkpoint():
     fastboot("set_active", "a", serial=serial)
     if "slot-retry-count:a: 7" not in fastboot("getvar", "slot-retry-count:a", serial=serial):
         return "slot A retry count did not reset to 7"
-    fastboot("reboot", serial=serial)
+    image = os.environ.get("LOADER_IMAGE")
+    if image:
+        fastboot("boot", image, serial=serial, timeout=60)
+    else:
+        fastboot("reboot", serial=serial)
     for _ in range(60):
         time.sleep(1)
         if loader_ready() is None:

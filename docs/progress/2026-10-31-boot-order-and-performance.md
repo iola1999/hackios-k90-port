@@ -71,8 +71,17 @@
 | `kernel-12377-cmd50-bo50` | 同上 | `package.py` 默认整帧重画；AIR 库加 `AIR_DEBUG_SOLID`／`AIR_DEBUG_NODISCARD`（`air_debug.inc`） | Dock 玻璃的 `glass_background_no_bleed_lph` 输出改成品红后屏幕上没有品红；同时去掉丢弃后，品红盖满搜索栏到屏幕底部的整块区域：片段都生成了，全部被丢弃，见 §6 |
 | `kernel-12377-cmd50-bo51` | 同上 | AIR 库加 `AIR_DEBUG_TEX`／`AIR_DEBUG_COORD`／`AIR_DEBUG_SCALE` | 第一次纹理读取的坐标正确，读到的值全为 0；同一次开机给 backboardd 设 `FD_DEV_FEATURES=has_fs_tex_prefetch=0` 后读到正确的距离场，Dock 与搜索栏显示完整的玻璃，见 §6 |
 | `kernel-12377-cmd50-bo52` | 同上 | Mesa 设备表对 A830 关掉 `has_fs_tex_prefetch`（`hackios-xnu-kernel/tools/mesa/rebase-26/0006-a830-no-fs-tex-prefetch.patch`），不设环境变量 | Dock、搜索栏、设置底部搜索栏都是完整的玻璃；翻页 53.4 帧／秒、今天视图 49.9 帧／秒（`bo49` 53.6、51.2，中位数都是 50.1）；动画窗口每帧等 GPU 2.74 毫秒（`bo49` 3.08）；最高 71.3 °C |
+| `kernel-12377-cmd51-bo53` | `12377-cmd51` | `fb_flip=1`：只读显示控制器在 loader 交接时的状态 | CTL0 以命令模式驱动 INTF1（DSI0），每帧自动刷新一次，`INTF_FRAME_COUNT` 在 200 毫秒里加 25，面板在 120 Hz；VIG0、VIG1 各取 1156x2510 帧缓冲的 578 列 |
+| `kernel-12377-cmd51-bo54` | 同上 | `fb_flip=2`：启动帧缓冲与 `0xfd400000` 两块轮流上屏 | 两块缓冲轮流显示；用户反馈解锁、回首屏、打开应用时仍闪出别处的内容 |
+| `kernel-12377-cmd52-bo55` | `12377-cmd52` | swap 队列的槽位在像素拷完、录屏记下这一帧之后才放行，`fb_queue` 默认 1；开录屏 | 用户确认交互时不再闪烁，见 §6；录屏在保持状态下取不回来，`oem recording` 只在内核返回后可用 |
+| `kernel-12377-cmd52-bo56` | 同上 | 不开录屏，巡检同 `bo52` | 翻页 53.6、今天视图 51.5 帧／秒（`bo52` 53.4、49.9），中位数 54.3、52.8 |
+| `kernel-12377-cmd52-bo57` | 同上 | loader v13 的 `oem stage` 在保持状态下取回录屏 | 取回 1224 帧；从今天视图回首屏后，日历图标约 0.9 秒只有玻璃底，时钟约 1.05 秒只有指针，见 §6 |
+| `kernel-12377-cmd52-bo58` | 同上 | 4 次今天视图与首屏往返期间开中断采样 | 每次回首屏 iconservicesagent 重建同样的 48 条管线，从开始重建到 SpringBoard 导入图标纹理 0.9～1.2 秒；MTLCompilerService 的样本数（1216）与 iconservicesagent（1263）相当，见 §6 |
+| `kernel-12377-cmd52-bo59` | 同上 | 驱动按两个模块、入口名与附件形状保留渲染管线（`redwoodmetal_pipecache.inc`） | 每次回首屏的 48 条管线里 44 条复用，复用一次约 20 微秒；从今天视图回首屏，开始重画到导入图标纹理 0.76～0.79 秒（`bo58` 0.91～1.06），从应用回首屏 1.06～1.13 秒（`bo58` 1.10～1.17）；同一采样窗口里 iconservicesagent 345 个样本（`bo58` 1263），MTLCompilerService 918 个（`bo58` 1216）；图标画面正确 |
+| `kernel-12377-cmd52-bo60` | 同上 | var 骨架加 `/private/var/empty/Library/Caches` | 作废：模板里已有 `/private/var/empty`，重复的一行让 init 停在这里，后面两行与 logd 的标记文件都没有建；`package.py` 起拒绝与模板重复的目录行 |
+| `kernel-12377-cmd52-bo61` | 同上 | 去掉重复行，缓存目录属主 `_iconservices`；检查点用 `LOADER_IMAGE` 起 loader v13 | 不再打印 `Failed to get cache main folder`；从今天视图回首屏，开始重画到导入图标纹理 0.24～0.26 秒（`bo59` 0.76～0.79）；同一采样窗口里 MTLCompilerService 18 个样本（`bo59` 918）；保持期间取回 402 MB 录屏；用户手指拖动时触摸采样相隔 36～90 毫秒，见 §6 |
 
-内核身份：`12377-cmd25`～`12377-cmd50` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。`bo12` 起的改动与读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §7～§13。
+内核身份：`12377-cmd25`～`12377-cmd53` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。`bo12` 起的改动与读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §7～§13。
 
 ## 2. 处理器占用
 
@@ -125,6 +134,7 @@
 - 系统盘放进 Android DSU（`tools/k90auto/dsu.py install`，16 GiB 槽，不启用）：loader v11 起的 `oem dsu load` 把系统盘从闪存读进常驻区，4.94 GB 用 1.29 秒（`bo45`）；`oem dsu crc` 加 `getvar dsu-crc`（v12）供 `run-auto.py` 按 1 GiB 分段比对 zlib CRC-32，不一致就退回 USB 上传。系统盘改动后要回到 Android 重装（`dsu.py install --replace`），手机开机后需要先解锁一次。
 - loader v11 起在 K90 上武装看门狗：主机 180 秒不发命令就停止喂狗。`oem hang` 实测第 37 秒复位、第 60 秒回到 loader，不需要按键。`cycle.py` 起轮时发现手机在 Android，就经 `recover-loader.py` 回到 loader。
 - 完整的 loader 镜像（`out/handoff-loader-v12.img`，2.18 MB）可以从 LK 用 `fastboot boot` 直接引导，18 秒后 loader 枚举，不刷 `boot_a`，也不扣 A 槽的重试次数。
+- 内核录屏：启动参数 `rec_secs=N rec_ring=1 rec_mb=M` 把上屏的帧缩小后存进一段预留内存，`hackios-xnu-kernel/tools/recording.py` 转成视频。占着 GPU 的内核不回到 loader，`oem recording` 取不到；loader v13（`out/handoff-loader-v13.img`）加了 `oem stage ADDRESS LENGTH`，在保持状态下按地址取回，402 MB 用 9.3 秒（`bo57`）。录屏要在轮次保持期间、停止之前取（`tools/k90auto/fetch-recording.sh`）：收尾会复位，A 槽里仍是 v12，`bo58` 先停止再取，没有取回。`cycle.py` 的 `LOADER_IMAGE=` 让每次检查点用 `fastboot boot` 起 v13。
 
 ## 6. 未解决
 
@@ -133,7 +143,18 @@
   - `bo44` 读到的两处异常都是系统盘缺文件。`ios165/select-system.py` 的资源目录上限从 4 MB 提到 32 MB、XPC 服务的字符串表与图片改按普通规则取，新增 191 个文件；`bo46` 起 MobileSMS 不再中止，应用进程正常运行，屏幕仍黑。
   - 第一次打开应用时 backboardd 拒收 SpringBoard 一个窗口的 commit（「CompressedImage port is MACH_PORT_NULL!」，内核同时打印 SpringBoard 的拷贝型 memory entry 失败）。`bo47` 的图层转储里这个窗口是 `SBMainSwitcherWindow`，所有应用的场景都挂在它下面；它的 `PBUIFakeBlurView` 里有一张 846x1827 的 ATX 格式壁纸快照。
   - ATX/KTX 图像由 ImageIO 按驱动的纹理布局（`newTextureLayoutWithDescriptor`）解码，驱动返回 nil 时数据长度为 0，与 `bo34` 海报快照的失败相同（[锁屏壁纸](../analysis/2026-10-31-mercury-wallpaper.md) §6）。驱动在 `redwoodmetal_texture_layout.inc` 实现了纹理布局与 `newTextureWithBytesNoCopy` 后，`bo48` 起应用正常显示。
-- 局部重绘留下旧内容：backboardd 只重画变化区域时，设置里有成块的灰白旧内容，解锁后小组件空白或变色，用户另报解锁后顶部闪烁条带、进入今天视图和滚动结束时撕裂、日历与时钟图标先空白再出现。`CA_DISABLE_DIRTY_REGIONS=1` 下截图里的这几处都正常（`bo48` 同一次开机对照），`package.py` 起默认整帧重画（`DIRTY_REGIONS=1` 恢复）。原因未查：CoreAnimation 在 surface 1、2 之间交替，内核按整行哈希把变化的行送到面板，没有用 swap 里的脏区域。
+- 局部重绘留下旧内容：backboardd 只重画变化区域时，设置里有成块的灰白旧内容，解锁后小组件空白或变色，用户另报进入今天视图和滚动结束时撕裂。`CA_DISABLE_DIRTY_REGIONS=1` 下截图里的这几处都正常（`bo48` 同一次开机对照），`package.py` 起默认整帧重画（`DIRTY_REGIONS=1` 恢复）。原因未查：CoreAnimation 在 surface 1、2 之间交替，内核按整行哈希把变化的行送到面板，没有用 swap 里的脏区域。
+- 交互时闪烁：`bo55` 起消失（用户确认）。
+  - 原因：iOS 26 的 CoreAnimation 只在两块 surface 之间交替。内核在一块的像素拷完之前就放行了下一次 swap，CoreAnimation 拿回这块开始画下一帧，屏幕上出现的是画了一半的内容，看起来是别处的画面。
+  - 改法：swap 队列的槽位在像素拷完、录屏记下这一帧之后才放行，`fb_queue` 默认 1（`MiniIOMobileFramebuffer.cpp`）。
+  - `fb_flip=2` 让显示控制器在两块帧缓冲之间轮流读，目的是避免读写同一块；单独打开时闪烁仍在（`bo54`），对撕裂的效果没有单独测，目前默认关。
+- 日历、时钟图标回首屏空白：从约 1 秒（`bo57` 录屏、`bo58` 采样）降到约 0.25 秒（`bo61`）。
+  - iconservicesagent 的 `-[ISGPUIdleTimer armTimer]` 定 3 秒，到时调用 `+[RBDevice purgeResources]` 释放 RenderBox 的全部管线；回首屏要画日历、时钟的背景时重建同样的 48 条。
+  - 重建期间的处理器样本约一半在 MTLCompilerService：带特化常量的函数每次都交给它用 LLVM 特化。Metal 的着色器磁盘缓存要用 `_iconservices` 主目录下的 `/var/empty/Library/Caches`，系统里原来没有这个目录。`userland/var.skel.extra` 补上后不再特化（`bo61`）。
+  - 另一半在本驱动的 AIR 翻译与 ir3 编译。驱动按两个模块、入口名与附件形状保留管线（`redwoodmetal_pipecache.inc`），48 条里 44 条直接复用（`bo59`）；带链接函数的 4 条仍重建。
+- 手指拖动不跟手：`bo61` 里用户手指拖动时，触摸采样相隔 36～90 毫秒；芯片的报告率按驱动注释是 240 Hz（小米默认值），没有实测。
+  - 驱动每 9 毫秒看一次中断线电平，多数报告是每 80 毫秒一次的兜底读取读到的。`rwtouch` 注入的手势不经过芯片，每 8 毫秒一个点，所以之前的手势帧率读数没有反映这一点。
+  - `12377-cmd53` 让 TLMM 把中断线的下降沿锁存在状态位里，驱动查看时一并读它（`redwood_goodix.c`），`bo62` 用 `touch_poll_us=4000` 验证。
 - Dock 玻璃：`bo52` 起完整显示，设置底部的搜索栏同样恢复。
   - 原因：`glass_background_no_bleed_lph` 开头在 `texcoord1` 处读距离场（纹理 4、采样器 1），ir3 把这次读取改成着色器启动前的预取，在 A830 上读到全 0；距离场的 w 乘覆盖率为 0 的片段被丢弃，所以整块玻璃只剩另一条管线画的边缘高光。
   - 排查经过见上表 `bo50`～`bo52`，补丁与依据见 `hackios-xnu-kernel/tools/mesa/rebase-26/README.md` 第 6 项。

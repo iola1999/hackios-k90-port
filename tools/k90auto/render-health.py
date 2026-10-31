@@ -81,7 +81,7 @@ TRACE = re.compile(r"trace commit \d+: .*pipelines(.*)")
 SYNC_FAIL = re.compile(r"sync: commit \d+ work \d+ did not finish")
 SYNC_DRAW = re.compile(r"sync: commit \d+ work \d+: pipeline ")   # one per draw, said before it runs
 HANDLE = re.compile(r"0x[0-9a-f]{6,}")
-PIPELINE = re.compile(r"render pipelines: \d+ built, this one \d+ us \((?:ok|refused) (0x[0-9a-f]+)\) "
+PIPELINE = re.compile(r"render pipelines: \d+ built, this one \d+ us \((?:ok|refused|reused) (0x[0-9a-f]+)\) "
                       r"vertex (\S+) fragment (\S+)|compute pipeline (0x[0-9a-f]+) is (\S+)")
 # Graphics lines that carry a failure word and report nothing wrong.
 BENIGN = re.compile(r"error 0$|default_before=nil|MTLCommandBufferStatus: |binary archive|"
