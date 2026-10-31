@@ -183,6 +183,7 @@ def main():
     ap.add_argument("--slide", type=lambda s: int(s, 16))
     ap.add_argument("--top", type=int, default=64)
     ap.add_argument("--threads", type=int, metavar="PID")
+    ap.add_argument("--pid", help="only this process's places, then its samples summed by function")
     args = ap.parse_args()
     text = logs(args.round_dir / "run")
     if args.threads is not None:
@@ -205,17 +206,33 @@ def main():
         if m:
             print(f"  {names.get(m.group(1), '?'):32s} pid {m.group(1):>4s}  user {m.group(2):>6s}  kernel {m.group(3):>6s}")
             continue
-        m = re.match(r"(\d+) (-?\d+) ([uk]) ([0-9a-f]+) ([0-9a-f]+)", line)
-        if m:
-            entries.append((int(m.group(1)), m.group(2), m.group(3), int(m.group(4), 16), int(m.group(5), 16)))
+        # 12377-cmd37 and later add two return addresses above a kernel sample
+        m = re.match(r"(\d+) (-?\d+) ([uk]) ([0-9a-f]+) ([0-9a-f]+)(?: ([0-9a-f]+) ([0-9a-f]+))?", line)
+        if m and args.pid in (None, m.group(2)):
+            entries.append((int(m.group(1)), m.group(2), m.group(3), int(m.group(4), 16), int(m.group(5), 16),
+                            int(m.group(6) or "0", 16), int(m.group(7) or "0", 16)))
     user = UserNames(slide, own_image_bases(text + "\n" + "\n".join(snapshots(args.round_dir / "run"))))
-    kernel = kernel_names(args.round_dir, sorted({a for e in entries if e[2] == "k" for a in e[3:5] if a}))
-    for count, pid, where, pc, lr in entries[:args.top]:
-        who = names.get(pid, "?")[:20]
+    kernel = kernel_names(args.round_dir, sorted({a for e in entries if e[2] == "k" for a in e[3:] if a}))
+    places = []
+    for count, pid, where, pc, lr, up0, up1 in entries:
         if where == "u":
-            print(f"{count:6d} {who:20s} u {user.name(pc, int(pid))}  <- {user.name(lr, int(pid))}")
+            chain = [user.name(pc, int(pid)), user.name(lr, int(pid))]
         else:
-            print(f"{count:6d} {who:20s} k {kernel.get(pc, hex(pc))}  <- {kernel.get(lr, hex(lr))}")
+            chain = [kernel.get(a, hex(a)) for a in (pc, lr, up0, up1) if a]
+        places.append((count, pid, where, chain))
+    for count, pid, where, chain in places[:args.top]:
+        print(f"{count:6d} {names.get(pid, '?')[:20]:20s} {where} " + "  <- ".join(chain))
+    if args.pid is not None:
+        # by function: a user sample by the function it is in, a kernel one by its functions up the chain
+        # with the offsets dropped, so the same path through a function is counted once
+        sums = collections.Counter()
+        for count, pid, where, chain in places:
+            funcs = [re.sub(r"\+0x[0-9a-f]+\)?$", "", re.sub(r"^.*\(|^0x[0-9a-f]+ ", "", c)) for c in chain]
+            sums[f"{where} " + (funcs[0] if where == "u" else " <- ".join(dict.fromkeys(funcs)))] += count
+        total = sum(sums.values())
+        print(f"\nby function, {total} samples printed")
+        for key, count in sums.most_common(args.top):
+            print(f"{count:6d} {100 * count / total:5.1f}% {key}")
     return 0
 
 

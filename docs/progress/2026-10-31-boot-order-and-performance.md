@@ -32,8 +32,23 @@
 | `kernel-12377-cmd32-bo2` | `12377-cmd32` | GPU buffer 地址在 512 MB 内循环，单个 buffer 拿不到地址时只拒绝这一个；80 次翻页 | 80 次翻页 GPU 没有停用。打包时漏了 `REST=1`，launchd 任务集只有 37 条，见 §2 |
 | `kernel-12377-cmd32-bo3` | 同上 | `REST=1` 改为默认；`var_store` 对存档里没有访问控制表的项去掉继承来的表；`seed-icons.bin` | 图标缓存保留，iconservicesagent 开机后绘制 2557 次；全轮处理器时间 309 秒；翻页帧率在约 54 与约 23 帧／秒两档之间切换，见 §3；第 70 次翻页前后进入了图标编辑模式 |
 | `kernel-12377-cmd33-bo4` | `12377-cmd33` | 处理器温度限制改为逐档升降；巡检末尾去掉电池百分比文字层的 `destOut` | 集群 1 最高 70～71 °C，不再长时间停在最低档；第 40 次翻页前已进入图标编辑模式，图标持续抖动，backboardd 绘制 282 万次，帧率不能与 `bo3` 比较。去掉 `destOut` 后百分比文字显示，电池外框与填充仍不显示 |
+| `kernel-12377-cmd33-bo5` | 同上 | 翻页从屏幕边缘起手，每 5 对按一次主屏键；巡检加六个测试图层 | 快档 49.3、慢档 28.0 帧／秒（中位数，下同）；慢档对应今天视图，每帧约 410 次绘制 |
+| `kernel-12377-cmd33-bo6` | 同上 | AIR 光栅化状态线宽 1 | 电池外框与填充显示；快档 49.2、慢档 26.3 帧／秒 |
+| `kernel-12377-cmd34-bo7` | `12377-cmd34` | 内核 `kRedwoodMemory`：调用方内存直接做 GPU buffer | backboardd 在 `buffer_texture_upload` 崩溃 16 次：同进程映射返回原地址，释放时把调用方的内存解除了映射 |
+| `kernel-12377-cmd35-bo8` | `12377-cmd35` | 第二次映射加 `kIOMapUnique` | 解除映射时内核在 `IOGeneralMemoryDescriptor::doMap` data abort |
+| `kernel-12377-cmd36-bo9` | `12377-cmd36` | 改用 `kIOMapGuardedSmall`；只读区域按只读方向 wire | 没有崩溃，打印出的 no-copy buffer 全部直接使用调用方内存；快档 52.9、慢档 30.0 帧／秒 |
+| `kernel-12377-cmd36-bo10` | 同上 | freedreno 提交合并（`fd-submit-merge.patch`），`rwa_flush` 不等待 | 今天视图每个显示间隔的提交从约 33 次降到 3 次；快档 52.8、慢档 35.1 帧／秒 |
+| `kernel-12377-cmd36-bo11` | 同上 | 驱动探针只读时钟（`fd-probe-wall-only.patch`） | 每次绘制的 `draw_vbo` 从 38.3 降到 9.1 微秒；backboardd 全轮处理器时间 158.6 秒降到 97.2 秒；快档 54.3、慢档 36.8 帧／秒 |
+| `kernel-12377-cmd37-bo12` | `12377-cmd37` | AIR 导入调用方内存 buffer 时带上大小（`fd-import-size.patch`）；采样器给内核样本多记两层返回地址 | 三个进程打印出的 48 次纹理导入全部成功（`bo11` 打印出的 47 次里失败 40 次）；快档 54.3、慢档 38.8 帧／秒 |
+| `kernel-12377-cmd37-bo13` | 同上 | freedreno 不再为 buffer 缓存调用 `madvise`（`fd-madvise-skip.patch`）；`redwood_drm.c` 按 ioctl 计数；rwsh 加 `maps` | 快档 54.3、慢档 36.9 帧／秒；今天视图翻页时 GPU（342 MHz）忙碌 94% |
+| `kernel-12377-cmd38-bo14` | `12377-cmd38` | 面板只重画源图像里变了的行（`fb_rows`，默认打开） | 屏幕静止时每帧面板拷贝中位数从 8.2 降到 1.6 毫秒，翻页时从 8.6 降到 5.4 毫秒；快档 54.3、慢档 41.1 帧／秒 |
+| `kernel-12377-cmd39-bo15` | `12377-cmd39` | GPU 按设备树增加 389～607 MHz 四档，`GPU_SPEED=7` | 今天视图翻页时 GPU 忙碌 56%，GPU 最高 49.8 °C，没有 GPU 故障；快档 56.1、慢档 38.2 帧／秒 |
+| `kernel-12377-cmd40-bo16` | `12377-cmd40` | 等 GPU 的线程睡到 GMU 消息中断（INTID 336）；看门狗在手势中无帧时转储线程 | 静止时每 5 秒约 50 次中断；快档 56.2（60 个窗口）、慢档 36.9 帧／秒；84 步里 7 次滑动没有出帧；看门狗 8 次转储都在静止后的第一次触摸，属误报 |
+| `kernel-12377-cmd41-bo17` | `12377-cmd41` | freedreno 与 AIR 的计时点默认不读时钟（`fd-perf-off.patch`，`FD_PERF_DRAW=1` 打开） | backboardd 全轮处理器时间 54.7 秒（`bo16` 124.7 秒），全部进程 195.7 秒（`bo16` 259.9 秒）；进今天视图的一步失败，今天视图的段落在主屏 |
+| `kernel-12377-cmd42-bo18` | `12377-cmd42` | 巡检改为每组先按主屏键再左右各滑一次，今天视图里上下滚动；看门狗在手势开始 400 毫秒后仍无帧时转储；`REST_ALLOW=duetexpertd` | 今天视图滚动时 backboardd 因 AIR 缺 `air.fmax3` 退出 4 次；duetexpertd 与 SpringBoard 共用一个服务名，没有登记，壁纸这一变量没有生效；3 次转储里 SpringBoard 主线程都在 run loop 等待 |
+| `kernel-12377-cmd43-bo19` | `12377-cmd43` | AIR 增加三元最值；`REST_ALLOW` 的任务让出别的任务已登记的服务名 | backboardd 没有退出；duetexpertd 启动后报「Failed to initialize datavault for DuetExpertCenterAsset」反复退出，ReportCrash 用了 66.9 秒处理器时间；壁纸仍黑 |
 
-内核身份：`12377-cmd25`～`12377-cmd33` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。
+内核身份：`12377-cmd25`～`12377-cmd43` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。`bo12` 起的改动与读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §7～§13。
 
 ## 2. 处理器占用
 
@@ -87,9 +102,10 @@
 ## 6. 未解决
 
 - 壁纸：MercuryPosterExtension 渲染出 1125x2436 的 surface，屏幕上仍是黑色；PosterBoard 仍报 `-2222`、`FBProcessManager 2`、`Gallery configuration is nil`。不带 GPU 的 `seed2`、`seed3` 也是黑色。
+  - `bo19` 的 PosterBoard 日志里锁屏海报配置已经建立并激活（`com.apple.MercuryPoster:configuration:...PRPosterRoleLockScreen`），`PRPosterRoleBackdrop` 的角色协调器建立失败。
+  - 海报图库要连 duetexpertd 的 `com.apple.proactive.FaceSuggestions.xpc`。`mkjobs.py` 一直不登记 duetexpertd；`REST_ALLOW=duetexpertd` 登记后它在 `ATXEnableMobileAssetDataVault` 报「Failed to initialize datavault for DuetExpertCenterAsset」退出，launchd 反复拉起（`bo19`），默认仍不登记。
   - `bo2` 的图层树：`_SBWallpaperSecureWindow` 里有 `PBUIPosterSceneLayerHostView`，其下的 `_UISceneLayerHostContainerView` 只有 `_UITouchPassthroughView`，没有承载海报场景的图层。
   - 两个 MercuryPosterExtension 进程的主线程停在 `UIApplicationMain` 的 run loop 里，处理器时间 0.2 秒左右。
   - PosterBoard 在 `bo3` 里 28 次报 PosterKit 的 `not available`，28 次报 `XPC service invalidated`，另有一次 `FBProcessManager` 的 `already-exists`（MercuryPoster 的进程已存在，忽略执行上下文）和两次 `Scene was invalidated`。
-- 翻页卡顿：`warm5` 翻页时 GPU 统计窗口从 5 秒拉长到 7～8 秒，提交中约一半要等队列空位；GPU 最高 342 MHz。
-- 电池图标：GPU 合成下不显示。`bo2` 上 backboardd 改用 sysmem（`FD_MESA_DEBUG=sysmem`）、或加上 AdrenoMetal 用的四个 `CA_*` 环境变量后，电池图标仍不显示。SpringBoard 被 AIR 拒绝的那条管线是 SwiftUI 的 `custom_effect:distanceGradient_v1`，与电池图标的关系未确认。`bo4` 用 `notify com.redwood.battery.nofx` 去掉百分比文字层的 `destOut` 后，文字「73」显示出来，两个 `CAShapeLayer` 外框和填充层仍不显示，下一步查 backboardd 画路径形状的那条路。
+- 翻页与滚动：主屏翻页多在 54～63 帧／秒，今天视图翻页 37～40 帧／秒、上下滚动 21～26 帧／秒；一部分滑动的抬起事件没有到 backboardd 处理触点的函数，整次手势没有反应。读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §12、§15。
 - backboardd 在 `bo1` 滑动时 SIGSEGV，没有崩溃记录；`usertrap=1` 之后的轮次会打印回溯。

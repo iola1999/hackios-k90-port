@@ -94,11 +94,17 @@ TOOLS = WORKSPACE / "tools/apfs"
 # with those file names: it puts the named services they connect to, with counts, into the kernel
 # log ("say PID NAME: xpcwatch ..."). For finding the clients that reconnect in a loop.
 XPCWATCH_PROCESSES = os.environ.get("XPCWATCH", "").split()
+# POSTER_METAL=1 also gives MercuryPosterExtension, the provider of the default wallpaper, the Metal
+# device: it draws the wallpaper with its own Metal shaders (default.metallib in its bundle), and
+# without a device the wallpaper window hosts its context empty. It is an ExtensionKit service with
+# no launchd job, so the inserted library is the whole switch (sb_metal_registration_sequence.inc).
+POSTER_METAL = os.environ.get("POSTER_METAL", "0") == "1"
 INJECT = (
     "/redwood/lib/libredwood-sbmetal-experiment.dylib SpringBoard backboardd" +
-    (" iconservicesagent" if os.environ.get("ICON_METAL", "1") == "1" else "") + "\n"
+    (" iconservicesagent" if os.environ.get("ICON_METAL", "1") == "1" else "") +
+    (" MercuryPosterExtension" if POSTER_METAL else "") + "\n"
     "/redwood/lib/libredwood.dylib backboardd\n"
-    "/redwood/lib/libredwood-sb26.dylib SpringBoard PosterBoard\n" +
+    "/redwood/lib/libredwood-sb26.dylib SpringBoard PosterBoard MercuryPosterExtension\n" +
     ("/redwood/lib/libredwood-xpcwatch.dylib " + " ".join(XPCWATCH_PROCESSES) + "\n"
      if XPCWATCH_PROCESSES else "")
 )
@@ -225,7 +231,12 @@ REST_DIR = OUT / "rest-jobs"
 # - PerfPowerServices is left out. On the same round it spent half a processor inside a
 #   dispatch_once that walks the SMC keys (libSMC SMCGetKeyFromIndex, PowerlogLiteOperators), which
 #   this kernel's SMC does not end.
-REST_ALLOW = ["com.apple.dmd"]
+# REST_ALLOW="word ..." lets more of DENY through for one round. duetexpertd is the candidate for the
+# wallpaper: it serves com.apple.proactive.FaceSuggestions.xpc, and on kernel-12377-cmd40-bo16
+# PosterBoard's gallery update got 4099 (connection invalid) from it and every extension's
+# descriptor push to it failed with -2222.
+REST_TRIAL = os.environ.get("REST_ALLOW", "").split()
+REST_ALLOW = ["com.apple.dmd"] + REST_TRIAL
 REST_DENY = ["com.apple.PerfPowerServices"]
 SDK = ["/usr/bin/xcrun", "-sdk", "iphoneos", "clang", "-arch", "arm64e", "-miphoneos-version-min=26.0"]
 
@@ -477,11 +488,21 @@ def add_rest_jobs(root, cache):
     services = {name for job in jobs.values() for name in job.get("MachServices", {})}
     added = []
     for path in sorted(REST_DIR.glob("*.plist")):
-        job = plistlib.loads(path.read_bytes())
-        if (job["Label"] in labels or job["Label"] in REST_DENY or services & set(job["MachServices"])
+        data = path.read_bytes()
+        job = plistlib.loads(data)
+        shared = services & set(job["MachServices"])
+        if shared and any(word in path.name for word in REST_TRIAL):
+            # The system image's SpringBoard and duetexpertd jobs both list
+            # com.apple.proactive.HomeScreenSuggestion.xpc, and a registered name keeps the whole
+            # job out; a job on trial gives up the names another job holds and keeps the rest.
+            for name in shared:
+                del job["MachServices"][name]
+            data = plistlib.dumps(job, fmt=plistlib.FMT_BINARY)
+            shared = set()
+        if (job["Label"] in labels or job["Label"] in REST_DENY or shared
                 or (root / "LaunchDaemons" / path.name).exists()):
             continue
-        (root / "LaunchDaemons" / path.name).write_bytes(path.read_bytes())
+        (root / "LaunchDaemons" / path.name).write_bytes(data)
         jobs["/System/Library/LaunchDaemons/" + path.name] = job
         labels.add(job["Label"])
         services |= set(job["MachServices"])
