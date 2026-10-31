@@ -51,8 +51,14 @@
 | `kernel-12377-cmd44-bo21` | `12377-cmd44` | 系统镜像加入 SpotlightResources 的 root 与 English 资源包（含模型）；看门狗只按手指采样计手势，卡顿转储要求手指仍在屏上 | Spotlight 没有崩溃，ReportCrash 7.1 秒，今天视图段处理器集群 41～51 °C，滚动每步 29～36 帧的有 11 步；40 次翻页里 5 次没有出帧，8 次转储都对应没有反应的手势 |
 | `kernel-12377-cmd44-bo22` | 同上 | 驱动改用 AIR 的 `rwa_dispatch_nowait`，计算着色器派发不等 GPU | 巡检没有走到用计算着色器的界面，派发次数为 0；今天视图进了编辑模式（一次丢了抬起的触摸被当成长按）；40 次翻页里 5 次没有出帧 |
 | `kernel-12377-cmd44-bo23` | 同上 | `libredwood.dylib` 在有 `input26-service` 任务时不起输入线程；巡检末尾加一次下拉搜索 | backboardd 只有一块触摸屏；40 次翻页每次 30～33 帧，今天视图 16 次滚动每次 27～32 帧，看门狗没有转储；搜索页派发每次 22～79 微秒；全轮处理器集群最高 43.8 °C |
+| `kernel-12377-cmd44-bo24`～`bo32` | 同上 | 壁纸：MercuryPosterExtension 拿到 Metal 设备（`POSTER_METAL=1`），逐轮补输出通道、AIR 翻译器、顶点纹理、压缩格式、blit 与派发 | `bo31` 起扩展的提交不再出错，屏幕仍黑；backboardd 拒收 SpringBoard 壁纸窗口的 commit。逐轮读数见[锁屏壁纸](../analysis/2026-10-31-mercury-wallpaper.md) §4 |
+| `kernel-12377-cmd45-bo33`、`kernel-12377-cmd46-bo34` | `12377-cmd45`、`12377-cmd46` | 内核打印失败的拷贝型 memory entry | 被拒的是 ATX 格式的海报快照，memory entry 大小为 0 |
+| `kernel-12377-cmd46-bo35` | `12377-cmd46` | 海报快照存成 PNG | commit 不再被拒；快照与屏幕仍黑 |
+| `kernel-12377-cmd46-bo36` | 同上 | 扩展在提交末尾采样 resolve 目标 | 扩展的 4 倍多重采样 drawable 全部为 0 |
+| `kernel-12377-cmd47-bo37` | `12377-cmd47` | 扩展用单采样直接画进 drawable；`redwood_tl` 一行 319 字节 | 主屏与锁屏显示壁纸 |
+| `kernel-12377-cmd47-bo38` | 同上 | 单采样与 `POSTER_METAL` 改为默认，巡检同 `bo23` | 全程有壁纸；59 次滑动平均 52.7 帧／秒（`bo23` 52.9），最慢的两次 21.0 与 24.4 帧／秒，与 `bo23` 最慢的两次是同两步（40.3 与 28.0）；30 秒窗口内处理器最高 71.3 °C（`bo23` 73.3 °C）；扩展只在开机时提交，之后不再提交 |
 
-内核身份：`12377-cmd25`～`12377-cmd44` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。`bo12` 起的改动与读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §7～§13。
+内核身份：`12377-cmd25`～`12377-cmd47` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。`bo12` 起的改动与读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §7～§13。
 
 ## 2. 处理器占用
 
@@ -105,12 +111,7 @@
 
 ## 6. 未解决
 
-- 壁纸：MercuryPosterExtension 渲染出 1125x2436 的 surface，屏幕上仍是黑色；PosterBoard 仍报 `-2222`、`FBProcessManager 2`、`Gallery configuration is nil`。不带 GPU 的 `seed2`、`seed3` 也是黑色。
-  - `bo19` 的 PosterBoard 日志里锁屏海报配置已经建立并激活（`com.apple.MercuryPoster:configuration:...PRPosterRoleLockScreen`），`PRPosterRoleBackdrop` 的角色协调器建立失败。
-  - 海报图库要连 duetexpertd 的 `com.apple.proactive.FaceSuggestions.xpc`。`mkjobs.py` 一直不登记 duetexpertd；`REST_ALLOW=duetexpertd` 登记后它在 `ATXEnableMobileAssetDataVault` 报「Failed to initialize datavault for DuetExpertCenterAsset」退出，launchd 反复拉起（`bo19`），默认仍不登记。
-  - `bo2` 的图层树：`_SBWallpaperSecureWindow` 里有 `PBUIPosterSceneLayerHostView`，其下的 `_UISceneLayerHostContainerView` 只有 `_UITouchPassthroughView`，没有承载海报场景的图层。
-  - 两个 MercuryPosterExtension 进程的主线程停在 `UIApplicationMain` 的 run loop 里，处理器时间 0.2 秒左右。
-  - PosterBoard 在 `bo3` 里 28 次报 PosterKit 的 `not available`，28 次报 `XPC service invalidated`，另有一次 `FBProcessManager` 的 `already-exists`（MercuryPoster 的进程已存在，忽略执行上下文）和两次 `Scene was invalidated`。
+- 壁纸：`bo37` 起主屏与锁屏显示壁纸，缺口与改法见[锁屏壁纸](../analysis/2026-10-31-mercury-wallpaper.md)。4 倍多重采样得到全 0 的原因和锁屏时钟不显示没有查，见该文档 §8。
 - 翻页与滚动：今天视图翻页 37～40 帧／秒，每帧约 410 次绘制的处理器时间分配还没有按帧的读数，见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §16。没有反应的滑动已查明并修复（§12，`bo23`）。
 - ScreenContinuity 从 `bo18` 起每轮 SIGTRAP 退出 12～16 次，见 [Spotlight 崩溃循环](../analysis/2026-10-31-spotlight-crash-loop.md) §6。
 - backboardd 在 `bo1` 滑动时 SIGSEGV，没有崩溃记录；`usertrap=1` 之后的轮次会打印回溯。

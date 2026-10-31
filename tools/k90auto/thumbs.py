@@ -4,7 +4,7 @@
 usage: tools/k90auto/thumbs.py ROUND_DIR [PROCESS]
 
 The driver prints, after each draw in sync mode, a 32x32 sample of every colour attachment ("out")
-and every fragment texture ("in"), with REDWOOD_THUMB_DRAWS also the attachments before the draw
+and every fragment texture ("in"), at the end of a commit also each resolve target ("res"), with REDWOOD_THUMB_DRAWS also the attachments before the draw
 ("pre"): a header line `thumb SEQ: commit C work W ROLE SLOT: format F
 WxH PTR` and 32 lines `thumb SEQ ROW: ...`, four characters a texel (R, G, B, A, top six bits each,
 base64 digits). This writes ROUND_DIR/thumbs-N.png, one row per draw: the attachments before
@@ -29,7 +29,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 DIGITS64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 SIZE, SCALE, ROWS_PER_SHEET = 32, 3, 36
-HEADER = re.compile(r"redwoodmetal\[(\S+) (\d+)\]: thumb (\d+): commit (\d+) work (\d+) (in|out|pre) (\d+): "
+HEADER = re.compile(r"redwoodmetal\[(\S+) (\d+)\]: thumb (\d+): commit (\d+) work (\d+) (in|out|pre|res) (\d+): "
                     r"format (\d+) (\d+x\d+) (\S+)( buffer| surface)?")
 ROW = re.compile(r"redwoodmetal\[(\S+) (\d+)\]: thumb (\d+) (\d+): ([A-Za-z0-9+/]{32,})\s*$")
 
@@ -112,13 +112,13 @@ def main():
     index_lines = []
     sheet_rows = []
     for (process, pid, commit, work), items in draws.items():
-        groups = [[it for it in items if it[1]["role"] == role] for role in ("pre", "in", "out")]
+        groups = [[it for it in items if it[1]["role"] == role] for role in ("pre", "in", "out", "res")]
         row = []
         for group in groups:
             if group:
                 row += ([None] if row else []) + group
         sheet_rows.append(((process, pid, commit, work), row))
-        for key, head in groups[0] + groups[1] + groups[2]:
+        for key, head in groups[0] + groups[1] + groups[2] + groups[3]:
             rows = bodies.get(key, {})
             size = len(next(iter(rows.values()))) // 4 if rows else SIZE
             missing = size - len(rows)

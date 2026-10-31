@@ -94,11 +94,11 @@ TOOLS = WORKSPACE / "tools/apfs"
 # with those file names: it puts the named services they connect to, with counts, into the kernel
 # log ("say PID NAME: xpcwatch ..."). For finding the clients that reconnect in a loop.
 XPCWATCH_PROCESSES = os.environ.get("XPCWATCH", "").split()
-# POSTER_METAL=1 also gives MercuryPosterExtension, the provider of the default wallpaper, the Metal
-# device: it draws the wallpaper with its own Metal shaders (default.metallib in its bundle), and
-# without a device the wallpaper window hosts its context empty. It is an ExtensionKit service with
-# no launchd job, so the inserted library is the whole switch (sb_metal_registration_sequence.inc).
-POSTER_METAL = os.environ.get("POSTER_METAL", "0") == "1"
+# MercuryPosterExtension, the provider of the default wallpaper, gets the Metal device unless
+# POSTER_METAL=0: it draws the wallpaper with its own Metal shaders (default.metallib in its bundle),
+# and without a device the wallpaper window hosts its context empty. It is an ExtensionKit service
+# with no launchd job, so the inserted library is the whole switch (sb_metal_registration_sequence.inc).
+POSTER_METAL = os.environ.get("POSTER_METAL", "1") == "1"
 # libredwood.dylib goes into backboardd for its run loop probe (tl: b). /dev/redwood-touch has one
 # reader, input26-service, which is what userland/build.sh checks its own inject.conf for; the
 # library's touch thread stays off where that job exists (userland/src/inject.c). Before that, from
@@ -150,6 +150,17 @@ for item in os.environ.get("JOB_ENV", "").split():
     if not job_name.endswith(".plist") or not key:
         raise SystemExit(f"JOB_ENV item {item!r} is not NAME.plist:KEY=VALUE")
     JOB_ENV.append((job_name, key, value))
+# EXT_ENV="MercuryPosterExtension:KEY=VALUE ..." does the same for a process with no launchd job: the
+# items for one name go into /redwood/etc/env/NAME, one KEY=VALUE a line, and the inserted library
+# sets them and starts the process again once, because libSystem reads OS_ACTIVITY_DT_MODE before any
+# inserted library runs (userland/src/inject_posterboard.c, which reads the file for
+# MercuryPosterExtension only).
+EXT_ENV = {}
+for item in os.environ.get("EXT_ENV", "").split():
+    ext_name, _, setting = item.partition(":")
+    if not ext_name or "=" not in setting or setting.startswith("="):
+        raise SystemExit(f"EXT_ENV item {item!r} is not NAME:KEY=VALUE")
+    EXT_ENV.setdefault(ext_name, []).append(setting)
 
 # The wallpaper and the widgets are drawn by two services this boot does not start, and each
 # lookup for them fails: SpringBoard and iconservicesagent ask for
@@ -707,6 +718,9 @@ def main():
     for name, present in record.get("holds", {}).items():
         assert present or name not in AIR_REQUIRED, f"build-air.py recorded {name} as absent"
     (dest / "etc/inject.conf").write_text(INJECT)
+    for ext_name, settings in EXT_ENV.items():
+        (dest / "etc/env").mkdir(exist_ok=True)
+        (dest / "etc/env" / ext_name).write_text("".join(s + "\n" for s in settings))
     if PROBE:
         shutil.copy2(probe, dest / "bin/lsprobe")
     # the desktop's own gesture script: the base image carries a one-shot sequence (unlock, two
@@ -752,7 +766,8 @@ def main():
              | {"/bin/" + program.name for program in EXTRA_PROGRAMS if "/bin/" + program.name not in before}
              | ({"/etc/var.seed"} if SEED else set())
              | ({"/lib/libredwood-xpcwatch.dylib"} if XPCWATCH_PROCESSES else set())
-             | {"/LaunchDaemons/" + name for name in rest_added})
+             | {"/LaunchDaemons/" + name for name in rest_added}
+             | ({"/etc/env"} | {"/etc/env/" + name for name in EXT_ENV} if EXT_ENV else set()))
     assert set(after) - set(before) == added, \
         f"unexpected files: {sorted(set(after) - set(before) - added)}"
     assert set(before) - set(after) == set(), sorted(set(before) - set(after))
@@ -773,6 +788,7 @@ def main():
                 # here or the comparison above fails on a directory nobody meant to change.
                 *(["/bin"] if PROBE or EXTRA_PROGRAMS else []),
                 *(["/etc", "/etc/var.seed"] if SEED else []),
+                *(["/etc", "/etc/env", *("/etc/env/" + name for name in EXT_ENV)] if EXT_ENV else []),
                 *(["/bin/lsprobe"] if PROBE else []),
                 # the two jobs below change this directory's own times as well
                 "/LaunchDaemons", *["/LaunchDaemons/" + name for name in EXTRA_JOBS if name not in JOBS_DROP],
@@ -852,6 +868,7 @@ def main():
         "inject_conf": INJECT.strip(),
         "jobs_sha256": hashlib.sha256(jobs).hexdigest(), "probe": PROBE, "varstore_show": VARSTORE_SHOW,
         "skeleton_appended": appended, "jobs_dropped": sorted(JOBS_DROP), "job_env": [f"{n}:{k}={v}" for n, k, v in JOB_ENV],
+        "ext_env": [f"{n}:{s}" for n, settings in EXT_ENV.items() for s in settings],
         "jobs_effective": jobs_effective, "jobs_effective_count": len(jobs_effective),
         "rest": REST, "rest_added_count": len(rest_added), "rest_allow": REST_ALLOW, "rest_deny": REST_DENY,
         "seed": {"path": str(SEED), "sha256": sha(SEED), "bytes": seed_bytes} if SEED else None,

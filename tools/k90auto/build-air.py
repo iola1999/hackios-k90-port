@@ -40,7 +40,8 @@ FILES = ["air_metal.c", "air_metal.h", "air_to_nir.c", "air_private.h", "air_met
          "air_metal_compute.inc", "air_intrinsics.c", "air_metal_lowering.inc",
          "air_metal_resource_private.h", "air_link.inc", "nir_air.h", "air_call.inc",
          "air_metal_texture.inc", "air_metal_texels.inc", "air_metal_fence.inc", "air_metal_state.inc",
-         "air_metal_dispatch.inc"]
+         "air_metal_dispatch.inc", "air_texture.inc", "air_llvm.inc", "air_argbuf.inc",
+         "air_metal_depth_stencil.inc"]
 
 # The toolchain: a venv with meson 1.12.1 and the ninja from homebrew, with bison ahead of the
 # system one because the frontend's parser needs it. The paths are part of the host image, not of

@@ -96,6 +96,8 @@ python3 tools/k90auto/package.py          # 从工作区根目录运行
   - `REDWOOD_SYNC_DRAWS=1`：驱动在每个绘制之后提交并等待完成，没有完成的绘制打印 `sync: commit N work M did not finish`，带管线名、颜色附件数、纹理数和缓冲数，并把这个管线的两个着色器模块以 `AIRFAIL begin hung-vertex`／`hung-fragment` 打出来，用 `hackios-xnu-kernel/tools/mesa/air/airfail-extract.py` 取回。每个绘制都要等 GPU，只给怀疑的进程打开。
   - `FD_MESA_DEBUG=...`：freedreno 自带的调试开关，例如 `sysmem` 让所有批次不走 GMEM。
   - `IR3_SHADER_DEBUG=vs`／`fs`：ir3 把这一类着色器的 NIR 和 A830 机器码打进 stderr（`Native code for unnamed VERT|FRAG shader 名字`），量大，只给一个进程打开。
+- `EXT_ENV="进程名:变量=值 ..."` 给没有 launchd 任务的进程加环境变量，目前只对 MercuryPosterExtension 生效：变量写进根盘的 `/redwood/etc/env/进程名`，插入的库设置这些变量后让进程重新执行一次，因为 `OS_ACTIVITY_DT_MODE` 在 libSystem 初始化时就已读取。该进程的标准输出与标准错误是 `/dev/null`，驱动与库的输出和重定向后的 stderr 经 `kern.redwood.say` 进内核日志（`say PID MercuryPosterExtension: ...`）。
+- MercuryPosterExtension（默认壁纸的提供者）默认插入 Metal 设备登记库，它用自己 bundle 里的着色器和 KTX 纹理画壁纸；`POSTER_METAL=0` 不插入，壁纸为黑色。壁纸的排查过程见[锁屏壁纸](../../docs/analysis/2026-10-31-mercury-wallpaper.md)。
 
 ## 8. 渲染问题的无人值守检查
 
