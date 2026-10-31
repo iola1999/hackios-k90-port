@@ -68,6 +68,9 @@
 | `kernel-12377-cmd50-bo47` | 同上 | GPU 用新调频默认值（最低 342 MHz、触摸后 1.5 秒）；巡检末尾打开设置并转储 SpringBoard 的图层 | 翻页 53.6 帧／秒、今天视图滚动 50.2 帧／秒，与 `bo46` 相当，调频切换由 54～62 次降到 30 次；被拒的 commit 来自 `SBMainSwitcherWindow`，其中壁纸快照是 ATX 格式的 CGImage，见 §6 |
 | `kernel-12377-cmd50-bo48` | 同上 | 驱动实现纹理布局与 `newTextureWithBytesNoCopy`（`redwoodmetal_texture_layout.inc`） | 没有 serialization error，Safari、短信、设置都画出内容；设置首次打开时有成块的旧内容，解锁后日历小组件空白、回到首页时天气小组件是蓝色方块。同一次开机内给 backboardd 设 `CA_DISABLE_DIRTY_REGIONS=1` 并重启后，这几处都正常；Dock 玻璃只有边缘高光 |
 | `kernel-12377-cmd50-bo49` | 同上 | backboardd 设 `CA_DISABLE_DIRTY_REGIONS=1`（`JOB_ENV`） | 翻页 53.6 帧／秒、今天视图 51.2 帧／秒，与 `bo47` 相当；GPU 每次提交 3.38 毫秒（`bo47` 1.96），多数时间在 607 MHz；每帧送面板 910 行（`bo47` 393）；最高 72.1 °C（`bo47` 71.7） |
+| `kernel-12377-cmd50-bo50` | 同上 | `package.py` 默认整帧重画；AIR 库加 `AIR_DEBUG_SOLID`／`AIR_DEBUG_NODISCARD`（`air_debug.inc`） | Dock 玻璃的 `glass_background_no_bleed_lph` 输出改成品红后屏幕上没有品红；同时去掉丢弃后，品红盖满搜索栏到屏幕底部的整块区域：片段都生成了，全部被丢弃，见 §6 |
+| `kernel-12377-cmd50-bo51` | 同上 | AIR 库加 `AIR_DEBUG_TEX`／`AIR_DEBUG_COORD`／`AIR_DEBUG_SCALE` | 第一次纹理读取的坐标正确，读到的值全为 0；同一次开机给 backboardd 设 `FD_DEV_FEATURES=has_fs_tex_prefetch=0` 后读到正确的距离场，Dock 与搜索栏显示完整的玻璃，见 §6 |
+| `kernel-12377-cmd50-bo52` | 同上 | Mesa 设备表对 A830 关掉 `has_fs_tex_prefetch`（`hackios-xnu-kernel/tools/mesa/rebase-26/0006-a830-no-fs-tex-prefetch.patch`），不设环境变量 | Dock、搜索栏、设置底部搜索栏都是完整的玻璃；翻页 53.4 帧／秒、今天视图 49.9 帧／秒（`bo49` 53.6、51.2，中位数都是 50.1）；动画窗口每帧等 GPU 2.74 毫秒（`bo49` 3.08）；最高 71.3 °C |
 
 内核身份：`12377-cmd25`～`12377-cmd50` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。`bo12` 起的改动与读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §7～§13。
 
@@ -131,7 +134,10 @@
   - 第一次打开应用时 backboardd 拒收 SpringBoard 一个窗口的 commit（「CompressedImage port is MACH_PORT_NULL!」，内核同时打印 SpringBoard 的拷贝型 memory entry 失败）。`bo47` 的图层转储里这个窗口是 `SBMainSwitcherWindow`，所有应用的场景都挂在它下面；它的 `PBUIFakeBlurView` 里有一张 846x1827 的 ATX 格式壁纸快照。
   - ATX/KTX 图像由 ImageIO 按驱动的纹理布局（`newTextureLayoutWithDescriptor`）解码，驱动返回 nil 时数据长度为 0，与 `bo34` 海报快照的失败相同（[锁屏壁纸](../analysis/2026-10-31-mercury-wallpaper.md) §6）。驱动在 `redwoodmetal_texture_layout.inc` 实现了纹理布局与 `newTextureWithBytesNoCopy` 后，`bo48` 起应用正常显示。
 - 局部重绘留下旧内容：backboardd 只重画变化区域时，设置里有成块的灰白旧内容，解锁后小组件空白或变色，用户另报解锁后顶部闪烁条带、进入今天视图和滚动结束时撕裂、日历与时钟图标先空白再出现。`CA_DISABLE_DIRTY_REGIONS=1` 下截图里的这几处都正常（`bo48` 同一次开机对照），`package.py` 起默认整帧重画（`DIRTY_REGIONS=1` 恢复）。原因未查：CoreAnimation 在 surface 1、2 之间交替，内核按整行哈希把变化的行送到面板，没有用 swap 里的脏区域。
-- Dock 玻璃只有边缘高光，内部直接透出壁纸，没有模糊、着色和边缘折射（`bo48`、`bo49` 截图）；设置底部搜索栏下的文字也没有模糊。与局部重绘无关，`bo49` 用 `REDWOOD_THUMB_MATCH=glass_background_sdf` 取了 16 个 draw 的 32x32 采样，分辨率不够判读。
+- Dock 玻璃：`bo52` 起完整显示，设置底部的搜索栏同样恢复。
+  - 原因：`glass_background_no_bleed_lph` 开头在 `texcoord1` 处读距离场（纹理 4、采样器 1），ir3 把这次读取改成着色器启动前的预取，在 A830 上读到全 0；距离场的 w 乘覆盖率为 0 的片段被丢弃，所以整块玻璃只剩另一条管线画的边缘高光。
+  - 排查经过见上表 `bo50`～`bo52`，补丁与依据见 `hackios-xnu-kernel/tools/mesa/rebase-26/README.md` 第 6 项。
+  - 用户反馈过 Dock 玻璃时好时坏（[锁屏壁纸](../analysis/2026-10-31-mercury-wallpaper.md) §9），与预取的关系没有核实。
 - 充电提示：电量计在 USB 上读到 +17 mA 时内核报告接上充电器，iOS 显示一次「充电」随即结束（用户反馈，`bo42`）。`12377-cmd48` 起 ±50 mA 以内不算充放电，`bo43` 里没有再报告充电器，用户侧还没有确认。
 - 翻页与滚动：今天视图翻页 37～40 帧／秒，每帧约 410 次绘制的处理器时间分配还没有按帧的读数，见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §16。没有反应的滑动已查明并修复（§12，`bo23`）。
 - ScreenContinuity 从 `bo18` 起每轮 SIGTRAP 退出 12～16 次，见 [Spotlight 崩溃循环](../analysis/2026-10-31-spotlight-crash-loop.md) §6。
