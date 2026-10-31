@@ -46,9 +46,13 @@
 | `kernel-12377-cmd40-bo16` | `12377-cmd40` | 等 GPU 的线程睡到 GMU 消息中断（INTID 336）；看门狗在手势中无帧时转储线程 | 静止时每 5 秒约 50 次中断；快档 56.2（60 个窗口）、慢档 36.9 帧／秒；84 步里 7 次滑动没有出帧；看门狗 8 次转储都在静止后的第一次触摸，属误报 |
 | `kernel-12377-cmd41-bo17` | `12377-cmd41` | freedreno 与 AIR 的计时点默认不读时钟（`fd-perf-off.patch`，`FD_PERF_DRAW=1` 打开） | backboardd 全轮处理器时间 54.7 秒（`bo16` 124.7 秒），全部进程 195.7 秒（`bo16` 259.9 秒）；进今天视图的一步失败，今天视图的段落在主屏 |
 | `kernel-12377-cmd42-bo18` | `12377-cmd42` | 巡检改为每组先按主屏键再左右各滑一次，今天视图里上下滚动；看门狗在手势开始 400 毫秒后仍无帧时转储；`REST_ALLOW=duetexpertd` | 今天视图滚动时 backboardd 因 AIR 缺 `air.fmax3` 退出 4 次；duetexpertd 与 SpringBoard 共用一个服务名，没有登记，壁纸这一变量没有生效；3 次转储里 SpringBoard 主线程都在 run loop 等待 |
-| `kernel-12377-cmd43-bo19` | `12377-cmd43` | AIR 增加三元最值；`REST_ALLOW` 的任务让出别的任务已登记的服务名 | backboardd 没有退出；duetexpertd 启动后报「Failed to initialize datavault for DuetExpertCenterAsset」反复退出，ReportCrash 用了 66.9 秒处理器时间；壁纸仍黑 |
+| `kernel-12377-cmd43-bo19` | `12377-cmd43` | AIR 增加三元最值；`REST_ALLOW` 的任务让出别的任务已登记的服务名 | backboardd 没有退出；duetexpertd 启动后报「Failed to initialize datavault for DuetExpertCenterAsset」退出 16 次；今天视图下滑打开搜索后 Spotlight 崩溃 399 次，ReportCrash 用了 66.9 秒处理器时间；壁纸仍黑 |
+| `kernel-12377-cmd43-bo20` | 同上 | 翻页起手位置从 x 0.97／0.03 改为 0.85／0.15，不带 duetexpertd | 40 次翻页里 1 次没有出帧（`bo18` 4 次、`bo19` 3 次）；td2 之后 Spotlight 崩溃 664 次，ReportCrash 72.5 秒，处理器集群升到 66～69 °C，见 [Spotlight 崩溃循环](../analysis/2026-10-31-spotlight-crash-loop.md) |
+| `kernel-12377-cmd44-bo21` | `12377-cmd44` | 系统镜像加入 SpotlightResources 的 root 与 English 资源包（含模型）；看门狗只按手指采样计手势，卡顿转储要求手指仍在屏上 | Spotlight 没有崩溃，ReportCrash 7.1 秒，今天视图段处理器集群 41～51 °C，滚动每步 29～36 帧的有 11 步；40 次翻页里 5 次没有出帧，8 次转储都对应没有反应的手势 |
+| `kernel-12377-cmd44-bo22` | 同上 | 驱动改用 AIR 的 `rwa_dispatch_nowait`，计算着色器派发不等 GPU | 巡检没有走到用计算着色器的界面，派发次数为 0；今天视图进了编辑模式（一次丢了抬起的触摸被当成长按）；40 次翻页里 5 次没有出帧 |
+| `kernel-12377-cmd44-bo23` | 同上 | `libredwood.dylib` 在有 `input26-service` 任务时不起输入线程；巡检末尾加一次下拉搜索 | backboardd 只有一块触摸屏；40 次翻页每次 30～33 帧，今天视图 16 次滚动每次 27～32 帧，看门狗没有转储；搜索页派发每次 22～79 微秒；全轮处理器集群最高 43.8 °C |
 
-内核身份：`12377-cmd25`～`12377-cmd43` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。`bo12` 起的改动与读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §7～§13。
+内核身份：`12377-cmd25`～`12377-cmd44` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。`bo12` 起的改动与读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §7～§13。
 
 ## 2. 处理器占用
 
@@ -107,5 +111,6 @@
   - `bo2` 的图层树：`_SBWallpaperSecureWindow` 里有 `PBUIPosterSceneLayerHostView`，其下的 `_UISceneLayerHostContainerView` 只有 `_UITouchPassthroughView`，没有承载海报场景的图层。
   - 两个 MercuryPosterExtension 进程的主线程停在 `UIApplicationMain` 的 run loop 里，处理器时间 0.2 秒左右。
   - PosterBoard 在 `bo3` 里 28 次报 PosterKit 的 `not available`，28 次报 `XPC service invalidated`，另有一次 `FBProcessManager` 的 `already-exists`（MercuryPoster 的进程已存在，忽略执行上下文）和两次 `Scene was invalidated`。
-- 翻页与滚动：主屏翻页多在 54～63 帧／秒，今天视图翻页 37～40 帧／秒、上下滚动 21～26 帧／秒；一部分滑动的抬起事件没有到 backboardd 处理触点的函数，整次手势没有反应。读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §12、§15。
+- 翻页与滚动：今天视图翻页 37～40 帧／秒，每帧约 410 次绘制的处理器时间分配还没有按帧的读数，见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §16。没有反应的滑动已查明并修复（§12，`bo23`）。
+- ScreenContinuity 从 `bo18` 起每轮 SIGTRAP 退出 12～16 次，见 [Spotlight 崩溃循环](../analysis/2026-10-31-spotlight-crash-loop.md) §6。
 - backboardd 在 `bo1` 滑动时 SIGSEGV，没有崩溃记录；`usertrap=1` 之后的轮次会打印回溯。

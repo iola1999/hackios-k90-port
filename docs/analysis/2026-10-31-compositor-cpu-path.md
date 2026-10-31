@@ -14,8 +14,10 @@
 - GPU 最高频率按设备树的档位从 342 MHz 提到 607 MHz（`12377-cmd39`）。今天视图翻页时 GPU 忙碌比例从 94% 降到 56%，GPU 最高 49.8 °C（`bo15`）。
 - 等 GPU 的线程改为睡到 GMU 的消息中断（`12377-cmd40`）。主屏翻页 0.57 秒窗口里帧率 61～63 帧／秒的窗口变多，快档中位数 56.2 帧／秒（`bo16`）。
 - §6 之后留下的计时点每次绘制仍读多次时钟，`bo16` 里 `mach_absolute_time` 占 backboardd 用户态样本的 18%。默认关闭后，backboardd 每帧处理器时间从约 9.3 毫秒降到 5.8 毫秒（`bo17`）。
-- 一部分手势完全没有画面响应：`bo16` 的 84 步里有 7 次滑动没有出帧，内核收到了每次滑动的 40 个触摸采样，之后约 4 秒里 backboardd 与 SpringBoard 都没有提交。这些滑动的抬起事件没有到 backboardd 处理触点的函数，读数见 §12。
+- 一部分手势完全没有画面响应：`bo16` 的 84 步里有 7 次滑动没有出帧。原因是 `/dev/redwood-touch` 有两个读者：`input26-service`，以及 2026-10-29 起注入 backboardd 的 `libredwood.dylib` 里的输入线程。每个采样只被其中一个读走，backboardd 里注册了两块触摸屏，落在另一块上的按下或抬起就丢了。`libredwood.dylib` 在有 `input26-service` 任务时不再起输入线程后，`bo23` 的 40 次翻页全部出帧，见 §12。
+- 计算着色器的派发不再在 AIR 里等 GPU 完成，`bo23` 里每次派发的调用从 1.4～3.2 毫秒降到约 20～80 微秒，见 §15。
 - 今天视图上下滚动时 backboardd 因 AIR 缺 `air.fmax3` 退出，补上三元最值后不再退出（`bo19`），见 §14。
+- `bo18`～`bo20` 今天视图滚动的低帧率来自同时发生的 Spotlight 崩溃循环。系统镜像补上 Spotlight 的模型后（`bo21`），滚动每步 29～36 帧，见 [Spotlight 崩溃循环](2026-10-31-spotlight-crash-loop.md)。
 
 ## 2. 帧率的两档
 
@@ -140,7 +142,14 @@
 - `bo18`（`12377-cmd42`）的 3 次转储：手势开始 400 毫秒后 `/dev/redwood-touch` 里没有未读采样，`input26-service` 停在 `read` 等下一个采样；SpringBoard 主线程停在 `GSEventRunModal` 的 run loop 里等待，backboardd 各线程也在等待。
 - backboardd 自己的 `TouchEvents` 日志给出了差别。有反应的滑动在按下时记「contact 1 presence: touching」与「Touch entered (insideExclusive)」，抬起时记「contact 1 presence: none」，向右滑还有 SpringBoard 发来的触摸投递策略（「TDPS server got new policy <share ...>」）。没有反应的滑动只有按下的两行，没有抬起，也没有策略。其中几次在按下时记「range-in for pathIndex with existing contact -- using existing」，即 backboardd 仍把上一次的 1 号触点记为按下状态。
 - 打印这几行的是 backboardd 里处理数字化仪事件的函数（`/usr/libexec/backboardd` 的 `sub_100011630`）。它处理的每个抬起事件都会把触点改为 none 并打印「presence: none」，没有这一行说明抬起事件没有到这个函数。事件在 `input26-service` 与这个函数之间的哪一步停下，还没有读数。
-- 巡检的滑动都从屏幕边缘起手（x 为 0.97 或 0.03），`input26-service` 给这类触点加 `DIGITIZER_FROM_EDGE_TIP`。`bo20` 只改起手位置（x 为 0.85 或 0.15），用来区分边缘起手是否相关。
+- 巡检的滑动都从屏幕边缘起手（x 为 0.97 或 0.03），`input26-service` 给这类触点加 `DIGITIZER_FROM_EDGE_TIP`。`bo20` 只改起手位置（x 为 0.85 或 0.15）：40 次翻页里 1 次没有出帧，`bo21` 同样的起手位置有 5 次，`bo18`、`bo19` 从边缘起手各 4 次、3 次。没有出帧的次数与边缘起手无关。
+- `bo21` 每次滑动在内核都有 40 个采样，最后一个是抬起；转储时 `/dev/redwood-touch` 没有未读采样，`input26-service` 停在 `read`，`IOHIDVirtualServiceClientDispatchEvent` 没有返回失败（失败时进程会退出）。抬起事件已经交给了 backboardd 的事件系统，之后没有到处理触点的函数。
+- `12377-cmd44` 起看门狗只按手指采样判断手势开始，主屏键不再触发；卡顿转储要求最后一个手指采样在 100 毫秒以内。`bo20` 里 8 次卡顿转储都在手指抬起 445～954 毫秒之后、翻页已经停下时，8 次无反应转储里 6 次是第 1 页上的主屏键。`bo21` 的 8 次转储都对应没有反应的滑动（r1、l4、r15、r18、r20、td1、tu3、tu4）。
+- 两块触摸屏：backboardd 的日志在开机时记了两次「digitizer attached」，发送者分别是 `1443E56000000`（`input26-service` 注册的触摸屏）与 0.6 秒后的 `1443E58000002`，第二次带「*** already have a main display digitizer」；按键服务同样有 `1443E56000001` 与 `1443E58000003` 两个。第二组来自 `userland/src/inject.c` 的 `input_start()`：`libredwood.dylib` 在 backboardd 里起一个线程，同样读 `/dev/redwood-touch` 并注册自己的触摸屏与按键服务。
+- 内核在每次采样入队后唤醒全部读者，先拿到锁的一方读走这个采样。两边的 `send_touch` 都丢弃没有见过按下的移动与抬起。一次滑动的按下与抬起落在不同的一边时，backboardd 那一边的触点一直停在按下状态（`touchstats` 里的「pathsStillTouching: 1」），下一次按下记「range-in for pathIndex with existing contact」。停住的触点被当成长按，主屏或今天视图因此进入编辑模式（`bo22` 截图）。
+- 2026-10-29 11:47 的 `attr26-diag3x-arm64e` 起每一轮都有第二块触摸屏，这一天 `libredwood.dylib` 改成 arm64e 并签名后才真正装进 backboardd，`package.py` 的 `INJECT` 也在同一天加上了 backboardd 一行（`00810fb`）。`userland/build.sh` 对自己的 `inject.conf` 有同样的检查（`input26-service conflicts with libredwood.dylib in backboardd`），`package.py` 不经过这一步。
+- 改法：`inject.c` 在 `/redwood/LaunchDaemons/com.redwood.input26.plist` 存在时不调用 `input_start()`，打印「redwood: input: input26-service reads the touch queue, so no service of ours」。`libredwood.dylib` 仍注入 backboardd，提供 `tl: b`。
+- `bo23`（`12377-cmd44`，巡检同 `bo20`，末尾加一次下拉搜索）：开机日志只有一块触摸屏；40 次翻页每次 30～33 帧，今天视图 16 次滚动每次 27～32 帧；看门狗没有转储。全轮处理器集群最高 43.8 °C，GPU 44.0 °C。
 
 ## 13. 探针的开销（二）
 
@@ -156,9 +165,16 @@
 - `bo19` 同一段巡检 backboardd 没有退出，今天视图可以上下滚动，滚动时 0.57 秒窗口多在 12～15 帧。
 - 各轮里仍被拒绝的管线只剩 SpringBoard 的一条：「a store of a pointer into memory, which this frontend has no address to write」，`bo10`～`bo19` 每轮都有。
 
-## 15. 未解决
+## 15. 计算着色器派发不等 GPU
 
-- 今天视图的帧率：GPU 在 607 MHz 时约一半时间空闲，左右翻进今天视图的慢档仍在 37～40 帧／秒，`bo19` 在今天视图上下滚动时多在 21～26 帧／秒。每帧约 410 次绘制的处理器时间在 CoreAnimation 自身、驱动与内核之间如何分配，还没有按帧的读数。
+- 原来 `rwa_dispatch_threadgroup` 在 `launch_grid` 之后调用 `finish_or_say_why`：刷新并等这次派发的 fence。`bo19` 今天视图里每次派发 1.4～3.2 毫秒，每 64 个命令缓冲 16～52 次；`bo21` 下拉搜索后的模糊背景每 64 个命令缓冲 8～128 次，每次 2.1～4.4 毫秒。
+- AIR 新增 `rwa_dispatch_nowait`（`tools/mesa/air/air_metal_dispatch.inc`），派发留在批次里，随这个命令缓冲的 `rwa_flush` 一起提交；命令缓冲在那次刷新的 fence 上完成（`redwoodmetal_completion.inc`），读计算结果的调用方按 Metal 的约定在完成之后读。freedreno 的 `fd_context_flush` 刷新时把同一上下文的其他批次都排在前面（`fd_bc_add_flush_deps`），所以这个 fence 也覆盖派发的批次。
+- 原有的三个派发入口仍然等待，AIR 的测试程序在派发返回后直接读 buffer。驱动在 `REDWOOD_SYNC_DRAWS` 打开时也走等待的入口，用来指出没有完成的那次派发。
+- `bo22` 的巡检没有走到用计算着色器的界面，没有读数。`bo23` 末尾的下拉搜索：每次派发的调用 22～79 微秒（一个窗口 1014 微秒），没有 GPU 未完成的报错，截图里搜索页的模糊背景正常。
+
+## 16. 未解决
+
+- 今天视图的帧率：GPU 在 607 MHz 时约一半时间空闲，左右翻进今天视图的慢档仍在 37～40 帧／秒。`bo19` 上下滚动时的 21～26 帧／秒是在 Spotlight 崩溃循环期间测的，`bo21` 没有循环时每步 29～36 帧。每帧约 410 次绘制的处理器时间在 CoreAnimation 自身、驱动与内核之间如何分配，还没有按帧的读数。
 - backboardd 的内核态时间：`bo17` 的采样里 backboardd 内核态 1522 个、用户态 904 个。内核态前几项是开中断处（`ml_set_interrupts_enabled_with_debug`，调用方是线程切换后的 `Call_continuation`）与 workqueue 锁的自旋（`hw_lck_ticket_contended`，调用方是 `workq_thread_set_max_qos`、`workq_unpark_continue`、`workq_park_and_unlock`、`workq_kern_threadreq_initiate`）。这些调用来自 libdispatch 的 workloop 线程的唤醒与停放，哪些队列在频繁唤醒还没有读数。
 - 采样器在每次中断时记录被打断的位置（`tools/k90auto/prof.py`）。关中断期间到达的中断要等开中断才处理，样本记在开中断的位置，关中断期间实际执行的函数记不到。按进程的处理器时间以 `ps` 为准。
-- 没有反应的手势：抬起事件没有到 backboardd 处理触点的函数，读数见 §12。
+- ScreenContinuity 每轮 SIGTRAP 退出 6～16 次，见 [Spotlight 崩溃循环](2026-10-31-spotlight-crash-loop.md) §6。

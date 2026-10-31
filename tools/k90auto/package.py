@@ -99,6 +99,10 @@ XPCWATCH_PROCESSES = os.environ.get("XPCWATCH", "").split()
 # without a device the wallpaper window hosts its context empty. It is an ExtensionKit service with
 # no launchd job, so the inserted library is the whole switch (sb_metal_registration_sequence.inc).
 POSTER_METAL = os.environ.get("POSTER_METAL", "0") == "1"
+# libredwood.dylib goes into backboardd for its run loop probe (tl: b). /dev/redwood-touch has one
+# reader, input26-service, which is what userland/build.sh checks its own inject.conf for; the
+# library's touch thread stays off where that job exists (userland/src/inject.c). Before that, from
+# 2026-10-29 every round had two touch screens in backboardd and some swipes lost their lift.
 INJECT = (
     "/redwood/lib/libredwood-sbmetal-experiment.dylib SpringBoard backboardd" +
     (" iconservicesagent" if os.environ.get("ICON_METAL", "1") == "1" else "") +
