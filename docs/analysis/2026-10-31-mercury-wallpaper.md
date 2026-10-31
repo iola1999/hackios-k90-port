@@ -84,9 +84,19 @@ AIR 翻译器（`tools/mesa/air/`）：
 - 默认行为（`redwoodmetal_diag.inc` 的 `rw_one_sample`）：没有 `REDWOOD_MSAA` 时，驱动对 `-supportsSampleCount:4` 回答 NO，仍要 4 倍的应用拿到单采样。纹理对象照旧报告应用要的采样数，编码器据此区分这类附件与 CoreAnimation 的单采样附件；后者也带 resolve 目标，Metal 规定这时不写 resolve 目标。
 - 单采样也去掉了每个带 resolve 目标的 draw 之后对整张 drawable 的 resolve blit。
 
-## 8. 未解决
+## 8. 锁屏时钟与玻璃效果
+
+- 时钟的图层（`bo39`）：`CSProminentTimeView` 下是 SwiftUI 的 `TitleLabelView`，其中 `SwiftUI.SDFLayer`（`CABackdropLayer` 子类）下挂 `CASDFLayer` 与 `CASDFElementLayer`，后者的内容是 723x267 的 CGImage。时间数字由 backboardd 的 SDF 玻璃管线（`glass_background_lph`、`glass_foreground_sdf_lph`、`glass_background_sdf_no_bleed_lph`）画出。日期走 `BSUIVibrancyEffectView`，一直正常显示。
+- 模糊金字塔（`bo40`）：玻璃采样的模糊背景由 `variable_blur_downsample_frag_lph` 逐级画进一张 384x256 纹理的各个 mip 级别，每个通道用颜色附件的 `level` 指定级别。驱动原先忽略 `level`，所有通道都画进第 0 级，每个通道开头的清屏又把上一级清掉，玻璃读到的模糊背景为空。驱动改为对 `level` 非 0 的颜色附件建这一级的纹理视图（`redwoodmetal_texture.inc` 的 `rw_attachment_level`）。
+- 附件尺寸（`bo41`）：这些通道的第二个颜色附件没有指定级别，和级别视图大小不同，AIR 库按「所有附件同尺寸」拒绝，一轮里 96 个命令缓冲失败，锁屏闪烁。库改为按所有附件共有的区域绘制，与 Metal 一致。`bo42` 没有绘制失败，Dock 的玻璃底板显示，时钟仍不显示。
+- 时间的 SDF 输入（`bo42`）：玻璃管线采样的 SDF 是 SpringBoard 渲染的 `RGhA` 654x270 IOSurface，backboardd 读出为空，玻璃只画出包围盒形状。SpringBoard 每轮有一条 SwiftUI custom effect 管线被拒（`custom_effect_vertex` 加 `ffgea5cmba5dhmhba3`，链接 `custom_fn`）：`custom_fn` 把纹理句柄存进局部结构体 `RB::Layer`。这条管线与时钟 SDF 为空的关系是推断，没有验证。
+- 翻译器改动：存进局部（常量偏移的 alloca）的指针记在翻译期的槽里，同一位置读回指针时取回它（`air_ptr_slot.inc`）。宿主机上带 `--link` 的这条管线可以翻译；系统 metallib 语料 11398 个模块翻译成功 3858 个，没有回退。没有上机。
+
+## 9. 未解决
 
 - 扩展里 `IOSurfaceSharedEventAddEventListener failed: e00002c7` 与 `kIOSurfaceMethodSetCoreVideoBridgedKeys failed: e00002c7`：MiniIOSurface 没有实现 selector 40（`IOSurfaceSharedEventAddEventListener`）和 54（`IOSurfaceClientSetCoreVideoBridgedKeys`）。同样没有实现、开机过程中被调用的还有 17（`IOSurfaceClientSetSurfaceNotify`）、32（`IOSurfaceGetGraphicsCommPageAddress`）、41（`IOSurfaceSharedEventRemoveEventListener`），这些在不带 `POSTER_METAL` 的 `bo23` 里也出现。selector 与函数的对应来自 iOS 26 IOSurface 框架的反汇编。
-- 锁屏时钟（`CASDFElementLayer`）不显示，原因没有查。
+- 锁屏时钟仍不显示，见 §8。
+- `bo43` 版本上从主屏打开应用是纯黑屏（用户反馈），日志里 backboardd 没有绘制失败，原因没有查。
 - 4 倍多重采样的渲染或 resolve 在 A830 上得到全 0，哪一步出错没有查。查时用 `REDWOOD_MSAA=1` 给扩展打开 4 倍，再用提交末尾的采样读 `res`。
 - `bo38` 巡检末尾、关闭搜索后的一张截图里第一排图标被横向截去一段，3 分钟后补拍的截图正常，原因没有查。
+- Dock 的玻璃在进入桌面后先完整，随后一段时间只剩边缘高光，几分钟后恢复（用户反馈，`bo42` 之后），原因没有查。

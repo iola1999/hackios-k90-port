@@ -57,8 +57,13 @@
 | `kernel-12377-cmd46-bo36` | 同上 | 扩展在提交末尾采样 resolve 目标 | 扩展的 4 倍多重采样 drawable 全部为 0 |
 | `kernel-12377-cmd47-bo37` | `12377-cmd47` | 扩展用单采样直接画进 drawable；`redwood_tl` 一行 319 字节 | 主屏与锁屏显示壁纸 |
 | `kernel-12377-cmd47-bo38` | 同上 | 单采样与 `POSTER_METAL` 改为默认，巡检同 `bo23` | 全程有壁纸；59 次滑动平均 52.7 帧／秒（`bo23` 52.9），最慢的两次 21.0 与 24.4 帧／秒，与 `bo23` 最慢的两次是同两步（40.3 与 28.0）；30 秒窗口内处理器最高 71.3 °C（`bo23` 73.3 °C）；扩展只在开机时提交，之后不再提交 |
+| `kernel-12377-cmd47-bo39` | `12377-cmd47` | 图层转储加 `DateView`、`Time`、`SDF` 三个过滤 | 时间由 SwiftUI 的 SDF 图层交给 backboardd 的玻璃管线绘制，见[锁屏壁纸](../analysis/2026-10-31-mercury-wallpaper.md) §8 |
+| `kernel-12377-cmd47-bo40` | 同上 | backboardd 逐 draw 采样玻璃与模糊管线 | 模糊金字塔的各级都画进第 0 级，玻璃读到的背景为空 |
+| `kernel-12377-cmd47-bo41` | 同上 | 驱动按颜色附件的 `level` 建级别视图；修正立方体纹理的类型编号 | 第二个附件与级别视图尺寸不同，库拒绝，96 个命令缓冲失败，锁屏闪烁，提前结束 |
+| `kernel-12377-cmd47-bo42` | 同上 | 库按所有附件共有的区域绘制 | 没有绘制失败，Dock 玻璃显示；时钟仍不显示，时间的 SDF IOSurface 在 backboardd 读出为空 |
+| `kernel-12377-cmd48-bo43` | `12377-cmd48` | 电量计电流在 ±50 mA 以内不算充放电；管线被拒时导出链接进来的函数 | 取得 SwiftUI 的 `custom_fn`；用户反馈从主屏打开应用是纯黑屏，原因没有查 |
 
-内核身份：`12377-cmd25`～`12377-cmd47` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。`bo12` 起的改动与读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §7～§13。
+内核身份：`12377-cmd25`～`12377-cmd48` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。`bo12` 起的改动与读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §7～§13。
 
 ## 2. 处理器占用
 
@@ -111,7 +116,8 @@
 
 ## 6. 未解决
 
-- 壁纸：`bo37` 起主屏与锁屏显示壁纸，缺口与改法见[锁屏壁纸](../analysis/2026-10-31-mercury-wallpaper.md)。4 倍多重采样得到全 0 的原因和锁屏时钟不显示没有查，见该文档 §8。
+- 壁纸：`bo37` 起主屏与锁屏显示壁纸，缺口与改法见[锁屏壁纸](../analysis/2026-10-31-mercury-wallpaper.md)。锁屏时钟、4 倍多重采样得到全 0、`bo43` 打开应用黑屏与 Dock 玻璃时好时坏见该文档 §8、§9。
+- 充电提示：电量计在 USB 上读到 +17 mA 时内核报告接上充电器，iOS 显示一次「充电」随即结束（用户反馈，`bo42`）。`12377-cmd48` 起 ±50 mA 以内不算充放电，`bo43` 里没有再报告充电器，用户侧还没有确认。
 - 翻页与滚动：今天视图翻页 37～40 帧／秒，每帧约 410 次绘制的处理器时间分配还没有按帧的读数，见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §16。没有反应的滑动已查明并修复（§12，`bo23`）。
 - ScreenContinuity 从 `bo18` 起每轮 SIGTRAP 退出 12～16 次，见 [Spotlight 崩溃循环](../analysis/2026-10-31-spotlight-crash-loop.md) §6。
 - backboardd 在 `bo1` 滑动时 SIGSEGV，没有崩溃记录；`usertrap=1` 之后的轮次会打印回溯。
