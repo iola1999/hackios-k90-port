@@ -6,16 +6,10 @@
 
 ## 1. 结论
 
-- 锁屏时钟与 Dock 玻璃，按怀疑程度排序：
-  - 单采样附件带 resolve 目标时我们不写目标（§3.1）。已改为直接画进 resolve 目标，未上真机。
-  - 4 个 `glass_background_*_lph` 着色器的导数操作数是 half，对方实测 A830 上得到 inf/NaN（§3.1）。时钟与玻璃在 backboardd 里用其中两个。已改为 32 位按像素计算，主机语料无回退，未上真机。
-  - SpringBoard 在 `bo43` 里有 89 次管线因「把指针存进内存」被拒。指针槽改动已提交（userland `b67e4c470`），未上真机。
-  - RenderBox 相关：`newTextureLayoutWithDescriptor` 返回 nil，`RGB10A8_2P_XR10` 不支持（§3.7）。
-  - 对方日常关掉了 CA 的 inline SDF（§4.2），一轮可验证。
-  - IOSurfaceSharedEvent 在当前配置下不参与（§4.3），排除。
-- 应用打开黑屏：MobileSMS 等在第一帧前 SIGABRT，异常文本没有输出。内核 cmd49 已加上 `ACTIVITY_LOG_STDERR` 与 `CFLOG_FORCE_STDERR`（§4.1），读到异常文本后再决定是否给应用 Metal 设备（§4.4）。
-- 滑动卡：GPU 在 160 MHz 与 607 MHz 之间二选一，空闲 500 ms 就回 160 MHz（§3.8），这是最直接的一项。其次是 CPU 7 核加低频上限的对照（§6.4）、显示控制器直接扫描（§6.5）、DDR 静态投票（§6.6）。
-- 迭代效率与无人值守：loader 武装看门狗（§5.1）、系统盘放进 DSU（§5.2）、`fastboot boot` 起 loader（§5.4）都要刷 loader 或在 Android 侧安装，须用户同意。离线方面，QuartzCore 的 AIR slice 已加入主机语料，glassref 值得移植（§3.4）。
+- 锁屏时钟：`bo45` 起显示，由指针槽改动（userland `b67e4c470`）修好，SpringBoard 的管线拒绝降为 0。§3.1 的两处改动（单采样附件直接画进 resolve 目标、`glass_background_*_lph` 的导数改为 32 位按像素计算）在同一次开机内逐个关掉后时间仍显示，与时钟无关，保留并留有开关。读数见[锁屏壁纸](2026-10-31-mercury-wallpaper.md) §8。Dock 玻璃没有单独判读，RenderBox 的两项（§3.7）与 CA 的 inline SDF（§4.2）仍待查。
+- 应用打开黑屏：`bo44` 起应用的异常文本能输出（§4.1），两处异常都是系统盘缺文件，选取规则已放宽，见[开机次序与性能记录](../progress/2026-10-31-boot-order-and-performance.md) §6。是否给应用 Metal 设备（§4.4）等应用能打开后再定。
+- 滑动卡：GPU 调频已按对方的思路改为最低 342 MHz、触摸后 1.5 秒（内核 `12377-cmd50`），`bo47` 的翻页与滚动帧率和旧规则相同，调频排除（§3.8）。剩下的方向是 CPU 7 核加低频上限的对照（§6.4）、显示控制器直接扫描（§6.5）、DDR 静态投票（§6.6）。
+- 迭代效率与无人值守：loader 武装看门狗（§5.1）、系统盘放进 DSU（§5.2）、`fastboot boot` 起 loader（§5.4）经用户同意后已实现并上真机。离线方面，QuartzCore 的 AIR slice 已加入主机语料，glassref 值得移植（§3.4）。
 - 平台驱动：蓝牙的 iOS 26 接法对方已跑通，引脚与 K90 一致（§6.2）；充电状态、音频、Wi-Fi 共用「SMMU 直通 + 4 GB 以下 DMA + ADSP」这一层（§6.1、§6.3）。
 - 路线：保持现有的 AIR→NIR→freedreno 路径，从对方的两条路径里取具体做法（§3.7）。
 
@@ -107,10 +101,11 @@ gpu2 一侧另有几处做法可用于我们的 AIR 路径，NativeMetal 补丁�
 
 ### 3.8 内核 GPU 驱动
 
-- 调频（价值高）：
+- 调频（`bo47` 实测与帧率无关）：
   - 对方：每 20 ms 统计一次忙碌占比，超过 75% 升一档，连续 10 个窗口低于 35% 才降一档，最低 342 MHz；触摸后 1.5 秒内不低于 734 MHz；过热时每 100 ms 把上限降一档（`patch` 中 `hakios_dada_cpu.c:600-660,730-736,821-890`）。
   - 我们：按负载在 160 MHz 与 607 MHz 之间二选一。100 ms 内负载折算到 160 MHz 达到 20% 就直接升到 607 MHz，低于 10% 持续 500 ms 就回 160 MHz，触摸提频只保持 300 ms，GPU 温度到 70 °C 回 160 MHz、低于 60 °C 恢复（`hackios-xnu-kernel/xnu/files/bsd/dev/adreno8_hfi.c` 的 `adreno8_speed_tick`）。
-  - 读数：`bo42` 一轮切换 40 次、`bo43` 8 次。两轮留下的温度读数最高约 49 °C（每轮只剩 4～5 条），没到 70 °C；切换原因没有单独记录。推断回到 160 MHz 后，下一次滑动开头的几帧在 160 MHz 下画。
+  - 读数：`bo42` 一轮切换 40 次、`bo43` 8 次。两轮留下的温度读数最高约 49 °C（每轮只剩 4～5 条），没到 70 °C。
+  - 结果：`12377-cmd50` 加了 `adreno8_floor`（默认 342 MHz）、`adreno8_touch_ms`（默认 1500）和逐档的温度限制。间隔 3 秒的 20 次翻页，旧参数（`bo46`）平均 53.4 帧／秒，新默认值（`bo47`）53.6 帧／秒；今天视图滚动 49.0 与 50.2 帧／秒。帧率不受 GPU 频率限制，与[开机次序与性能记录](../progress/2026-10-31-boot-order-and-performance.md) §3 里 `bo3` 的结论一致。
   - 建议：保留 70/60 °C 阈值，加频率下限、延长触摸窗口、过热时逐档下调，约 40 行。
 - 地址空间（价值中高）：对方所有进程共用 15.5 GB，8192 张末级表按物理地址哈希查找，提交时只写回改过的表；之前 3.5 GB 时海报全开就耗尽，壁纸变黑。我们的地址范围 3.25 GB，1024 张表只覆盖 2 GB（`hackios-xnu-kernel/xnu/files/bsd/dev/adreno8_memory_private.h`、`adreno8_bo.c`），IB 地址限制在 4 GB 以内，buffer 从 `kernel_task` 分配。应用黑屏时先在日志里查 `no GPU addresses`、`no page table for GPU address`、`no memory for a buffer`；`bo42`、`bo43` 里没有出现。
 - 新表面清零后写回（价值低到中）：对方 `bzero` 后紧跟 `dc civac`，注释写扫描输出前的清理把缓存里的零写回、盖掉 GPU 刚画的帧，出现黑块（`MiniIOSurface.cpp:167-181,197-199,235-247`）。我们只清零（`hackios-xnu-kernel/xnu/files/iokit/Kernel/MiniIOSurface.cpp`）。k90auto 用 `gpu_coherent=1`，风险只在关掉它时出现。约 10 行。
@@ -181,14 +176,14 @@ gpu2 一侧另有几处做法可用于我们的 AIR 路径，NativeMetal 补丁�
 - 对方：loader 常驻期间用 SMC 0x86000005～8 武装 Gunyah 虚拟看门狗，30 秒触发复位；主机 180 秒内发过命令才喂狗（`dada:base/xnuloader/loader.c:1132-1139,2826-2898`）。内核运行期由 core 0 每 5 秒喂一次，最多到预算加 60 秒（`:2767-2774`）。`oem hang` 主动触发复位（`:4920`），`dada:base/tools/dada-run.sh:182-192` 把 `oem stop` 加 `oem hang` 作为每轮的标准复位。
 - 我们：`wdt_arm()` 在非 redwood 平台直接返回（`hackios-xnu-kernel/xnuloader/loader_04_fault_payload_nvram.inc:58-63`），K90 上从未武装。AGENTS.md §5 记录的 10-29 事故属于主机失联后 loader 无人复位。
 - 需核实：首次武装时日志里应出现 `pet=0`；复位后 ABL 进 A 槽要再扣一次 `slot-retry-count:a`，扣完回落 B 槽 Android；复位能否清掉 GMU 与 RPMh 状态未知。
-- 价值高，改动小（约 30 行）。要刷 loader，须先经用户同意。已核实。
+- 已实现（loader v11 起）：K90 上武装，内核运行期由 `hv_wdt_pet=1` 自行喂狗。实测结果见[开机次序与性能记录](../progress/2026-10-31-boot-order-and-performance.md) §5。
 
 ### 5.2 系统盘放进 Android DSU
 
 - 对方：用 Android 的 DSU 安装器装 `system.apfs`，装好后不启用，手机照常进 Android。libfiemap 用 dm-linear 绕过元数据加密写入，盘上是明文。loader 在 metadata 分区按 liblp 魔数找到 `lp_metadata`，取 `system_gsi` 的 extent，`oem dsu load` 约 1.5 秒读完 5 GB；`oem ramdisk crc` 按 256 MB 一段比对 CRC；`dsu patch` 只发与手机上不同的 1 MB 块（`dada:base/tools/dada-dsu.sh:1-15,40-100`；`dada:base/xnuloader/loader.c:2113-2215,4498-4640,4729-4748`）。
 - 我们：每轮经 USB 上传 4.9 GB，约 2 分钟。之前把系统盘写进 userdata 尾部，事后 Android 侧缓存损坏（[系统界面修复记录](2026-10-23-android-systemui-recovery.md)）。loader 已有 super 分区的 liblp 解析（`hackios-xnu-kernel/xnuloader/loader_02_platform_cpu_ufs_survey.inc:796-822`）。系统盘因体积排除了 506 MB 的模型，这是 Spotlight 崩溃循环的来源（[Spotlight 崩溃循环](2026-10-31-spotlight-crash-loop.md)）。
 - 需核实：HyperOS 是否保留 DSU（`gsi_tool status`、`com.android.dynsystem`）；userdata 剩余空间；装好后 DSU 处于未启用状态；UEFI BlockIo 块大小为 4096（对方 `loader.c:2356` 依赖这一点）；读入后的 CRC 和主机一致。
-- 价值高，改动中（loader 约 300 行加主机脚本）。要在 Android 侧安装 DSU 并刷 loader，须先经用户同意。
+- 已实现：`hackios-xnu-kernel/xnuloader/loader_dsu.inc`、`tools/k90auto/dsu.py`，`run-auto.py` 优先从 DSU 读系统盘。HyperOS 保留 DSU。对方的 `dsu patch` 没有移植，系统盘改动后整盘重装。实测结果见[开机次序与性能记录](../progress/2026-10-31-boot-order-and-performance.md) §5。
 
 ### 5.3 根卷按需读取（DSU=2）
 
@@ -202,7 +197,7 @@ gpu2 一侧另有几处做法可用于我们的 AIR 路径，NativeMetal 补丁�
 - 对方不刷分区：`adb reboot bootloader` 后 `fastboot boot dada-usb.img`（BootShim、3 MB FD、只含 loader 的 XNUP，mkbootimg header v4），看门狗复位后手机回到 Android（`dada:uefi-dada/README.md:1-30`；`dada:base/tools/dada-build.sh:10-18`）。
 - 我们：loader 刷在 A 槽，每次启动扣 2 次 `slot-retry-count:a`（[引导目标切换 SOP](../plan/device-boot-target-sop.md)）。10-28 两次 `fastboot boot` 没带起 loader；打包脚本写死 header v1（`hackios-xnu-kernel/mkxnuimg.py:204`）；FD_BASE、FD_SIZE 与对方相同，PAYLOAD_BASE 不同（`hackios-xnu-kernel/common/devices/annibale.conf:13-15`）。
 - 需核实：10-28 失败时的镜像内容；LK 约 2 MB 的大小上限；header v4 是否是关键差别，现有材料判断不了。
-- 价值高（成功后槽位预算这类约束都可以去掉），改动小，一轮真机。
+- 实测：完整的 loader 镜像（header v1，2.18 MB）从 LK `fastboot boot` 能起 loader；10-28 失败的那两次引导的是 handoff 载荷。见[开机次序与性能记录](../progress/2026-10-31-boot-order-and-performance.md) §5。
 
 ### 5.5 运行期调试手段
 
@@ -298,10 +293,12 @@ gpu2 一侧另有几处做法可用于我们的 AIR 路径，NativeMetal 补丁�
 - 内核加频率下限（342 MHz）、触摸窗口延长到 1.5 秒、过热时逐档下调，70/60 °C 阈值不变。
 - 判据：翻页时 `tl:` 帧间隔的 P50/P95 与 `bo43` 对比；GPU 与 CPU 最高温度不超过护栏；`GPU at N MHz` 行里 160 MHz 的占比下降。
 
-### 8.4 需要用户同意的项
+### 8.4 结果
 
-- loader 武装看门狗、`fastboot boot` 只带 loader 的镜像：都要重新刷写或引导 loader。
-- DSU：先在 Android 侧只读确认 `gsi_tool status` 与 userdata 剩余空间，再决定是否安装。
+- 第 1 轮（`bo44`、`bo45`）：时钟与异常文本两项判据都满足，见 §1。`bo44` 没有重编 AIR 库，`bo45` 才是有效读数。
+- 第 2 轮改为验证系统盘补齐后应用能否打开（`bo46`）：应用进程正常运行，屏幕仍黑，原因见[开机次序与性能记录](../progress/2026-10-31-boot-order-and-performance.md) §6。
+- 第 3 轮（`bo47`）：GPU 调频改动对帧率没有影响，见 §3.8。
+- 看门狗、DSU、`fastboot boot` 三项经用户同意后已实现，见 §5。
 
 ### 8.5 离线队列
 

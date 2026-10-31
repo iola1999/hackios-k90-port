@@ -62,8 +62,14 @@
 | `kernel-12377-cmd47-bo41` | 同上 | 驱动按颜色附件的 `level` 建级别视图；修正立方体纹理的类型编号 | 第二个附件与级别视图尺寸不同，库拒绝，96 个命令缓冲失败，锁屏闪烁，提前结束 |
 | `kernel-12377-cmd47-bo42` | 同上 | 库按所有附件共有的区域绘制 | 没有绘制失败，Dock 玻璃显示；时钟仍不显示，时间的 SDF IOSurface 在 backboardd 读出为空 |
 | `kernel-12377-cmd48-bo43` | `12377-cmd48` | 电量计电流在 ±50 mA 以内不算充放电；管线被拒时导出链接进来的函数 | 取得 SwiftUI 的 `custom_fn`；用户反馈从主屏打开应用是纯黑屏，原因没有查 |
+| `kernel-12377-cmd49-bo44` | `12377-cmd49` | `applog` 选中的程序加 `ACTIVITY_LOG_STDERR`、`CFLOG_FORCE_STDERR`；驱动把单采样 storeAction 2 的附件直接画进 resolve 目标（AIR 库没有重编，翻译器改动不在这一轮） | 读到应用的异常文本：MobileSMS 缺 ChatKit 的 `Assets.car` 后抛出「Trying to create an LPImage with nil data」，`com.apple.Safari.History` 抛出 `NSInvalidArgumentException`（字典 key `WFLinkEntityContentPropertyUserInfoEnumMetadata` 的值为 nil）；锁屏时钟仍不显示 |
+| `kernel-12377-cmd49-bo45` | 同上 | 重编 AIR 库：指针存进局部的槽、导数按 32 位逐像素；loader v11 首次用 `oem dsu load` 读系统盘（主机读不到 CRC，退回 USB 上传） | 锁屏时钟显示；SpringBoard 的管线拒绝为 0。同一次开机内设 `AIR_COARSE_DERIVATIVES=1` 或 `REDWOOD_RESOLVE_BLIT=1` 后重启进程，时钟仍显示，时钟由指针槽改动修好 |
+| `kernel-12377-cmd50-bo46` | `12377-cmd50` | 系统盘按放宽后的规则重建（5217959936 字节）并装进 DSU；loader v12 读入后按 1 GiB 分段比对 CRC；GPU 用旧调频参数（`adreno8_floor=1 adreno8_touch_ms=300`） | 系统盘 1.43 秒读入、5 段 CRC 用 1.92 秒全部一致；MobileSMS 不再中止，Safari 与短信的场景进入 `running-active-Visible`，屏幕仍全黑；同一次开机内打开设置、备忘录、时钟也全黑；间隔 3 秒的 20 次翻页平均 53.4 帧／秒 |
+| `kernel-12377-cmd50-bo47` | 同上 | GPU 用新调频默认值（最低 342 MHz、触摸后 1.5 秒）；巡检末尾打开设置并转储 SpringBoard 的图层 | 翻页 53.6 帧／秒、今天视图滚动 50.2 帧／秒，与 `bo46` 相当，调频切换由 54～62 次降到 30 次；被拒的 commit 来自 `SBMainSwitcherWindow`，其中壁纸快照是 ATX 格式的 CGImage，见 §6 |
+| `kernel-12377-cmd50-bo48` | 同上 | 驱动实现纹理布局与 `newTextureWithBytesNoCopy`（`redwoodmetal_texture_layout.inc`） | 没有 serialization error，Safari、短信、设置都画出内容；设置首次打开时有成块的旧内容，解锁后日历小组件空白、回到首页时天气小组件是蓝色方块。同一次开机内给 backboardd 设 `CA_DISABLE_DIRTY_REGIONS=1` 并重启后，这几处都正常；Dock 玻璃只有边缘高光 |
+| `kernel-12377-cmd50-bo49` | 同上 | backboardd 设 `CA_DISABLE_DIRTY_REGIONS=1`（`JOB_ENV`） | 翻页 53.6 帧／秒、今天视图 51.2 帧／秒，与 `bo47` 相当；GPU 每次提交 3.38 毫秒（`bo47` 1.96），多数时间在 607 MHz；每帧送面板 910 行（`bo47` 393）；最高 72.1 °C（`bo47` 71.7） |
 
-内核身份：`12377-cmd25`～`12377-cmd48` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。`bo12` 起的改动与读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §7～§13。
+内核身份：`12377-cmd25`～`12377-cmd50` 的二进制、哈希与改动写在各自的 `docs/progress/evidence/k90auto/kernel-12377-cmdN/kernel.json`。`bo12` 起的改动与读数见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §7～§13。
 
 ## 2. 处理器占用
 
@@ -110,13 +116,22 @@
 - `tools/k90auto/roundstat.py`：按轮次并排打印手势帧率、每次绘制的驱动耗时、慢的 buffer 准备、经拷贝采样的 surface 与 buffer 纹理上传次数。
 - `tools/k90auto/prof.py --threads PID`：把 `dump PID` 的用户态回溯按共享缓存映像命名并合并相同的栈；`12377-cmd28` 起回溯超过 12 帧时续在 `bt+` 行上，最多 32 帧。驱动在加载 AIR 时打印两个库的加载地址（`images: driver ... air ...`），`prof.py` 据此给驱动与 AIR 里的地址命名。
 - `12377-cmd28` 新增 `usertrap=1`：只打印用户态异常（`usertrap: ...`），不带 `systrace` 的系统调用行。
-- 每轮约 10 分钟，其中系统盘上传约 123 秒（4.9 GB，256 MB 一块，每块 6.7 秒，约 39 MB/s）。在同一次启动里改设置、重启进程用 `cycle.py --hold` 加 `respin.py`。
+- 每轮约 10 分钟，其中系统盘上传约 123 秒（4.9 GB，256 MB 一块，每块 6.7 秒，约 39 MB/s）；DSU 读入可代替上传，见下文。在同一次启动里改设置、重启进程用 `cycle.py --hold` 加 `respin.py`。
 - `kern.redwood.outbox` 加 rwsh 的 `outbox PATH`：把设备上的文件交给 loader，内核回到 loader 后 `run-auto.py` 取回 `run/outbox.bin`，约 44 MB/s。只在不带 GPU 的轮次可用，带 GPU 的内核收尾时不回到 loader。大文件要在开机时用 `outbox_mb=N` 预留连续内存。
 - `tools/k90auto/varseed.py`：列出、裁剪 `var_store` 种子；`package.py` 的 `SEED=` 把种子放进根镜像；`make-payload.py` 的 `GPU_STAGE=0` 不带 GPU 启动，并在上传前检查根镜像是否放得下。
+- 系统盘放进 Android DSU（`tools/k90auto/dsu.py install`，16 GiB 槽，不启用）：loader v11 起的 `oem dsu load` 把系统盘从闪存读进常驻区，4.94 GB 用 1.29 秒（`bo45`）；`oem dsu crc` 加 `getvar dsu-crc`（v12）供 `run-auto.py` 按 1 GiB 分段比对 zlib CRC-32，不一致就退回 USB 上传。系统盘改动后要回到 Android 重装（`dsu.py install --replace`），手机开机后需要先解锁一次。
+- loader v11 起在 K90 上武装看门狗：主机 180 秒不发命令就停止喂狗。`oem hang` 实测第 37 秒复位、第 60 秒回到 loader，不需要按键。`cycle.py` 起轮时发现手机在 Android，就经 `recover-loader.py` 回到 loader。
+- 完整的 loader 镜像（`out/handoff-loader-v12.img`，2.18 MB）可以从 LK 用 `fastboot boot` 直接引导，18 秒后 loader 枚举，不刷 `boot_a`，也不扣 A 槽的重试次数。
 
 ## 6. 未解决
 
-- 壁纸：`bo37` 起主屏与锁屏显示壁纸，缺口与改法见[锁屏壁纸](../analysis/2026-10-31-mercury-wallpaper.md)。锁屏时钟、4 倍多重采样得到全 0、`bo43` 打开应用黑屏与 Dock 玻璃时好时坏见该文档 §8、§9。
+- 壁纸：`bo37` 起主屏与锁屏显示壁纸，缺口与改法见[锁屏壁纸](../analysis/2026-10-31-mercury-wallpaper.md)。锁屏时钟 `bo45` 起显示；4 倍多重采样得到全 0、Dock 玻璃时好时坏见该文档 §9。
+- 打开应用黑屏：
+  - `bo44` 读到的两处异常都是系统盘缺文件。`ios165/select-system.py` 的资源目录上限从 4 MB 提到 32 MB、XPC 服务的字符串表与图片改按普通规则取，新增 191 个文件；`bo46` 起 MobileSMS 不再中止，应用进程正常运行，屏幕仍黑。
+  - 第一次打开应用时 backboardd 拒收 SpringBoard 一个窗口的 commit（「CompressedImage port is MACH_PORT_NULL!」，内核同时打印 SpringBoard 的拷贝型 memory entry 失败）。`bo47` 的图层转储里这个窗口是 `SBMainSwitcherWindow`，所有应用的场景都挂在它下面；它的 `PBUIFakeBlurView` 里有一张 846x1827 的 ATX 格式壁纸快照。
+  - ATX/KTX 图像由 ImageIO 按驱动的纹理布局（`newTextureLayoutWithDescriptor`）解码，驱动返回 nil 时数据长度为 0，与 `bo34` 海报快照的失败相同（[锁屏壁纸](../analysis/2026-10-31-mercury-wallpaper.md) §6）。驱动在 `redwoodmetal_texture_layout.inc` 实现了纹理布局与 `newTextureWithBytesNoCopy` 后，`bo48` 起应用正常显示。
+- 局部重绘留下旧内容：backboardd 只重画变化区域时，设置里有成块的灰白旧内容，解锁后小组件空白或变色，用户另报解锁后顶部闪烁条带、进入今天视图和滚动结束时撕裂、日历与时钟图标先空白再出现。`CA_DISABLE_DIRTY_REGIONS=1` 下截图里的这几处都正常（`bo48` 同一次开机对照），`package.py` 起默认整帧重画（`DIRTY_REGIONS=1` 恢复）。原因未查：CoreAnimation 在 surface 1、2 之间交替，内核按整行哈希把变化的行送到面板，没有用 swap 里的脏区域。
+- Dock 玻璃只有边缘高光，内部直接透出壁纸，没有模糊、着色和边缘折射（`bo48`、`bo49` 截图）；设置底部搜索栏下的文字也没有模糊。与局部重绘无关，`bo49` 用 `REDWOOD_THUMB_MATCH=glass_background_sdf` 取了 16 个 draw 的 32x32 采样，分辨率不够判读。
 - 充电提示：电量计在 USB 上读到 +17 mA 时内核报告接上充电器，iOS 显示一次「充电」随即结束（用户反馈，`bo42`）。`12377-cmd48` 起 ±50 mA 以内不算充放电，`bo43` 里没有再报告充电器，用户侧还没有确认。
 - 翻页与滚动：今天视图翻页 37～40 帧／秒，每帧约 410 次绘制的处理器时间分配还没有按帧的读数，见 [backboardd 合成路径的处理器开销](../analysis/2026-10-31-compositor-cpu-path.md) §16。没有反应的滑动已查明并修复（§12，`bo23`）。
 - ScreenContinuity 从 `bo18` 起每轮 SIGTRAP 退出 12～16 次，见 [Spotlight 崩溃循环](../analysis/2026-10-31-spotlight-crash-loop.md) §6。

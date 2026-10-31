@@ -28,6 +28,7 @@ reaches hung-held, which keeps every page until a cold reset, so the teardown sa
 loader holds and reboots instead of leaving that state for the operator.
 """
 import hashlib
+import zlib
 import json
 import os
 from pathlib import Path
@@ -154,7 +155,53 @@ assert variable("result") == "idle", "the loader is not fresh idle"
 assert digest(payload) == manifest["payload"]["sha256"], "payload does not match its manifest"
 assert digest(system_image) == system["sha256"], "system image does not match its manifest"
 
-if system["bytes"] > CHUNKED_LIMIT:
+DSU_RECORD = WORKSPACE / "docs/progress/evidence/k90auto/dsu/system.json"
+DSU_PIECE = 1 << 30
+
+
+def from_dsu():
+    """The system image read from the phone's own storage (tools/k90auto/dsu.py installed it there)
+    instead of sent over USB, when the DSU holds this very image and the loader offers "oem dsu".
+    The resident copy is checked piece by piece against the image here before a kernel may use it;
+    any doubt drops it, and the USB upload follows as before. K90_DSU=0 skips this."""
+    if os.environ.get("K90_DSU", "1") == "0" or not DSU_RECORD.exists() or not window:
+        return False
+    record = json.loads(DSU_RECORD.read_text())
+    if (record.get("sha256"), record.get("bytes")) != (system["sha256"], system["bytes"]):
+        print("dsu: the phone holds another system image; uploading over USB", flush=True)
+        return False
+    began = time.monotonic()
+    loaded = call(["oem", "dsu", "load", f'{system["bytes"]:x}', f"{int(window, 16):x}"], 120, False)
+    ready = call(["getvar", "ramdisk-state"], 8, False)["output"]
+    if loaded["rc"] or "FAILED" in loaded["output"] or not re.search(rf'ready {system["bytes"]:x} ', ready):
+        print(f"dsu: not loaded ({loaded['output'].strip()[-160:]}); uploading over USB", flush=True)
+        call(["oem", "ramdisk", "none"], 8, False)
+        return False
+    read_at = time.monotonic()
+    pieces = []
+    with system_image.open("rb") as source:
+        for offset in range(0, system["bytes"], DSU_PIECE):
+            length = min(DSU_PIECE, system["bytes"] - offset)
+            want = zlib.crc32(source.read(length)) & 0xffffffff
+            # fastboot prints no text of an oem command's OKAY, so the loader keeps the CRC for a getvar
+            call(["oem", "dsu", "crc", f"{offset:x}", f"{length:x}"], 60, False)
+            got = variable("dsu-crc", check=False)
+            pieces.append({"offset": offset, "length": length, "want": f"{want:08x}", "got": got})
+            if not re.fullmatch(r"[0-9a-f]{8}", got) or int(got, 16) != want:
+                print(f"dsu: piece at {offset:#x} differs ({pieces[-1]}); uploading over USB", flush=True)
+                call(["oem", "ramdisk", "none"], 8, False)
+                (run / "system-dsu.json").write_text(json.dumps({"pieces": pieces, "used": False}, indent=1) + "\n")
+                return False
+    timing = {"load_seconds": read_at - began, "check_seconds": time.monotonic() - read_at}
+    (run / "system-dsu.json").write_text(json.dumps({"pieces": pieces, "used": True, **timing}, indent=1) + "\n")
+    print(f"dsu: system image read from storage in {timing['load_seconds']:.1f} s, "
+          f"checked in {timing['check_seconds']:.1f} s", flush=True)
+    return True
+
+
+if system["bytes"] > CHUNKED_LIMIT and from_dsu():
+    pass
+elif system["bytes"] > CHUNKED_LIMIT:
     stage = WORKSPACE / "hackios-xnu-kernel/tools/stage-system.sh"
     with (run / "system-upload.log").open("w") as log:
         subprocess.run(["bash", str(stage)], check=True,

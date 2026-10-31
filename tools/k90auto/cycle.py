@@ -78,6 +78,14 @@ def loader_ready():
     return None
 
 
+def android_present():
+    serial = os.environ.get("ANDROID_SERIAL")
+    if not serial:
+        return False
+    state = subprocess.run(["adb", "-s", serial, "get-state"], capture_output=True, text=True, timeout=10)
+    return state.stdout.strip() == "device"
+
+
 def checkpoint():
     """LK step of the reset: through reboot-lk.py to LK, set_active a, reboot to the loader."""
     serial = os.environ.get("ANDROID_SERIAL")
@@ -121,6 +129,15 @@ def main():
         args.boot_args = " ".join([args.boot_args, "var_store=1"]).strip()
 
     problem = loader_ready()
+    if problem == "no xnuloader in fastboot devices" and android_present():
+        # the loader's watchdog resets the phone once the host has been silent for 180 s, and after
+        # slot A's retries the phone is back in Android: from there set_active a starts a fresh count
+        print("the phone is in Android; back to the loader through LK", flush=True)
+        recovered = run([sys.executable, HERE / "recover-loader.py", EVIDENCE / f"recover-{int(time.time())}"],
+                        capture_output=True, text=True)
+        problem = loader_ready() if recovered.returncode == 0 else f"recover-loader.py failed: {recovered.stdout[-300:]}"
+        if problem is None:
+            STATE.write_text(json.dumps({"rounds_since_checkpoint": 0}) + "\n")
     if problem:
         print(f"STOP: {problem}")
         return 1

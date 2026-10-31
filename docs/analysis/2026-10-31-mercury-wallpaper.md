@@ -90,13 +90,13 @@ AIR 翻译器（`tools/mesa/air/`）：
 - 模糊金字塔（`bo40`）：玻璃采样的模糊背景由 `variable_blur_downsample_frag_lph` 逐级画进一张 384x256 纹理的各个 mip 级别，每个通道用颜色附件的 `level` 指定级别。驱动原先忽略 `level`，所有通道都画进第 0 级，每个通道开头的清屏又把上一级清掉，玻璃读到的模糊背景为空。驱动改为对 `level` 非 0 的颜色附件建这一级的纹理视图（`redwoodmetal_texture.inc` 的 `rw_attachment_level`）。
 - 附件尺寸（`bo41`）：这些通道的第二个颜色附件没有指定级别，和级别视图大小不同，AIR 库按「所有附件同尺寸」拒绝，一轮里 96 个命令缓冲失败，锁屏闪烁。库改为按所有附件共有的区域绘制，与 Metal 一致。`bo42` 没有绘制失败，Dock 的玻璃底板显示，时钟仍不显示。
 - 时间的 SDF 输入（`bo42`）：玻璃管线采样的 SDF 是 SpringBoard 渲染的 `RGhA` 654x270 IOSurface，backboardd 读出为空，玻璃只画出包围盒形状。SpringBoard 每轮有一条 SwiftUI custom effect 管线被拒（`custom_effect_vertex` 加 `ffgea5cmba5dhmhba3`，链接 `custom_fn`）：`custom_fn` 把纹理句柄存进局部结构体 `RB::Layer`。这条管线与时钟 SDF 为空的关系是推断，没有验证。
-- 翻译器改动：存进局部（常量偏移的 alloca）的指针记在翻译期的槽里，同一位置读回指针时取回它（`air_ptr_slot.inc`）。宿主机上带 `--link` 的这条管线可以翻译；系统 metallib 语料 11398 个模块翻译成功 3858 个，没有回退。没有上机。
+- 翻译器改动：存进局部（常量偏移的 alloca）的指针记在翻译期的槽里，同一位置读回指针时取回它（`air_ptr_slot.inc`）。宿主机上带 `--link` 的这条管线可以翻译；系统 metallib 语料 11398 个模块翻译成功 3858 个，没有回退。
+- 上机结果（`bo45`）：AIR 库重编后 SpringBoard 的管线拒绝为 0，锁屏显示时间。`bo44` 时钟仍不显示，因为 `package.py` 不编译 AIR 库，那一轮的库还是 15:09 的旧版本，要先运行 `tools/k90auto/build-air.py`。同一次开机内把 backboardd 的导数切回旧算法（`AIR_COARSE_DERIVATIVES=1`）、把 SpringBoard 的单采样 resolve 切回旧行为（`REDWOOD_RESOLVE_BLIT=1`）并重启进程，时间都仍然显示，所以时钟是指针槽改动修好的；这两处改动的来由见[参考仓库对照](2026-10-31-dada-reference-comparison.md) §3.1。
 
 ## 9. 未解决
 
 - 扩展里 `IOSurfaceSharedEventAddEventListener failed: e00002c7` 与 `kIOSurfaceMethodSetCoreVideoBridgedKeys failed: e00002c7`：MiniIOSurface 没有实现 selector 40（`IOSurfaceSharedEventAddEventListener`）和 54（`IOSurfaceClientSetCoreVideoBridgedKeys`）。同样没有实现、开机过程中被调用的还有 17（`IOSurfaceClientSetSurfaceNotify`）、32（`IOSurfaceGetGraphicsCommPageAddress`）、41（`IOSurfaceSharedEventRemoveEventListener`），这些在不带 `POSTER_METAL` 的 `bo23` 里也出现。selector 与函数的对应来自 iOS 26 IOSurface 框架的反汇编。
-- 锁屏时钟仍不显示，见 §8。
-- `bo43` 版本上从主屏打开应用是纯黑屏（用户反馈），日志里 backboardd 没有绘制失败，原因没有查。
+- 打开应用黑屏：`bo44` 的异常文本指向系统盘缺文件（ChatKit 的 `Assets.car` 等），见[开机次序与性能记录](../progress/2026-10-31-boot-order-and-performance.md) §6。
 - 4 倍多重采样的渲染或 resolve 在 A830 上得到全 0，哪一步出错没有查。查时用 `REDWOOD_MSAA=1` 给扩展打开 4 倍，再用提交末尾的采样读 `res`。
 - `bo38` 巡检末尾、关闭搜索后的一张截图里第一排图标被横向截去一段，3 分钟后补拍的截图正常，原因没有查。
 - Dock 的玻璃在进入桌面后先完整，随后一段时间只剩边缘高光，几分钟后恢复（用户反馈，`bo42` 之后），原因没有查。

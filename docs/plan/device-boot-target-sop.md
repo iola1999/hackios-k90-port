@@ -46,7 +46,7 @@ fastboot -s "${ANDROID_SERIAL}" reboot
 
 ## 4. 陷阱（均为实测）
 
-1. **LK `fastboot boot <handoff payload>` 不会把 loader 带起来。** 2026-10-28 两次实测：命令答 `Booting OKAY [0.112s]`／`[0.114s]`，之后 80 与 90 秒内 `xnuloader` 从未枚举，`result`／`build-id`／`ramdisk-state` 都答 `GetVar Variable not found`。这条路径的通病是把「命令 OKAY」当成「loader 驻留」；判别只看 `fastboot devices` 与那三个变量。进 loader 只有 §2 表里 `set_active a` 那一条。
+1. **LK `fastboot boot <handoff payload>` 不会把 loader 带起来。** 2026-10-28 两次实测：命令答 `Booting OKAY [0.112s]`／`[0.114s]`，之后 80 与 90 秒内 `xnuloader` 从未枚举，`result`／`build-id`／`ramdisk-state` 都答 `GetVar Variable not found`。这条路径的通病是把「命令 OKAY」当成「loader 驻留」；判别只看 `fastboot devices` 与那三个变量。完整的 loader 镜像（BootShim、FD、XNUP、DTB，例如 `hackios-xnu-kernel/out/handoff-loader-v12.img`）可以 `fastboot boot`：2026-10-31 实测 18 秒后 `xnuloader` 枚举，不刷 `boot_a`，也不扣 `slot-retry-count:a`，见[开机次序与性能记录](../progress/2026-10-31-boot-order-and-performance.md) §5。
 2. **对未枚举的序列号发 `fastboot -s xnuloader getvar …` 会挂住。** 该客户端进入 `< waiting for xnuloader>` 并可能成为后台作业，与其它 fastboot 客户端并发时会把 USB 命令通道卡住。枚举一律用 `fastboot devices`。
 3. **LK 的 `reboot` 在目标槽被标为不可引导时无效。** 实测 `slot-unbootable:b=yes` 时 `reboot` 答 `OKAY` 而设备仍停在 LK；`set_active b` 会清掉这个标志（读回 `slot-unbootable:b=no`），同理 `set_active a` 清 A 槽。判断「到底复位了没有」看 USB 是否真的断开：`ioreg` 250 毫秒采样能看到消失再重现，只看命令返回值判不出来。
 4. **`slot-retry-count:a` 每跑一轮扣 2 次，约三轮后归 0，LK 会把 A 槽标成不可引导并回退 B 槽 Android。** 2026-10-29 实测：`set_active a` 后读回 7，跑一轮（loader 起 iOS、进桌面、`hung-held` 收尾）后读回 5，同时 `slot-successful:a` 始终是 `no`。原因是经 loader 起 iOS 不写成功引导记录，计数器一路递减，与 panic 无关。起轮前先读 `slot-retry-count:a`，低于 3 时执行 `set_active a`（该命令把计数重置为 7 并把 `slot-unbootable:a` 清回 `no`），随后重启一次 loader 再起轮；每轮收尾前再读一次，已经掉到 0 时不要直接起下一轮，先按同样的方式复位。`tools/k90auto/round-run.py` 已把这套检查做成起轮前置。

@@ -130,6 +130,12 @@ CACHE_KEY = "/System/Library/LaunchDaemons/com.apple.backboardd.plist"
 # backboardd; the GPU stop that kept it off in lock2cpu4 (2026-10-30) has not recurred since render47.
 # ICON_METAL=0 leaves iconservicesagent in software.
 ICON_METAL = os.environ.get("ICON_METAL", "1") == "1"
+# backboardd draws every frame whole (CA_DISABLE_DIRTY_REGIONS=1) unless DIRTY_REGIONS=1. With the
+# dirty regions CoreAnimation draws only what changed, and rectangles of older frames stayed on the
+# screen: grey blocks in Settings, a widget left blank or blue (kernel-12377-cmd50-bo48, the same
+# boot with and without). The cause is not found; drawing whole cost the GPU 72% more time a
+# submission at the same frame rate (bo49 against bo47).
+DIRTY_REGIONS = os.environ.get("DIRTY_REGIONS") == "1"
 ICON_JOB = "LaunchDaemons/com.apple.iconservices.iconservicesagent.plist"
 ICON_CACHE_KEY = "/System/Library/LaunchDaemons/com.apple.iconservices.iconservicesagent.plist"
 # MSAA=1 asks the driver for four samples on both processes that encode render passes:
@@ -286,6 +292,7 @@ DRIVER_INCLUDES = ["tools/userland-driver/redwood_drawable.h",
                    "tools/userland-driver/redwoodmetal_state.inc",
                    "tools/userland-driver/redwoodmetal_stitch.inc",
                    "tools/userland-driver/redwoodmetal_texture.inc",
+                   "tools/userland-driver/redwoodmetal_texture_layout.inc",
                    "tools/userland-driver/redwoodmetal_work.inc",
                    "tools/userland-driver/redwoodmetal_work_private.h"]
 
@@ -436,6 +443,8 @@ def add_switch(root):
         job_path = root / relative
         job = plistlib.loads(job_path.read_bytes())
         job.setdefault("EnvironmentVariables", {})["REDWOOD_SB_METAL"] = "1"
+        if relative == JOB and not DIRTY_REGIONS:
+            job["EnvironmentVariables"]["CA_DISABLE_DIRTY_REGIONS"] = "1"
         blob = plistlib.dumps(job, fmt=plistlib.FMT_BINARY)
         job_path.write_bytes(blob)
         assert plistlib.loads(blob) == job, "the job plist did not survive the round trip"
@@ -878,7 +887,7 @@ def main():
         # A round can change more than the one variable its request names. Anything passed here is
         # carried into the archive so the round is read as what it actually ran.
         "round_notes": [note.strip() for note in os.environ.get("ROUND_NOTES", "").split(";") if note.strip()],
-        "gpu_speed": GPU_SPEED,
+        "gpu_speed": GPU_SPEED, "dirty_regions": DIRTY_REGIONS,
         "root_sha256": sha(OUT / "root.apfs"), "root_bytes": (OUT / "root.apfs").stat().st_size,
         "expected_runtime_log": ["redwoodmetal[SpringBoard", "redwoodmetal[backboardd",
                                  "sbmetal26: registration completed device=1",
